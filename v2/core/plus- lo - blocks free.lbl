@@ -1,9 +1,0 @@
-{number:4000}
-	rem blocks free
-	&"{f6}Updating Blocks Free.{f6}"
-	for dr=1 to 6:gosub 1081:tt$(dr)=str$(bf):next:a$="  {lt. green}Blocks Free:"+r$
-	gosub 1095:for i=1 to 6
-	a$=" {lt. green}"+mid$("SysE-MEtcDirPrgUsr",i*3-2,3)+" Disk:{white}"+tt$(i)
-	gosub 1095:next:a$=" {pound}q0{yellow}{pound}o{$c0}{pound}o{$c0}":gosub 1095:close 2:return
-	close 2:return
-	copr. 1994 new image 9/17/94
