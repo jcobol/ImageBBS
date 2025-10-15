@@ -44,8 +44,8 @@
 280 c1$="{cyan}":c2$="{yellow}":c3$="{white}":kp$="":kp=0
 
 300 rem Stage 4.  Message and statistics counters from e.data/e.stats.
-310 data 0,0,0,0,"NO CALLERS YET","",0,"00/00/00 00:00","",0,0,0,0
-320 read st(1),st(2),st(3),st(4),d3$,tt$,tt,lt$,pp$,pt%,p1%,p2%,p3%
+310 data 0,0,0,0,"NO CALLERS YET","",0,"00/00/00 00:00","",0,0,0
+320 read st(1),st(2),st(3),st(4),d3$,tt$,tt,lt$,pp$,p1%,p2%,p3%
 330 rem Additional REL records (e.stats) are left zeroed; the real program
 340 rem walks the first 30 entries to seed BAR statistics on boot.
 
