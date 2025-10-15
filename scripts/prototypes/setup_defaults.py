@@ -108,6 +108,35 @@ class PrimeTimeWindow:
 
 
 @dataclass(frozen=True)
+class ChatModeMessages:
+    """Messages displayed when the sysop enters or leaves chat."""
+
+    entering: str
+    exiting: str
+    returning_to_editor: str
+
+
+@dataclass(frozen=True)
+class BoardStatistics:
+    """Persisted caller metadata staged from ``e.data`` and ``e.stats``."""
+
+    message_counts: Tuple[int, int, int, int]
+    status_banner: str
+    total_calls: int
+    last_caller: str
+    last_logon_timestamp: str
+    password_subs_password: str
+
+    @property
+    def has_activity(self) -> bool:
+        """Return ``True`` if any counters or the call total are non-zero."""
+
+        if self.total_calls:
+            return True
+        return any(self.message_counts)
+
+
+@dataclass(frozen=True)
 class SysopProfile:
     """Subset of the sysop record staged from ``u.config``."""
 
@@ -134,10 +163,9 @@ class SetupDefaults:
     prompt: str
     copyright_notice: str
     sysop: SysopProfile
-    last_caller: str
-    stats_banner: str
-    last_logon_timestamp: str
+    statistics: BoardStatistics
     prime_time: PrimeTimeWindow
+    chat_mode_messages: ChatModeMessages
     macro_modules: Tuple[str, ...]
 
     @property
@@ -145,6 +173,48 @@ class SetupDefaults:
         """Return the drive slots that point at configured devices."""
 
         return tuple(assignment for assignment in self.drives if assignment.is_configured)
+
+    @property
+    def last_caller(self) -> str:
+        """Expose the last-caller string stored in ``e.data`` record 17."""
+
+        return self.statistics.last_caller
+
+    @property
+    def stats_banner(self) -> str:
+        """Expose the message banner stored alongside BAR statistics."""
+
+        return self.statistics.status_banner
+
+    @property
+    def last_logon_timestamp(self) -> str:
+        """Expose the last caller timestamp staged from ``e.data`` record 19."""
+
+        return self.statistics.last_logon_timestamp
+
+    @property
+    def password_subs_password(self) -> str:
+        """Expose the password used by password-protected subs."""
+
+        return self.statistics.password_subs_password
+
+    @property
+    def chat_mode_entering(self) -> str:
+        """Banner shown when the sysop accepts a chat request."""
+
+        return self.chat_mode_messages.entering
+
+    @property
+    def chat_mode_exiting(self) -> str:
+        """Banner shown when the sysop leaves chat mode."""
+
+        return self.chat_mode_messages.exiting
+
+    @property
+    def chat_mode_returning_to_editor(self) -> str:
+        """Banner shown when a caller returns to the editor after chat."""
+
+        return self.chat_mode_messages.returning_to_editor
 
     @classmethod
     def stub(cls) -> "SetupDefaults":
@@ -172,7 +242,20 @@ class SetupDefaults:
             last_name="SYSOP",
             phone="555-1212",
         )
+        statistics = BoardStatistics(
+            message_counts=(0, 0, 0, 0),
+            status_banner="",
+            total_calls=0,
+            last_caller="NO CALLERS YET",
+            last_logon_timestamp="00/00/00 00:00",
+            password_subs_password="",
+        )
         prime_time = PrimeTimeWindow(indicator=0, start_hour=0, end_hour=0)
+        chat_messages = ChatModeMessages(
+            entering="{cyan}* Entering Chat Mode *",
+            exiting="{yellow}* Exiting Chat Mode *",
+            returning_to_editor="{white}* Returning to the Editor *",
+        )
         highest_device_minus_seven = inventory.highest_device_minus_seven
         drive_count = inventory.device_count
         return cls(
@@ -186,10 +269,9 @@ class SetupDefaults:
             prompt="{pound}READY{pound}",
             copyright_notice="(c) 1990 FandF Products",
             sysop=sysop,
-            last_caller="NO CALLERS YET",
-            stats_banner="",
-            last_logon_timestamp="00/00/00 00:00",
+            statistics=statistics,
             prime_time=prime_time,
+            chat_mode_messages=chat_messages,
             macro_modules=("+.lo", "+.modem", "+.lb move", "+.lb chat"),
         )
 
@@ -226,6 +308,8 @@ __all__ = [
     "DriveLocator",
     "DeviceDriveMap",
     "DriveInventory",
+    "BoardStatistics",
+    "ChatModeMessages",
     "PrimeTimeWindow",
     "SetupDefaults",
     "SysopProfile",
