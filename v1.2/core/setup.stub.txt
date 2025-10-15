@@ -40,10 +40,16 @@
 240 ll%=60:ul=30:lf=30:em=0:dc=0:uc=0:if bd=0 then bd=4:if bu=0 then bu=4:if cr=0 then cr=25
 250 ps=0:rp=0:lt$="00/00/00 00:00":fl$="":jn$="N":id=1
 260 rem Variables only seen in later overlays – stub them explicitly.
+265 rem Chat mode banners follow the manual's "Entering/Exiting/Returning"
+266 rem strings so host ports can mirror the prompts shown during paging.
+267 rem (documented in the Image 1.2B manual's Chat Mode section)
 270 d5=8:d5%=0:ak$="":ak=0:mw=0:mw%=0
-280 c1$="{cyan}":c2$="{yellow}":c3$="{white}":kp$="":kp=0
+280 c1$="{cyan}* Entering Chat Mode *":c2$="{yellow}* Exiting Chat Mode *":c3$="{white}* Returning to the Editor *":kp$="":kp=0
 
-300 rem Stage 4.  Message and statistics counters from e.data/e.stats.
+300 rem Stage 4.  Message counters and caller stats from e.data/e.stats.
+305 rem st(1-4) mirror the BAR counters; d3$ and lt$ preserve the last caller
+306 rem handle/timestamp, tt tracks total calls, and pp$ holds the password-sub
+307 rem credential described in records 17-20 of the sysop manual summary.
 310 data 0,0,0,0,"NO CALLERS YET","",0,"00/00/00 00:00","",0,0,0
 320 read st(1),st(2),st(3),st(4),d3$,tt$,tt,lt$,pp$,p1%,p2%,p3%
 330 rem Additional REL records (e.stats) are left zeroed; the real program

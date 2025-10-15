@@ -20,6 +20,8 @@ from .message_editor import (
     TransitionError,
 )
 from .setup_defaults import (
+    BoardStatistics,
+    ChatModeMessages,
     CommodoreDeviceDrive,
     DriveAssignment,
     DriveLocator,
@@ -34,6 +36,8 @@ from .setup_defaults import (
 __all__ = [
     "ChannelDescriptor",
     "Console",
+    "BoardStatistics",
+    "ChatModeMessages",
     "CommodoreDeviceDrive",
     "DriveAssignment",
     "DriveLocator",
