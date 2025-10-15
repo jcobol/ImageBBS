@@ -8,6 +8,7 @@ iteration 08's follow-ups.
 """
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from collections import defaultdict, deque
 from dataclasses import dataclass
 from pathlib import Path
@@ -109,23 +110,112 @@ class Console(Device):
         self.output.append(data)
 
 
+class ModemTransport(ABC):
+    """Strategy object that hides the underlying modem transport."""
+
+    def open(self) -> None:
+        """Prepare the transport for use."""
+
+        pass
+
+    @abstractmethod
+    def send(self, data: str) -> None:
+        """Transmit data toward the remote peer."""
+
+    @abstractmethod
+    def receive(self, size: Optional[int] = None) -> str:
+        """Return data provided by the remote peer."""
+
+    def feed(self, data: str) -> None:
+        """Inject inbound data for transports that emulate remote peers."""
+
+        raise NotImplementedError("transport does not support manual inbound data")
+
+    def collect_transmit(self) -> str:
+        """Expose transmitted payloads for inspection in tests."""
+
+        raise NotImplementedError("transport does not expose transmitted payloads")
+
+    def close(self) -> None:
+        """Release any transport resources."""
+
+        pass
+
+
+class LoopbackModemTransport(ModemTransport):
+    """In-memory transport that mirrors the historical modem façade."""
+
+    def __init__(self) -> None:
+        self._inbound: Deque[str] = deque()
+        self._outbound: Deque[str] = deque()
+
+    def open(self) -> None:
+        self._inbound.clear()
+        self._outbound.clear()
+
+    def send(self, data: str) -> None:
+        self._outbound.extend(data)
+
+    def receive(self, size: Optional[int] = None) -> str:
+        if size is None:
+            size = len(self._inbound)
+        chars: Iterable[str] = (
+            self._inbound.popleft() for _ in range(min(size, len(self._inbound)))
+        )
+        return "".join(chars)
+
+    def feed(self, data: str) -> None:
+        self._inbound.extend(data)
+
+    def collect_transmit(self) -> str:
+        payload = "".join(self._outbound)
+        self._outbound.clear()
+        return payload
+
+    def close(self) -> None:
+        self._inbound.clear()
+        self._outbound.clear()
+
+
+class ModemChannel(LogicalChannel):
+    """Logical channel that proxies writes to a modem transport."""
+
+    def __init__(self, descriptor: ChannelDescriptor, transport: ModemTransport) -> None:
+        super().__init__(descriptor)
+        self._transport = transport
+
+    def write(self, data: str) -> None:
+        super().write(data)
+        self._transport.send(data)
+
+
 class Modem(Device):
     name = "modem"
 
-    def __init__(self) -> None:
-        self.buffer: Deque[str] = deque()
+    def __init__(self, transport: Optional[ModemTransport] = None) -> None:
+        self.transport = transport or LoopbackModemTransport()
 
     def open(self, descriptor: ChannelDescriptor) -> LogicalChannel:
-        return LogicalChannel(descriptor)
+        self.transport.open()
+        return ModemChannel(descriptor, self.transport)
 
     def enqueue_receive(self, data: str) -> None:
-        self.buffer.extend(data)
+        try:
+            self.transport.feed(data)
+        except NotImplementedError as exc:
+            raise DeviceError("transport does not allow manual inbound data") from exc
 
     def read(self, size: Optional[int] = None) -> str:
-        if size is None:
-            size = len(self.buffer)
-        chars: Iterable[str] = (self.buffer.popleft() for _ in range(min(size, len(self.buffer))))
-        return "".join(chars)
+        return self.transport.receive(size)
+
+    def collect_transmit(self) -> str:
+        try:
+            return self.transport.collect_transmit()
+        except NotImplementedError as exc:
+            raise DeviceError("transport does not expose transmitted payloads") from exc
+
+    def close(self) -> None:
+        self.transport.close()
 
 
 class DeviceContext:
@@ -186,5 +276,8 @@ __all__ = [
     "DeviceError",
     "DiskDrive",
     "LogicalChannel",
+    "LoopbackModemTransport",
     "Modem",
+    "ModemChannel",
+    "ModemTransport",
 ]
