@@ -17,10 +17,17 @@ from .message_editor import (
     SessionContext,
     TransitionError,
 )
+from .setup_defaults import (
+    DriveAssignment,
+    PrimeTimeWindow,
+    SetupDefaults,
+    SysopProfile,
+)
 
 __all__ = [
     "ChannelDescriptor",
     "Console",
+    "DriveAssignment",
     "D64Image",
     "DirectoryEntry",
     "DeviceContext",
@@ -31,6 +38,9 @@ __all__ = [
     "LogicalChannel",
     "MessageEditor",
     "Modem",
+    "PrimeTimeWindow",
     "SessionContext",
+    "SetupDefaults",
+    "SysopProfile",
     "TransitionError",
 ]

@@ -13,34 +13,38 @@
 30 for dr=1 to 6:dv%(dr)=0:dr%(dr)=0:bf(dr)=-1:next
 40 for idx=1 to 32:ud$(idx)="":next
 50 for idx=1 to 16:co$(idx)="":next
-60 zz=0:pm=0:pf=0:em=0:dc=0:uc=0:bd=0:bu=0:cr=0:ps=0:rp=0
-70 d3$="":pp$="":lt$="00/00/00 00:00":fl$="":jn$="":ld$="LD"
+60 zz=0:pm=0:pf=0:em=0:dc=0:uc=0:bd=0:bu=0:cr=0:pt%=0:ps=0:rp=0
+70 d3$="":pp$="":lt$="00/00/00 00:00":fl$="":jn$="":ld$="":cp$=""
 80 cc$="IM":bn$="IMAGE BBS":po$="{pound}READY{pound}":mc=0
 90 gosub 2000:gosub 3000:gosub 4000
 
 100 rem Stage 2.  Default drive map in lieu of bd.data (sysop manual p. 6-11).
-110 data 8,0,8,1,9,0,9,1,10,0,11,0,"LD"
+110 data 8,0,8,1,9,0,9,1,10,0,11,0,"IM",25,4,4,"IMAGE BBS","{pound}READY{pound}","(c) 1990 FandF Products"
 120 for dr=1 to 6
 130   read dv%(dr),dr%(dr)
-140 next:read ld$
-150 dr=1:d1%=dv%(1):d2%=dr%(1):dv%=dv%(1):dr%=dr%(1)
-160 dr$=mid$(str$(dr%(dr)),2)+":"
-170 rem Placeholder for fifth drive tuple referenced via D5.
-180 d5=8:d5%=0
+140 next
+150 read ld$,cr,bd,bu,bn$,po$,cp$
+155 if ld$<>"" then cc$=ld$
+160 dr=1:d1%=dv%(1):d2%=dr%(1):dv%=dv%(1):dr%=dr%(1)
+170 dr$=mid$(str$(dr%(dr)),2)+":"
+180 rem Placeholder for fifth drive tuple referenced via D5.
+190 d5=8:d5%=0
+195 if bd=0 or bu=0 then gosub 500
 
 200 rem Stage 3.  SysOp profile approximated from u.config record 1.
 210 data "SYSOP","Image BBS","SYSOP","PASSWORD","SYSOP","SYSOP","555-1212"
 220 read i1$,i2$,na$,pw$,ff$,ll$,ph$
-230 ld$="IM":ac%=1:ct%=0:tc%=0:co%=0
-240 ll%=60:ul=30:lf=30:em=0:dc=0:uc=0:bd=0:bu=0:cr=25
+230 if ld$="" then ld$="IM"
+235 ac%=1:ct%=0:tc%=0:co%=0
+240 ll%=60:ul=30:lf=30:em=0:dc=0:uc=0:if bd=0 then bd=4:if bu=0 then bu=4:if cr=0 then cr=25
 250 ps=0:rp=0:lt$="00/00/00 00:00":fl$="":jn$="N":id=1
 260 rem Variables only seen in later overlays – stub them explicitly.
 270 d5=8:d5%=0:ak$="":ak=0:mw=0:mw%=0
 280 c1$="{cyan}":c2$="{yellow}":c3$="{white}":kp$="":kp=0
 
 300 rem Stage 4.  Message and statistics counters from e.data/e.stats.
-310 data 0,0,0,0,"NO CALLERS YET","",0,"00/00/00 00:00","",0,0,0
-320 read st(1),st(2),st(3),st(4),d3$,tt$,tt,lt$,pp$,p1%,p2%,p3%
+310 data 0,0,0,0,"NO CALLERS YET","",0,"00/00/00 00:00","",0,0,0,0
+320 read st(1),st(2),st(3),st(4),d3$,tt$,tt,lt$,pp$,pt%,p1%,p2%,p3%
 330 rem Additional REL records (e.stats) are left zeroed; the real program
 340 rem walks the first 30 entries to seed BAR statistics on boot.
 
@@ -49,6 +53,27 @@
 420 rem Without the original assets we only record the intent.
 430 plus$(1)="+.lo":plus$(2)="+.modem":plus$(3)="+.lb move":plus$(4)="+.lb chat"
 440 plus_files=4
+
+500 rem Derive bd.data metadata when fields are omitted or zeroed.
+510 hd=0
+520 for idx=1 to 6
+530   if dv%(idx)>hd then hd=dv%(idx)
+540 next
+550 if bd=0 and hd>0 then bd=hd-7
+560 if bu=0 then dd=0
+570 for idx=1 to 6
+580   dv=dv%(idx)
+590   if dv<>0 then
+600     found=0
+610     for jd=1 to idx-1
+620       if dv%(jd)=dv then found=1
+630     next jd
+640     if found=0 then dd=dd+1
+650   end if
+660 next idx
+670 if dd>0 then bu=dd
+680 end if
+690 return
 
 9000 rem Stage 6.  Transfer control to the main Image program.
 9010 rem The genuine overlay ends with RUN or GOTO to enter "im".
