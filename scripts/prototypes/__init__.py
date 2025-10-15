@@ -18,16 +18,25 @@ from .message_editor import (
     TransitionError,
 )
 from .setup_defaults import (
+    CommodoreDeviceDrive,
     DriveAssignment,
+    DriveLocator,
+    DeviceDriveMap,
+    DriveInventory,
     PrimeTimeWindow,
     SetupDefaults,
     SysopProfile,
+    derive_drive_inventory,
 )
 
 __all__ = [
     "ChannelDescriptor",
     "Console",
+    "CommodoreDeviceDrive",
     "DriveAssignment",
+    "DriveLocator",
+    "DeviceDriveMap",
+    "DriveInventory",
     "D64Image",
     "DirectoryEntry",
     "DeviceContext",
@@ -42,5 +51,6 @@ __all__ = [
     "SessionContext",
     "SetupDefaults",
     "SysopProfile",
+    "derive_drive_inventory",
     "TransitionError",
 ]

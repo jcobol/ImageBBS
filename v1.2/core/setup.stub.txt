@@ -19,7 +19,8 @@
 90 gosub 2000:gosub 3000:gosub 4000
 
 100 rem Stage 2.  Default drive map in lieu of bd.data (sysop manual p. 6-11).
-110 data 8,0,8,1,9,0,9,1,10,0,11,0,"IM",25,4,4,"IMAGE BBS","{pound}READY{pound}","(c) 1990 FandF Products"
+110 data 8,0,9,0,10,0,11,0,0,0,0,0,"IM",25,4,4,"IMAGE BBS","{pound}READY{pound}","(c) 1990 FandF Products"
+115 rem Remaining tuples mirror the unassigned slots left zeroed on new installs.
 120 for dr=1 to 6
 130   read dv%(dr),dr%(dr)
 140 next
