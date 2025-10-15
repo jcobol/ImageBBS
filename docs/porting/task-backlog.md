@@ -17,11 +17,12 @@
 - [x] Document how `sub_c2d4`/`gotocd4f` seed BASIC variables during bootstrap.
       *(Iteration 04 details the lookup-and-table workflow.)*
 - [ ] Recover the missing overlay PRGs (`setup`, `ml.extra`, etc.) so the remaining `lbl_c2e5` variables (`D5`, `AK`, `MW`, `C1`–`C3`, `KP`) can be traced and documented. The sysop manual confirms `setup` runs immediately after `im` to DIM variables and load configuration records, so sourcing the original boot disks is prerequisite to finishing the table audit.【F:v1.2/docs/image-1_2b-sysop-manual.adoc†L6864-L6883】 *(Raised in iteration 05 follow-ups.)*
+      - Iteration 10 added a D64 extraction helper so recovered disk images can be parsed directly within the repository tooling.
 
 ## Design Tasks
-- [ ] Outline a host-platform abstraction layer for disk, console, and modem I/O
+- [x] Outline a host-platform abstraction layer for disk, console, and modem I/O
       that can mimic Commodore DOS semantics used by the BASIC program.
-- [ ] Define an approach for representing the `im` BASIC program's control flow in
+- [x] Define an approach for representing the `im` BASIC program's control flow in
       a modern language (e.g., module decomposition, state machine extraction).
 
 ## Open Questions for Stakeholders
