@@ -18,6 +18,7 @@
       *(Iteration 04 details the lookup-and-table workflow.)*
 - [ ] Recover the missing overlay PRGs (`setup`, `ml.extra`, etc.) so the remaining `lbl_c2e5` variables (`D5`, `AK`, `MW`, `C1`–`C3`, `KP`) can be traced and documented. The sysop manual confirms `setup` runs immediately after `im` to DIM variables and load configuration records, so sourcing the original boot disks is prerequisite to finishing the table audit.【F:v1.2/docs/image-1_2b-sysop-manual.adoc†L6864-L6883】 *(Raised in iteration 05 follow-ups.)*
       - Iteration 10 added a D64 extraction helper so recovered disk images can be parsed directly within the repository tooling.
+      - Iteration 11 provides placeholder stubs for `setup` and `ml.extra` so host prototypes have deterministic defaults while the authentic PRGs remain missing.【F:v1.2/core/setup.stub.txt†L1-L63】【F:v1.2/source/ml_extra_stub.asm†L1-L91】
 
 ## Design Tasks
 - [x] Outline a host-platform abstraction layer for disk, console, and modem I/O

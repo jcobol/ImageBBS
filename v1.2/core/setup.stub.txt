@@ -1,0 +1,65 @@
+0 rem IMAGE BBS 1.2B "setup" overlay (stub)
+1 rem ---------------------------------------------------------------
+2 rem The original BASIC program that dimensions runtime variables,
+3 rem reads configuration records (bd.data, u.config, e.data, e.stats),
+4 rem and then RUNs the main BBS has not been recovered. This listing
+5 rem approximates the side effects documented in the Image 1.2B manual
+6 rem and observed from callers inside "im" so that host-side ports can
+7 rem rely on deterministic defaults until the authentic source is found.
+8 rem ---------------------------------------------------------------
+
+10 rem Stage 1.  Dimension arrays seeded by the machine-language bootstrap.
+20 dim dv%(6),dr%(6),bf(6),st(40),tt$(254),ud$(32),co$(16),plus$(8)
+30 for dr=1 to 6:dv%(dr)=0:dr%(dr)=0:bf(dr)=-1:next
+40 for idx=1 to 32:ud$(idx)="":next
+50 for idx=1 to 16:co$(idx)="":next
+60 zz=0:pm=0:pf=0:em=0:dc=0:uc=0:bd=0:bu=0:cr=0:ps=0:rp=0
+70 d3$="":pp$="":lt$="00/00/00 00:00":fl$="":jn$="":ld$="LD"
+80 cc$="IM":bn$="IMAGE BBS":po$="{pound}READY{pound}":mc=0
+90 gosub 2000:gosub 3000:gosub 4000
+
+100 rem Stage 2.  Default drive map in lieu of bd.data (sysop manual p. 6-11).
+110 data 8,0,8,1,9,0,9,1,10,0,11,0,"LD"
+120 for dr=1 to 6
+130   read dv%(dr),dr%(dr)
+140 next:read ld$
+150 dr=1:d1%=dv%(1):d2%=dr%(1):dv%=dv%(1):dr%=dr%(1)
+160 dr$=mid$(str$(dr%(dr)),2)+":"
+170 rem Placeholder for fifth drive tuple referenced via D5.
+180 d5=8:d5%=0
+
+200 rem Stage 3.  SysOp profile approximated from u.config record 1.
+210 data "SYSOP","Image BBS","SYSOP","PASSWORD","SYSOP","SYSOP","555-1212"
+220 read i1$,i2$,na$,pw$,ff$,ll$,ph$
+230 ld$="IM":ac%=1:ct%=0:tc%=0:co%=0
+240 ll%=60:ul=30:lf=30:em=0:dc=0:uc=0:bd=0:bu=0:cr=25
+250 ps=0:rp=0:lt$="00/00/00 00:00":fl$="":jn$="N":id=1
+260 rem Variables only seen in later overlays – stub them explicitly.
+270 d5=8:d5%=0:ak$="":ak=0:mw=0:mw%=0
+280 c1$="{cyan}":c2$="{yellow}":c3$="{white}":kp$="":kp=0
+
+300 rem Stage 4.  Message and statistics counters from e.data/e.stats.
+310 data 0,0,0,0,"NO CALLERS YET","",0,"00/00/00 00:00","",0,0,0
+320 read st(1),st(2),st(3),st(4),d3$,tt$,tt,lt$,pp$,p1%,p2%,p3%
+330 rem Additional REL records (e.stats) are left zeroed; the real program
+340 rem walks the first 30 entries to seed BAR statistics on boot.
+
+400 rem Stage 5.  In production, setup would load screen overlays and
+410 rem swap in ml.extra/ml.editor before running the main dispatcher.
+420 rem Without the original assets we only record the intent.
+430 plus$(1)="+.lo":plus$(2)="+.modem":plus$(3)="+.lb move":plus$(4)="+.lb chat"
+440 plus_files=4
+
+9000 rem Stage 6.  Transfer control to the main Image program.
+9010 rem The genuine overlay ends with RUN or GOTO to enter "im".
+9020 rem A host implementation should jump into its dispatcher here.
+9030 end
+
+2000 rem placeholder to emphasise staged loader - nothing to execute.
+2010 return
+
+3000 rem placeholder for configuration-driven feature toggles.
+3010 return
+
+4000 rem placeholder for additional disk overlays invoked by setup.
+4010 return
