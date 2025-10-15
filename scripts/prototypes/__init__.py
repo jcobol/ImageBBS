@@ -7,7 +7,9 @@ from .device_context import (
     DeviceError,
     DiskDrive,
     LogicalChannel,
+    LoopbackModemTransport,
     Modem,
+    ModemTransport,
 )
 from .disk_image import D64Image, DirectoryEntry
 from .message_editor import (
@@ -47,6 +49,8 @@ __all__ = [
     "LogicalChannel",
     "MessageEditor",
     "Modem",
+    "LoopbackModemTransport",
+    "ModemTransport",
     "PrimeTimeWindow",
     "SessionContext",
     "SetupDefaults",
