@@ -12,6 +12,11 @@
       bootstrap state and vector hooks.)*
 - [x] Trace RS-232 routines in `ml.rs232-192k.asm` to document expectations for
       modem hardware abstraction. *(See SwiftLink notes in iteration 03.)*
+- [x] Confirm SwiftLink receive buffer geometry and wrap behaviour.
+      *(Iteration 04 characterises the `$cb00` ring buffer.)*
+- [x] Document how `sub_c2d4`/`gotocd4f` seed BASIC variables during bootstrap.
+      *(Iteration 04 details the lookup-and-table workflow.)*
+- [ ] Recover the missing overlay PRGs (`setup`, `ml.extra`, etc.) so the remaining `lbl_c2e5` variables (`D5`, `AK`, `MW`, `C1`–`C3`, `KP`) can be traced and documented. The sysop manual confirms `setup` runs immediately after `im` to DIM variables and load configuration records, so sourcing the original boot disks is prerequisite to finishing the table audit.【F:v1.2/docs/image-1_2b-sysop-manual.adoc†L6864-L6883】 *(Raised in iteration 05 follow-ups.)*
 
 ## Design Tasks
 - [ ] Outline a host-platform abstraction layer for disk, console, and modem I/O
