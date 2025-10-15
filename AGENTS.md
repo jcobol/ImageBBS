@@ -21,3 +21,9 @@
 - The BASIC loader sets the main-loop vector to the `stack` routine in `v1.2/source/image12.asm`. When the program loads, execution begins in this routine, which clears the screen, prints the Image 1.2 banner, loads the `ml 1.2` machine-language module, and then jumps to `$c000`.
 - Within the machine-language module, the initialization entry point is label `lbl_c000` in `v1.2/source/ml-1_2-y2k.asm`. It immediately jumps to `gotoc00b`, which completes the startup sequence by configuring loader parameters and continuing system initialization.
 
+## Codex Collaboration Tips
+- Review the iteration logs in `docs/porting/` before starting a new task. They capture the latest findings about the bootstrap process, SwiftLink integration, and outstanding research questions.
+- Use the task backlog at `docs/porting/task-backlog.md` to understand current priorities. When closing an item, reference the specific iteration note or code change that satisfied the task.
+- Prefer incremental documentation and code updates per iteration. Each pull request should link newly discovered behaviors back to the relevant routines in `v1.2/source/` to ease future reverse-engineering passes.
+- When scripting analyses (for example, tracing ROM calls or decoding binary assets), place helper scripts in `scripts/` and document their usage in the iteration log so others can reproduce the workflow.
+
