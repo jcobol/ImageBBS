@@ -89,11 +89,22 @@ class DriveInventory:
 
 @dataclass(frozen=True)
 class PrimeTimeWindow:
-    """Represents the prime-time configuration pulled from ``e.data`` record 20."""
+    """Prime-time configuration stored in ``e.data`` record 20."""
 
-    enabled: bool
-    start: int
-    end: int
+    # The first number toggles prime-time behaviour when non-zero and may also
+    # encode the minutes-per-call allotment applied during that window in the
+    # original program. The recovered BASIC listing reuses ``pt%`` for runtime
+    # state, so the persisted value lives in ``p1%`` instead.
+
+    indicator: int
+    start_hour: int
+    end_hour: int
+
+    @property
+    def is_enabled(self) -> bool:
+        """Return ``True`` when prime time restrictions are active."""
+
+        return self.indicator > 0
 
 
 @dataclass(frozen=True)
@@ -161,7 +172,7 @@ class SetupDefaults:
             last_name="SYSOP",
             phone="555-1212",
         )
-        prime_time = PrimeTimeWindow(enabled=False, start=0, end=0)
+        prime_time = PrimeTimeWindow(indicator=0, start_hour=0, end_hour=0)
         highest_device_minus_seven = inventory.highest_device_minus_seven
         drive_count = inventory.device_count
         return cls(
