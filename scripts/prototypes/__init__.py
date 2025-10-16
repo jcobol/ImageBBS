@@ -32,6 +32,11 @@ from .setup_defaults import (
     SysopProfile,
     derive_drive_inventory,
 )
+from .ml_extra_defaults import (
+    MLExtraDefaults,
+    MacroDirectoryEntry,
+    default_overlay_path,
+)
 
 __all__ = [
     "ChannelDescriptor",
@@ -55,10 +60,13 @@ __all__ = [
     "Modem",
     "LoopbackModemTransport",
     "ModemTransport",
+    "MLExtraDefaults",
+    "MacroDirectoryEntry",
     "PrimeTimeWindow",
     "SessionContext",
     "SetupDefaults",
     "SysopProfile",
     "derive_drive_inventory",
+    "default_overlay_path",
     "TransitionError",
 ]
