@@ -23,3 +23,4 @@
 - Use the task backlog at `docs/porting/task-backlog.md` to understand current priorities. When closing an item, reference the specific iteration note or code change that satisfied the task.
 - Prefer incremental updates to documentation and code per iteration. Pull requests should tie new findings back to the relevant routines in `v1.2/source/` so future reverse-engineering passes have context.
 - When scripting analyses, place helpers in `scripts/prototypes/` and document their usage in the iteration log. Reuse shared helpers such as `ml_extra_defaults` and `ml_extra_sanity` so overlay metadata, hashes, and reports stay aligned across the CLI surface area.
+- Surface overlay metadata via `ml_extra_dump_macros --metadata` or `ml_extra_disasm --metadata` when reviewing macro changes; both commands now print the flag dispatch summary, tail text, and per-slot hashes alongside the lightbar/palette defaults recovered by `MLExtraDefaults`.
