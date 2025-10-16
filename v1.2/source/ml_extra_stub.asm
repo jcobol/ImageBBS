@@ -93,6 +93,8 @@ macro_runtime_targets:
         .word $c153, $c171, $c193, $c1ab, $c1e6, $c1f4, $c20d, $c225, $c230, $c24a, $c261, $c29d
 
 ; Raw macro payloads lifted from the overlay for host inspection.
+; See docs/porting/iteration-23.md for the PETSCII transcription of slots
+; $04/$09/$0d/$14 captured via scripts/prototypes/ml_extra_dump_macros.py.
 
 macro_payload_04:
         .byte $c2,$9d,$66,$c2,$bd,$e6,$c2,$9d,$e7,$c2,$bd,$67,$c3,$9d,$68,$c3

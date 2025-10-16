@@ -141,6 +141,24 @@ tooling can diff against the source overlay during CI runs.【F:v1.2/source/ml_e
 ## Macro payload dump helper
 `scripts/prototypes/ml_extra_dump_macros.py` exports the same pointer directory as structured PETSCII strings so transcription work can focus on the byte-for-byte payloads rather than the surrounding report formatting.【F:scripts/prototypes/ml_extra_dump_macros.py†L1-L103】 It accepts optional `--slot` filters (decimal, `$`-prefixed hex with quoting, or `0x` literals) and prints each selection with its runtime address, byte length, complete hex listing, and decoded PETSCII, allowing the long-form flag targets at `$c153/$c171/$c193/$c1ab` to be captured verbatim for later documentation.【8f7739†L1-L7】 The tool also supports `--json` for machine-readable dumps, which will simplify the later step that replaces the stubbed constants with the recovered overlay data.
 
+Running `python -m scripts.prototypes.ml_extra_dump_macros --slot '$04' --slot '$09' --slot '$0d' --slot '$14'` captures the archival bytes and PETSCII rendering for the four populated slots in the `$c1xx` table.【ec6373†L1-L9】 The decoded payloads align with the stubbed constants in `v1.2/source/ml_extra_stub.asm`, giving the transcription a stable anchor in source control for later audits.【F:v1.2/source/ml_extra_stub.asm†L73-L122】
+
+### PETSCII transcription for slots `$04/$09/$0d/$14`
+The dumps below quote both the raw byte streams and the helper’s PETSCII decode. Each entry links back to the archival offsets and the stub labels (`macro_payload_04`, `macro_payload_09`, `macro_payload_13`, and `macro_payload_20`) so the documentation stays tied to the mirror shipped in the bootstrap.
+
+* **Slot `$04` @ `$c153`** (`macro_payload_04`)
+  * Bytes: ``$c2 $9d $66 $c2 $bd $e6 $c2 $9d $e7 $c2 $bd $67 $c3 $9d $68 $c3 $ca $ec $e2 $c1 $d0 $e2 $a5 $03 $9d $e5 $c1 $a5 $04 $9d $66 $c2 $a5 $05 $9d $e7 $c2 $a5 $06 $9d $68 $c3 $ad $e1 $c1 $c9 $80 $f0 $03 $ee $e1 $c1 $60 $e8 $ec $e1 $c1 $90 $a2 $e0 $80 $90 $d7 $60 $60 $a2 $00``
+  * PETSCII: ``B{$$9d}fB{$$9d}gB{$$9d}hCJlbAPb%{$$03}{$$9d}eA%{$$04}{$$9d}fB%{$$05}{$$9d}gB%{$$06}{$$9d}hC-aAI{$$80}p{$$03}naA`hlaA{$$90}"`{$$80}{$$90}W``"``
+* **Slot `$09` @ `$c171`** (`macro_payload_09`)
+  * Bytes: ``$66 $c2 $a5 $05 $9d $e7 $c2 $a5 $06 $9d $68 $c3 $ad $e1 $c1 $c9 $80 $f0 $03 $ee $e1 $c1 $60 $e8 $ec $e1 $c1 $90 $a2 $e0 $80 $90 $d7 $60 $60 $a2 $00``
+  * PETSCII: ``fB%{$$05}{$$9d}gB%{$$06}{$$9d}hC-aAI{$$80}p{$$03}naA`hlaA{$$90}"`{$$80}{$$90}W``"``
+* **Slot `$0d` @ `$c193`** (`macro_payload_13`)
+  * Bytes: ``$60 $a2 $00``
+  * PETSCII: ``\`"``
+* **Slot `$14` @ `$c1ab`** (`macro_payload_20`)
+  * Bytes: ``$68 $c3 $85 $06 $8e $e2 $c1 $a0 $00``
+  * PETSCII: ``hC{$$85}{$$06}{$$8e}bA``
+
 ## Macro handler disassembly helper
 The new `ml_extra_disasm` prototype wraps the repository opcode tables so macro payloads can be rendered as 6502 assembly without running the full PRG disassembler.【F:scripts/prototypes/ml_extra_disasm.py†L1-L395】 Slot 4’s output shows the routine copying source/destination pointers into `$c1e5/$c266/$c2e7/$c368` before incrementing `$c1e1`, matching the insertion logic traced earlier in the overlay disassembly.【314f88†L1-L33】
 
