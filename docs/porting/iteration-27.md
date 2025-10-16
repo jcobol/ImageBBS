@@ -6,6 +6,8 @@
 
 ## Findings
 - `ml_extra_sanity.py` now reports the overlay's lightbar defaults and palette alongside the macro slot diff so the regression output reflects the complete data set transplanted into the stub.【F:scripts/prototypes/ml_extra_sanity.py†L1-L119】
+- The macro-dump and disassembly helpers gained a `--metadata` switch so reviewers can surface the lightbar, palette, and hardware tables without sifting through the JSON sanity output.【F:scripts/prototypes/ml_extra_dump_macros.py†L1-L132】【F:scripts/prototypes/ml_extra_disasm.py†L1-L204】
+- `decode_petscii` renders control bytes as `{${hex}}` placeholders again, ensuring swapped-in control sequences stay readable; dedicated unit tests cover the new behaviour.【F:scripts/prototypes/ml_extra_extract.py†L1-L120】【F:tests/test_ml_extra_extract.py†L1-L20】
 - Running the helper highlights the delta between the recovered macro payloads and the removed placeholders while noting that all twelve slots remain null-terminated and ready for host consumption.【853914†L1-L18】
 
 ## Next steps

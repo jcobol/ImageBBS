@@ -11,8 +11,10 @@ if __package__ in {None, ""}:
 
     sys.path.append(str(Path(__file__).resolve().parents[2]))
     from scripts.prototypes import ml_extra_defaults  # type: ignore
+    from scripts.prototypes import ml_extra_reporting  # type: ignore
 else:  # pragma: no cover - exercised during package imports
     from . import ml_extra_defaults
+    from . import ml_extra_reporting
 
 OP_INFO: Dict[int, Tuple[str, str]] = {
     0x00: ("brk", "imp"),
@@ -369,6 +371,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         action="append",
         help="Macro slot to disassemble (defaults to all)",
     )
+    parser.add_argument(
+        "--metadata",
+        action="store_true",
+        help="Print lightbar/palette/hardware metadata before the disassembly",
+    )
     return parser.parse_args(argv)
 
 
@@ -376,6 +383,12 @@ def main(argv: Sequence[str] | None = None) -> None:
     args = parse_args(argv)
     defaults = ml_extra_defaults.MLExtraDefaults.from_overlay(args.overlay)
     entries_by_slot = {entry.slot: entry for entry in defaults.macros}
+
+    if args.metadata:
+        metadata = ml_extra_reporting.collect_overlay_metadata(defaults)
+        for line in ml_extra_reporting.format_overlay_metadata(metadata):
+            print(line)
+        print()
 
     slots = args.slot or sorted(entries_by_slot)
     missing = [slot for slot in slots if slot not in entries_by_slot]
