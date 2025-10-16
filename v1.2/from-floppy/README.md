@@ -24,4 +24,13 @@ BASIC/machine-language streams visible in the repository:
 ```
 
 Re-running the command against the PRG assets will refresh the listings if new
-disks or cleanups are sourced in the future.
+disks or cleanups are sourced in the future. When VICE tooling is not available,
+`scripts/decode_basic_prg.py` provides an equivalent pure-Python pipeline:
+
+```
+python scripts/decode_basic_prg.py v1.2/from-floppy/setup -o v1.2/source/setup.bas
+```
+
+The helper walks the token stream, expands keywords, and preserves PETSCII
+control bytes as `{${hex}}` escapes so round-tripping through the repository
+remains lossless.
