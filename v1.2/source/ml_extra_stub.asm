@@ -71,6 +71,21 @@ underline_default:
 editor_palette_default:
         .byte $0a, $02, $08, $00
 
+; XOR-encoded flag directory records and tail copied from @$d9c3.
+; The decoded PETSCII banner is stored separately for readability.
+flag_directory_block:
+        .byte $74, $a3, $a0, $cf, $c7, $36, $32, $3e, $38, $3a, $df, $3d, $3d, $2c,
+        .byte $df, $29, $ce, $d1, $cd, $df, $2c, $dc, $df, $a3, $db, $be, $a3, $dc,
+        .byte $cb, $a3, $da, $bd, $74, $a3, $a0, $cf, $cb, $d7, $3c, $d6, $ce, $c6,
+        .byte $c7, $c6, $df, $31, $3a, $28, $df, $36, $32, $3e, $38, $3a, $df, $2c,
+        .byte $30, $39, $2b, $28, $3e, $2d, $3a, $d3, $df, $36, $31, $3c, $d1, $74
+
+; PETSCII decoding of the overlay banner tail (1989 NEW IMAGE SOFTWARE, INC.).
+flag_directory_tail_decoded:
+        .byte $31, $39, $38, $39, $20, $ce, $c5, $d7, $20, $c9, $cd, $c1, $c7, $c5,
+        .byte $20, $d3, $cf, $c6, $d4, $d7, $c1, $d2, $c5, $2c, $20, $c9, $ce, $c3,
+        .byte $2e, $8b
+
 ; Macro pointer directory exported by ml.extra (@$d116 / @$d123).
 macro_slot_ids:
         .byte $04, $09, $0d, $14, $15, $16, $17, $18, $19, $0e, $0f, $02
