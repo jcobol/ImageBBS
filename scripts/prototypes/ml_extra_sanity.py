@@ -86,6 +86,8 @@ def run_checks(overlay_path: Path | None = None) -> dict[str, object]:
     terminators = [entry.payload[-1] if entry.payload else None for entry in defaults.macros]
     return {
         "overlay_load_address": f"${defaults.load_address:04x}",
+        "lightbar": defaults.lightbar.as_dict(),
+        "palette": defaults.palette.as_dict(),
         "overlay_macro_count": len(defaults.macros),
         "stub_macro_count": len(stub_macros),
         "comparisons": [
@@ -113,6 +115,12 @@ def format_report(report: dict[str, object]) -> str:
     lines = [
         "Recovered overlay summary:",
         f"  load address: {report['overlay_load_address']}",
+        "  lightbar   : "
+        + ", ".join(
+            f"{name}={value}"
+            for name, value in report["lightbar"].items()
+        ),
+        "  palette    : " + ", ".join(report["palette"]["colours"]),
         f"  macro slots : {report['overlay_macro_count']}",
         f"  stub macros : {report['stub_macro_count']}",
     ]

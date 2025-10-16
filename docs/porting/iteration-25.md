@@ -9,5 +9,5 @@
 - The helper continues to emit a best-effort PETSCII transcription for quick inspection, but the raw byte arrays clarify that the authentic overlay stores macro bodies rather than human-readable prose, so the stub will need to embed those binary sequences directly.【F:scripts/prototypes/ml_extra_extract.py†L42-L94】
 
 ## Next steps
-- Decode the `$c200` lightbar tables and palette/macro metadata so `ml_extra_stub.asm` can be populated with the authentic defaults.
-- Translate the captured PETSCII control codes into the `{CBM-…}` notation used throughout the porting logs to ease manual review of the binary blobs.
+- Cross-check the transplanted lightbar, palette, and macro data against the live overlay in emulation to confirm no bytes were miscopied.
+- Continue translating the PETSCII control codes into `{CBM-…}` notation for documentation parity even though the stub now embeds the binary payloads directly.
