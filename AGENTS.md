@@ -29,6 +29,8 @@ To produce a list of tasks, you MUST follow these formatting rules EXACTLY. Any 
 
 # Codex Output contract (no exceptions)
 
+If the user's request starts with the word "Plan", your response must include a set of tasks in the following format.
+
 For EACH task, output EXACTLY this 4-line block, including the linefeeds:
 
 <LINEFEED>
