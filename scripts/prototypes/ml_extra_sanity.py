@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Sequence
+from typing import Dict, Iterable, List, Sequence, Tuple
 
 if __package__ in {None, ""}:
     import sys
@@ -52,6 +52,34 @@ class MacroComparison:
     stub_preview: str | None
 
 
+@dataclass
+class StubStaticData:
+    """Structured view of fixed data copied into ``ml_extra_stub.asm``."""
+
+    lightbar: Tuple[int, ...]
+    underline: Tuple[int, ...]
+    palette: Tuple[int, ...]
+    flag_directory_block: Tuple[int, ...]
+    flag_directory_tail: Tuple[int, ...]
+
+    @property
+    def flag_tail_text(self) -> str:
+        return ml_extra_defaults.ml_extra_extract.decode_petscii(self.flag_directory_tail)
+
+
+def _parse_numeric_value(token: str) -> int:
+    chunk = token.strip()
+    if not chunk:
+        raise ValueError("empty numeric token")
+    if chunk.startswith("$"):
+        return int(chunk[1:], 16)
+    if chunk.lower().startswith("0x"):
+        return int(chunk[2:], 16)
+    if chunk.startswith("%"):
+        return int(chunk[1:], 2)
+    return int(chunk, 10)
+
+
 def _parse_numeric_tokens(spec: str) -> List[int]:
     """Return integer values extracted from a ``.byte``/``.word`` line."""
 
@@ -60,14 +88,20 @@ def _parse_numeric_tokens(spec: str) -> List[int]:
         chunk = token.strip()
         if not chunk:
             continue
-        if chunk.startswith("$"):
-            values.append(int(chunk[1:], 16))
-        elif chunk.lower().startswith("0x"):
-            values.append(int(chunk[2:], 16))
-        elif chunk.startswith("%"):
-            values.append(int(chunk[1:], 2))
+        values.append(_parse_numeric_value(chunk))
+    return values
+
+
+def _parse_stub_numeric_tokens(spec: str, symbols: Dict[str, int]) -> List[int]:
+    values: list[int] = []
+    for token in spec.split(","):
+        chunk = token.strip()
+        if not chunk:
+            continue
+        if chunk in symbols:
+            values.append(symbols[chunk])
         else:
-            values.append(int(chunk, 10))
+            values.append(_parse_numeric_value(chunk))
     return values
 
 
@@ -128,6 +162,56 @@ def parse_stub_macro_directory(stub_path: Path) -> List[StubMacroEntry]:
     return entries
 
 
+def parse_stub_static_data(stub_path: Path) -> StubStaticData:
+    """Recover fixed data tables stored in ``ml_extra_stub.asm``."""
+
+    targets = {
+        "lightbar_default_bitmaps": [],
+        "underline_default": [],
+        "editor_palette_default": [],
+        "flag_directory_block": [],
+        "flag_directory_tail_decoded": [],
+    }
+
+    current_label: str | None = None
+    symbols: Dict[str, int] = {}
+    for raw_line in stub_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.split(";", 1)[0].rstrip()
+        if not line:
+            continue
+        stripped = line.strip()
+        if "=" in stripped and not stripped.startswith(".") and ":" not in stripped:
+            name, value = (part.strip() for part in stripped.split("=", 1))
+            if name and value:
+                try:
+                    symbols[name] = _parse_numeric_value(value)
+                except ValueError:
+                    pass
+        if line.endswith(":"):
+            current_label = line[:-1]
+            continue
+        if current_label not in targets:
+            continue
+        if stripped.startswith(".byte"):
+            targets[current_label].extend(
+                _parse_stub_numeric_tokens(stripped[len(".byte") :], symbols)
+            )
+
+    missing = [label for label, values in targets.items() if not values]
+    if missing:
+        raise ValueError(
+            "failed to recover stub tables: " + ", ".join(sorted(missing))
+        )
+
+    return StubStaticData(
+        lightbar=tuple(targets["lightbar_default_bitmaps"]),
+        underline=tuple(targets["underline_default"]),
+        palette=tuple(targets["editor_palette_default"]),
+        flag_directory_block=tuple(targets["flag_directory_block"]),
+        flag_directory_tail=tuple(targets["flag_directory_tail_decoded"]),
+    )
+
+
 def summarise_macros(
     defaults: ml_extra_defaults.MLExtraDefaults,
     stub_macros: Sequence[StubMacroEntry],
@@ -174,15 +258,76 @@ def summarise_macros(
     return comparisons, stub_only
 
 
+def _hex_bytes(values: Sequence[int]) -> List[str]:
+    return [f"${value:02x}" for value in values]
+
+
+def _preview_bytes(values: Sequence[int], limit: int = 8) -> str:
+    prefix = ", ".join(_hex_bytes(values)[:limit])
+    if len(values) > limit:
+        prefix += ", …"
+    return prefix
+
+
+def _sequence_report(
+    expected: Sequence[int], actual: Sequence[int]
+) -> Dict[str, object]:
+    expected_tuple = tuple(expected)
+    actual_tuple = tuple(actual)
+    return {
+        "matches": expected_tuple == actual_tuple,
+        "expected": {
+            "bytes": _hex_bytes(expected_tuple),
+            "length": len(expected_tuple),
+            "preview": _preview_bytes(expected_tuple),
+        },
+        "actual": {
+            "bytes": _hex_bytes(actual_tuple),
+            "length": len(actual_tuple),
+            "preview": _preview_bytes(actual_tuple),
+        },
+    }
+
+
+def _tail_report(
+    expected: Sequence[int], actual: Sequence[int]
+) -> Dict[str, object]:
+    report = _sequence_report(expected, actual)
+    report["expected"]["text"] = ml_extra_defaults.ml_extra_extract.decode_petscii(
+        expected
+    )
+    report["actual"]["text"] = ml_extra_defaults.ml_extra_extract.decode_petscii(
+        actual
+    )
+    return report
+
+
 def run_checks(overlay_path: Path | None = None) -> dict[str, object]:
     """Compute diff metadata for regression review."""
 
     defaults = ml_extra_defaults.MLExtraDefaults.from_overlay(overlay_path)
     stub_path = ml_extra_defaults._REPO_ROOT / "v1.2/source/ml_extra_stub.asm"
     stub_macros = parse_stub_macro_directory(stub_path)
+    stub_static = parse_stub_static_data(stub_path)
 
     comparisons, stub_only = summarise_macros(defaults, stub_macros)
     terminators = [entry.payload[-1] if entry.payload else None for entry in defaults.macros]
+    lightbar_expected = defaults.lightbar.bitmaps
+    underline_expected = (
+        defaults.lightbar.underline_char,
+        defaults.lightbar.underline_color,
+    )
+    stub_static_report = {
+        "lightbar": _sequence_report(lightbar_expected, stub_static.lightbar),
+        "underline": _sequence_report(underline_expected, stub_static.underline),
+        "palette": _sequence_report(defaults.palette.colours, stub_static.palette),
+        "flag_directory_block": _sequence_report(
+            defaults.flag_directory_block, stub_static.flag_directory_block
+        ),
+        "flag_directory_tail": _tail_report(
+            defaults.flag_directory_tail, stub_static.flag_directory_tail
+        ),
+    }
     return {
         "overlay_load_address": f"${defaults.load_address:04x}",
         "lightbar": defaults.lightbar.as_dict(),
@@ -194,6 +339,7 @@ def run_checks(overlay_path: Path | None = None) -> dict[str, object]:
             "bytes": [f"${value:02x}" for value in defaults.flag_directory_tail],
             "text": defaults.flag_directory_text,
         },
+        "stub_static": stub_static_report,
         "overlay_macro_count": len(defaults.macros),
         "stub_macro_count": len(stub_macros),
         "macro_directory": [
@@ -318,6 +464,43 @@ def format_report(report: dict[str, object]) -> str:
     lines.append("Flag directory tail:")
     lines.append(f"  bytes: {', '.join(tail['bytes'])}")
     lines.append(f"  text : {tail['text']}")
+
+    stub_static: Dict[str, Dict[str, object]] = report["stub_static"]  # type: ignore[assignment]
+    lines.append("")
+    lines.append("Stub static-data verification:")
+    for key, label in [
+        ("lightbar", "lightbar defaults"),
+        ("underline", "underline defaults"),
+        ("palette", "editor palette"),
+        ("flag_directory_block", "flag directory block"),
+    ]:
+        entry: Dict[str, object] = stub_static[key]  # type: ignore[index]
+        status = "match" if entry["matches"] else "DIFF"  # type: ignore[index]
+        expected = entry["expected"]["preview"]  # type: ignore[index]
+        actual = entry["actual"]["preview"]  # type: ignore[index]
+        lengths = (
+            f"exp={entry['expected']['length']}"  # type: ignore[index]
+            f" act={entry['actual']['length']}"  # type: ignore[index]
+        )
+        lines.append(
+            f"  {label:<22}: {status} | expected={expected} | actual={actual} | {lengths}"
+        )
+
+    tail_check: Dict[str, object] = stub_static["flag_directory_tail"]  # type: ignore[index]
+    tail_status = "match" if tail_check["matches"] else "DIFF"  # type: ignore[index]
+    expected_text = tail_check["expected"]["text"]  # type: ignore[index]
+    actual_text = tail_check["actual"]["text"]  # type: ignore[index]
+    tail_expected_preview = tail_check["expected"]["preview"]  # type: ignore[index]
+    tail_actual_preview = tail_check["actual"]["preview"]  # type: ignore[index]
+    lines.append(
+        f"  flag directory tail   : {tail_status} | expected={tail_expected_preview}"
+        f" | actual={tail_actual_preview}"
+    )
+    if actual_text != expected_text:
+        lines.append(f"    expected text='{expected_text}'")
+        lines.append(f"    actual text  ='{actual_text}'")
+    else:
+        lines.append(f"    text='{actual_text}'")
 
     directory: Iterable[dict[str, object]] = report["macro_directory"]  # type: ignore[assignment]
     comparisons: Iterable[dict[str, object]] = report["comparisons"]  # type: ignore[assignment]

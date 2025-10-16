@@ -217,6 +217,7 @@ class MLExtraDefaults:
     palette: EditorPalette
     flag_records: Tuple[FlagRecord, ...]
     flag_directory_tail: Tuple[int, ...]
+    flag_directory_block: Tuple[int, ...]
     flag_dispatch: FlagDispatchTable
     macros: Tuple[MacroDirectoryEntry, ...]
     hardware: HardwareDefaults
@@ -267,7 +268,7 @@ class MLExtraDefaults:
             ),
         )
 
-        flag_records, flag_tail = _decode_flag_table(memory, load_address)
+        flag_records, flag_tail, flag_block = _decode_flag_table(memory, load_address)
         flag_dispatch = _decode_flag_dispatch(memory, load_address)
 
         hardware = HardwareDefaults(
@@ -296,12 +297,13 @@ class MLExtraDefaults:
             flag_dispatch=flag_dispatch,
             macros=macros,
             hardware=hardware,
+            flag_directory_block=flag_block,
         )
 
 
 def _decode_flag_table(
     memory: Sequence[int], load_address: int
-) -> Tuple[Tuple[FlagRecord, ...], Tuple[int, ...]]:
+) -> Tuple[Tuple[FlagRecord, ...], Tuple[int, ...], Tuple[int, ...]]:
     """Return the flag records and trailing directory bytes from the overlay."""
 
     raw = _slice_memory(memory, load_address, _FLAG_TABLE_ADDR, _FLAG_TABLE_LENGTH)
@@ -356,7 +358,7 @@ def _decode_flag_table(
         index = end
 
     trailing = tuple(table[index:])
-    return tuple(records), trailing
+    return tuple(records), trailing, tuple(raw)
 
 
 def _decode_flag_dispatch(
