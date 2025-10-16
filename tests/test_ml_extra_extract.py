@@ -22,7 +22,7 @@ def test_decode_petscii_handles_printable_braces() -> None:
 
 def test_decode_petscii_formats_control_codes() -> None:
     payload = [0x03, 0x9D, 0x00]
-    assert ml_extra_extract.decode_petscii(payload) == "{$03}{$9d}"
+    assert ml_extra_extract.decode_petscii(payload) == "{CBM-$03}{CBM-$9d}"
 
 
 def test_decode_petscii_strips_high_bit_for_ascii() -> None:

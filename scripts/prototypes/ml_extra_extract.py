@@ -62,7 +62,7 @@ _PRINTABLE_EXTRA = {
 def _control_repr(byte: int) -> str:
     """Return a readable placeholder for PETSCII control codes."""
 
-    return f"{{${byte:02x}}}"
+    return f"{{CBM-${byte:02x}}}"
 
 
 def _decode_petscii_byte(byte: int) -> str | None:

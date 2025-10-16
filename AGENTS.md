@@ -1,30 +1,25 @@
 # Agent Notes for ImageBBS Repository
 
 ## Entry Point Information
-- The BASIC loader sets the main-loop vector to the `stack` routine in `v1.2/source/image12.asm`. When the program loads, execution begins in this routine, which clears the screen, prints the Image 1.2 banner, stages the filename `ml 1.2`, and then jumps to `$c000` after loading the machine-language module.
-- Within the machine-language module, the initialization entry point is label `lbl_c000` in `v1.2/source/ml-1_2-y2k.asm`. It immediately jumps to `gotoc00b`, which completes the startup sequence by configuring loader parameters and continuing system initialization.
+- The BASIC loader in `v1.2/source/image12.asm` vectors execution to the `stack` routine, which clears the display, prints the Image 1.2 banner, stages the `ml 1.2` module, and jumps into the machine-language overlay at `$c000`.
+- Inside the overlay the startup path begins at label `lbl_c000` in `v1.2/source/ml-1_2-y2k.asm`, immediately tail-calling `gotoc00b` to finalise loader configuration before continuing with system initialisation.
 
 ## Porting Considerations
-- ImageBBS 1.2 is tightly coupled to the Commodore 64 environment. The BASIC loader immediately manipulates Kernal vectors and hands off to 6502 machine code that assumes specific zero-page layouts, ROM entry points, and memory-mapped hardware.
-- Assembly modules patch Kernal vectors and interact directly with CIA/ACIA registers (e.g., for the SwiftLink serial driver). Porting requires reimplementing interrupt handlers, buffering, and modem control logic rather than translating syntax line-for-line.
-- Commodore BASIC routines interleave user features with direct register and screen memory manipulation (`POKE`, `OPEN`, `PRINT#`). Higher-level behavior depends on those side effects, so understanding each routine’s intent is a prerequisite to any rewrite.
-- Treat porting as a ground-up reimplementation: document observable behavior under emulation, design abstractions for storage/networking/terminal I/O in the target platform, and rebuild functionality using that specification. An alternative is embedding the original code in a C64 emulator and exposing higher-level APIs, which trades extensibility for quicker integration.
+- ImageBBS 1.2 targets the Commodore 64 hardware directly. The BASIC loader patches Kernal vectors and assumes the machine-language module will run at the canonical memory layout.
+- Assembly routines interact with CIA/ACIA registers (for example the SwiftLink driver), manipulate zero-page buffers, and depend on ROM entry points. Porting requires reimplementing interrupt handlers, buffering, and modem control flows rather than translating syntax line-for-line.
+- Commodore BASIC code interleaves user features with direct register and screen-memory manipulation (`POKE`, `OPEN`, `PRINT#`). Higher-level behaviour depends on those side effects, so confirm the routines’ intent under emulation before attempting rewrites.
+- Treat a port as a ground-up reimplementation: document observed behaviour under emulation, design abstractions for storage/networking/terminal I/O on the target platform, and rebuild functionality from that specification. Embedding the original code in a C64 emulator is an alternative that trades extensibility for rapid integration.
 
 ## Research & Task Tracking Guidance
-- Maintain a “porting log” that records findings about routine intent, hardware interactions, open questions, and decisions. Link each entry to corresponding code locations so future contributors can avoid repeating reverse-engineering work.
-- Keep a living task backlog (Markdown checklist, issue tracker, etc.) that references the porting log. This keeps research synchronized with actionable tasks and highlights where user decisions are required.
-- Python is a recommended coordination language for the project: it is broadly readable, has rich tooling for notebooks/scripts to prototype replacements, and can automate reporting or documentation updates tied to the porting log.
+- Maintain a “porting log” that records findings about routine intent, hardware interactions, open questions, and decisions. Link each entry to corresponding code locations so future contributors avoid repeating reverse-engineering work.
+- Keep a living task backlog (Markdown checklist, issue tracker, etc.) that references the porting log. This keeps research synchronised with actionable tasks and highlights where user decisions are required.
+- Python remains the recommended coordination language: it is broadly readable, works well for notebooks/scripts that analyse binaries, and can automate documentation updates tied to the porting log.
 
 ## Analysis Practices
-- Inferring intent from usage is viable: trace where routines are entered and follow downstream calls/side effects (e.g., the BASIC `stack` routine leading into `gotoc00b`) to deduce purpose without external documentation.
-
-- The BASIC loader sets the main-loop vector to the `stack` routine in `v1.2/source/image12.asm`. When the program loads, execution begins in this routine, which clears the screen, prints the Image 1.2 banner, loads the `ml 1.2` machine-language module, and then jumps to `$c000`.
-- Within the machine-language module, the initialization entry point is label `lbl_c000` in `v1.2/source/ml-1_2-y2k.asm`. It immediately jumps to `gotoc00b`, which completes the startup sequence by configuring loader parameters and continuing system initialization.
+- Trace how routines interact rather than relying on external documentation. For example, following the BASIC `stack` routine into `gotoc00b` exposes the runtime initialisation flow without needing disassembly comments.
 
 ## Codex Collaboration Tips
-- Review the iteration logs in `docs/porting/` before starting a new task. They capture the latest findings about the bootstrap process, SwiftLink integration, and outstanding research questions.
+- Review the iteration logs in `docs/porting/` before starting a task; they capture the latest discoveries about bootstrap behaviour, SwiftLink integration, and outstanding research questions.
 - Use the task backlog at `docs/porting/task-backlog.md` to understand current priorities. When closing an item, reference the specific iteration note or code change that satisfied the task.
-- Prefer incremental documentation and code updates per iteration. Each pull request should link newly discovered behaviors back to the relevant routines in `v1.2/source/` to ease future reverse-engineering passes.
-- When scripting analyses (for example, tracing ROM calls or decoding binary assets), place helper scripts in `scripts/` and document their usage in the iteration log so others can reproduce the workflow.
-- Reuse the shared helpers in `scripts/prototypes/ml_extra_reporting.py` when emitting overlay metadata so CLI summaries and JSON dumps stay aligned.
-
+- Prefer incremental updates to documentation and code per iteration. Pull requests should tie new findings back to the relevant routines in `v1.2/source/` so future reverse-engineering passes have context.
+- When scripting analyses, place helpers in `scripts/prototypes/` and document their usage in the iteration log. Reuse shared helpers such as `ml_extra_defaults` and `ml_extra_sanity` so overlay metadata, hashes, and reports stay aligned across the CLI surface area.
