@@ -26,4 +26,5 @@
 - Use the task backlog at `docs/porting/task-backlog.md` to understand current priorities. When closing an item, reference the specific iteration note or code change that satisfied the task.
 - Prefer incremental documentation and code updates per iteration. Each pull request should link newly discovered behaviors back to the relevant routines in `v1.2/source/` to ease future reverse-engineering passes.
 - When scripting analyses (for example, tracing ROM calls or decoding binary assets), place helper scripts in `scripts/` and document their usage in the iteration log so others can reproduce the workflow.
+- Reuse the shared helpers in `scripts/prototypes/ml_extra_reporting.py` when emitting overlay metadata so CLI summaries and JSON dumps stay aligned.
 

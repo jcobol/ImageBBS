@@ -59,6 +59,12 @@ _PRINTABLE_EXTRA = {
 }
 
 
+def _control_repr(byte: int) -> str:
+    """Return a readable placeholder for PETSCII control codes."""
+
+    return f"{{${byte:02x}}}"
+
+
 def _decode_petscii_byte(byte: int) -> str | None:
     """Return a printable representation for ``byte`` when recognised."""
 
@@ -82,7 +88,7 @@ def decode_petscii(data: Iterable[int]) -> str:
             break
         decoded = _decode_petscii_byte(byte)
         if decoded is None:
-            result.append(f"{{$${byte:02x}}}")
+            result.append(_control_repr(byte))
         else:
             result.append(decoded)
     return "".join(result)

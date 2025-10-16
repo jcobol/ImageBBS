@@ -8,6 +8,7 @@ from typing import Iterable, List, Sequence
 
 from . import ml_extra_defaults
 from . import ml_extra_extract
+from . import ml_extra_reporting
 
 
 @dataclass(frozen=True)
@@ -86,6 +87,11 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Emit machine-readable JSON instead of a text report",
     )
+    parser.add_argument(
+        "--metadata",
+        action="store_true",
+        help="Include lightbar/palette/hardware metadata alongside the dumps",
+    )
     return parser.parse_args(argv)
 
 
@@ -105,13 +111,29 @@ def main(argv: List[str] | None = None) -> None:
     defaults = ml_extra_defaults.MLExtraDefaults.from_overlay(args.overlay)
     slots = parse_slots(args.slot)
     rows = list(iter_macro_dumps(defaults, slots=slots))
+    metadata = None
+    if args.metadata:
+        metadata = ml_extra_reporting.collect_overlay_metadata(defaults)
     if args.json:
         import json
 
-        payload = [row.as_dict() for row in rows]
+        payload: object
+        if metadata is None:
+            payload = [row.as_dict() for row in rows]
+        else:
+            payload = {
+                "metadata": metadata,
+                "macros": [row.as_dict() for row in rows],
+            }
         print(json.dumps(payload, indent=2))
     else:
-        print(format_report(rows))
+        lines: List[str] = []
+        if metadata is not None:
+            lines.extend(ml_extra_reporting.format_overlay_metadata(metadata))
+            if rows:
+                lines.append("")
+        lines.append(format_report(rows))
+        print("\n".join(line for line in lines if line))
 
 
 if __name__ == "__main__":  # pragma: no cover
