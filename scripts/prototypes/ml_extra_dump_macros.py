@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 from pathlib import Path
+import hashlib
 from typing import Iterable, List, Sequence
 
 from . import ml_extra_defaults
@@ -25,6 +26,12 @@ class MacroDump:
 
         return ml_extra_extract.decode_petscii(self.payload)
 
+    @property
+    def sha256(self) -> str:
+        """Return a stable checksum for :attr:`payload`."""
+
+        return hashlib.sha256(bytes(self.payload)).hexdigest()
+
     def as_dict(self) -> dict[str, object]:
         """Return a JSON-serialisable representation of the dump."""
 
@@ -33,6 +40,7 @@ class MacroDump:
             "address": f"${self.address:04x}",
             "bytes": [f"${byte:02x}" for byte in self.payload],
             "text": self.text,
+            "sha256": self.sha256,
         }
 
 
@@ -101,7 +109,8 @@ def format_report(rows: Iterable[MacroDump]) -> str:
         text = row.text.replace("\n", "\\n") or "<no text>"
         byte_repr = " ".join(f"${byte:02x}" for byte in row.payload)
         lines.append(
-            f"slot {row.slot:02x} @ ${row.address:04x}: {len(row.payload):3d} bytes | {byte_repr} | {text}"
+            f"slot {row.slot:02x} @ ${row.address:04x}: {len(row.payload):3d} bytes"
+            f" | {byte_repr} | {text} | sha256={row.sha256}"
         )
     return "\n".join(lines)
 

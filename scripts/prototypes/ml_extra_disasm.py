@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterator, List, Sequence, Tuple
@@ -204,6 +205,12 @@ class Instruction:
         return " ".join(f"{value:02x}" for value in self.bytes)
 
 
+def _payload_sha256(payload: Sequence[int]) -> str:
+    """Return the SHA-256 digest for ``payload``."""
+
+    return hashlib.sha256(bytes(payload)).hexdigest()
+
+
 def disassemble_bytes(payload: Sequence[int], start_address: int) -> List[Instruction]:
     """Return a best-effort disassembly for ``payload`` starting at ``start_address``."""
 
@@ -384,17 +391,22 @@ def main(argv: Sequence[str] | None = None) -> None:
     defaults = ml_extra_defaults.MLExtraDefaults.from_overlay(args.overlay)
     entries_by_slot = {entry.slot: entry for entry in defaults.macros}
 
-    if args.metadata:
-        metadata = ml_extra_reporting.collect_overlay_metadata(defaults)
-        for line in ml_extra_reporting.format_overlay_metadata(metadata):
-            print(line)
-        print()
-
     slots = args.slot or sorted(entries_by_slot)
     missing = [slot for slot in slots if slot not in entries_by_slot]
     if missing:
         missing_text = ", ".join(str(slot) for slot in missing)
         raise SystemExit(f"unknown macro slot(s): {missing_text}")
+
+    if args.metadata:
+        metadata = ml_extra_reporting.collect_overlay_metadata(defaults)
+        for line in ml_extra_reporting.format_overlay_metadata(metadata):
+            print(line)
+        print()
+        print("Macro payload hashes:")
+        for slot in slots:
+            entry = entries_by_slot[slot]
+            print(f"  slot {slot}: {_payload_sha256(entry.payload)}")
+        print()
 
     for slot in slots:
         entry = entries_by_slot[slot]

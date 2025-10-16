@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Sequence, Tuple
@@ -65,6 +66,12 @@ class StubStaticData:
     @property
     def flag_tail_text(self) -> str:
         return ml_extra_defaults.ml_extra_extract.decode_petscii(self.flag_directory_tail)
+
+
+def _payload_hash(payload: Sequence[int]) -> str:
+    """Return a stable checksum for the provided payload."""
+
+    return hashlib.sha256(bytes(payload)).hexdigest()
 
 
 def _parse_numeric_value(token: str) -> int:
@@ -311,6 +318,10 @@ def run_checks(overlay_path: Path | None = None) -> dict[str, object]:
     stub_static = parse_stub_static_data(stub_path)
 
     comparisons, stub_only = summarise_macros(defaults, stub_macros)
+    overlay_hashes = {
+        entry.slot: _payload_hash(entry.payload) for entry in defaults.macros
+    }
+    stub_hashes = {entry.slot: _payload_hash(entry.payload) for entry in stub_macros}
     terminators = [entry.payload[-1] if entry.payload else None for entry in defaults.macros]
     lightbar_expected = defaults.lightbar.bitmaps
     underline_expected = (
@@ -342,6 +353,9 @@ def run_checks(overlay_path: Path | None = None) -> dict[str, object]:
         "stub_static": stub_static_report,
         "overlay_macro_count": len(defaults.macros),
         "stub_macro_count": len(stub_macros),
+        "payload_hashes": [
+            {"slot": slot, "sha256": overlay_hashes[slot]} for slot in sorted(overlay_hashes)
+        ],
         "macro_directory": [
             {
                 "slot": entry.slot,
@@ -349,6 +363,7 @@ def run_checks(overlay_path: Path | None = None) -> dict[str, object]:
                 "length": len(entry.payload),
                 "byte_preview": entry.byte_preview(),
                 "text": entry.decoded_text,
+                "sha256": overlay_hashes[entry.slot],
             }
             for entry in defaults.macros
         ],
@@ -361,6 +376,8 @@ def run_checks(overlay_path: Path | None = None) -> dict[str, object]:
                 "matches": row.matches,
                 "recovered_preview": row.recovered_preview,
                 "stub_preview": row.stub_preview,
+                "recovered_sha256": overlay_hashes[row.slot],
+                "stub_sha256": stub_hashes.get(row.slot),
             }
             for row in comparisons
         ],
@@ -370,6 +387,7 @@ def run_checks(overlay_path: Path | None = None) -> dict[str, object]:
                 "address": f"${entry.address:04x}",
                 "length": len(entry.payload),
                 "byte_preview": entry.byte_preview(),
+                "sha256": stub_hashes[entry.slot],
             }
             for entry in stub_only
         ],
@@ -515,6 +533,12 @@ def format_report(report: dict[str, object]) -> str:
             f" {entry['length']:>3} bytes | bytes={entry['byte_preview']} | text='{text}'"
         )
 
+    hashes: Iterable[dict[str, object]] = report["payload_hashes"]  # type: ignore[assignment]
+    lines.append("")
+    lines.append("Macro payload hashes:")
+    for entry in hashes:
+        lines.append(f"  slot {entry['slot']:>2}: {entry['sha256']}")
+
     lines.append("")
     lines.append("Slot diff (recovered vs. stub data):")
     for row in comparisons:
@@ -532,7 +556,13 @@ def format_report(report: dict[str, object]) -> str:
             f" rec={row['recovered_length']:>3}b stub={stub_length_text}b"
             f" | status={status}"
             f" | recovered={recovered_preview}"
+            f" | recovered_sha256={row['recovered_sha256']}"
             f" | stub={stub_preview}"
+            + (
+                ""
+                if row["stub_sha256"] is None
+                else f" | stub_sha256={row['stub_sha256']}"
+            )
         )
 
     stub_only: Iterable[dict[str, object]] = report["stub_only_macros"]  # type: ignore[assignment]
@@ -542,7 +572,7 @@ def format_report(report: dict[str, object]) -> str:
         for row in stub_only:
             lines.append(
                 f"  slot {row['slot']:>2} @ {row['address']}:"
-                f" {row['length']:>3} bytes | bytes={row['byte_preview']}"
+                f" {row['length']:>3} bytes | bytes={row['byte_preview']} | sha256={row['sha256']}"
             )
 
     non_terminated: Iterable[dict[str, str]] = report["non_terminated_macros"]  # type: ignore[assignment]
