@@ -1,0 +1,286 @@
+
+828,B(186)::""
+n
+131,2,134,G(6):248,203:250,204:56,160:52,160
+{$7e}
+a,a$,a%,ab%,ac%,af%,am,ag$,ak$,am$,an$,ao%
+{CBM-+}
+b,b$,ba%,ba$,bd,bf,bn,bn$,br,bu,bz
+{$ec}
+c,c$,c1$,c2$,c3$,ca,cc$,ch$,cm$,cn,co$,co%,cr,ct,ct%,c9,c8,c7,c6
+8
+
+d,d$,d1$,d1%,d2$,d2%,d3%,d3$,d4$,d5$,d6$,da%,db%,dc,dc%,dd$,dr,dr$,dv%
+w
+e,e$,el,em,ef$,ep$,ec,ec%
+{$7b}
+f,f$,f%,f1,f2,f3,f4,ff$,fl,fl$
+
+g,g$,g%,gs
+
+h,h$,h%
+{CBM-H}
+i,i$,i%,i1$,i2$,i3$,id
+E
+j,j$,j%,jn$
+Y
+k,k$,k%,kp%,kz
+
+l,l$,l%,l1,l1$,l2,l2$,l3,l3$,lc,ld$,le,lf,ll$,ll%,lm$,lp,lt$,ln
+>
+m,m$,m%,mc,mf,mm,mt$,mw,mp
+O
+n,n$,n%,na$,nc,nd,nf,nl,nl$,nm,nm$,np,nr,nv
+ 
+o,o$,o%,oc$,oc%
+K"
+p,p$,p%,p1%,p2%,p3%,pf,ph$,pl,pm,po$,pp$,pq,pr,pr$,ps,pt%,pu$,pw$
+{$e2}$
+q,q$,q%,qb,qe,qt$
+~&
+r,r$,r%,rc,rn$,rp,rq,rs
+!(
+s,s$,s%,sa%,sh,so%,sr,sy$,sg
+c*
+t,t$,t%,t1,tc%,tf,tr%,tt$,tz
+y,
+u,u$,uc,uh,ul,ur
+G.
+v,v$,vv%
+T0
+w,w$,w%
+2
+x,x$,x%
+4
+y,y$,y%
+6
+z,z$,z%,zz
+D8
+ac%{CBM-R}16:x{CBM-R}{CBM-F}({CBM-Q}ti):sg{CBM-R}.:bn${CBM-R}"":z${CBM-R}""
+{SHIFT--}:
+c1${CBM-R}"":c2${CBM-R}"":c3${CBM-R}""
+ >
+ak${CBM-R}" {SHIFT-*}{SHIFT-*}{SHIFT-*}{SHIFT-*}{SHIFT-*}{SHIFT-*}{SHIFT-*}{SHIFT-*}{SHIFT-*}{SHIFT-*}{SHIFT-*}{SHIFT-*}{SHIFT-*}{SHIFT-*}{SHIFT-*}{SHIFT-*}{SHIFT-*}{SHIFT-*}{SHIFT-*}{SHIFT-*}{SHIFT-*}{SHIFT-*}{SHIFT-*}{SHIFT-*}{SHIFT-*}{SHIFT-*}{SHIFT-*}{SHIFT-*}{SHIFT-*}{SHIFT-*}{SHIFT-*}{SHIFT-*}{SHIFT-*}{SHIFT-*}{SHIFT-*}{SHIFT-*}{SHIFT-*}{SHIFT-*}"{CBM-N}"":o{CBM-R}16400
+; @
+r${CBM-R}G(13):nl${CBM-R}G(.):qt${CBM-R}G(34)
+v b
+4,4,7:836,1:650,128
+ f
+56328,.:56579,B(56579){CBM-A}38:56577,B(56577){CBM-A}36
+{CBM-Y} h
+tt$(254),bb$(41),dt$(91),ed$(91),nn$(91)
+{$ef} j
+a%(91),c%(91),d%(91),e%(31),f%(91),ac%(31),so%(31)
+!l
+dv%(36),st(38),co$(9),fl$(9),dr%(36)
+9!n
+:i{CBM-R}1{CBM-@}9:a$:co$(i){CBM-R}a${CBM-N}"":
+P!p
+dv%{CBM-R}B(828):dr${CBM-R}"0"{CBM-N}":":tf{CBM-R}1:sr{CBM-R}2:pr{CBM-R}{CBM-Q}1:f3{CBM-R}1:49155
+!q
+&,18,0:53248,1
+!r
+am${CBM-R}"1"{CBM-N}"8901299201"
+{CBM-E}!s
+180:17138,192
+{CBM-B}!t
+&"  {SHIFT-@}"
+{CBM-*}!u
+&"  {SHIFT-@}": 2: 15:15,dv%,15
+"v
+fl{CBM-R}.:2,dv%,2,dr${CBM-N}"bd.data,s,r":1012:e%{CBM-M} 2:000
+3"x
+x{CBM-R}1{CBM-@}6:2,dv%(x),dr%(x):
+r"z
+2,cc$,nc,nv,nd,bn$,po$: 2
+]"\
+bf(6)
+K"]
+&"  {SHIFT-@}"
+"{$60}
+ 15:15,dv%,15:800:&"  {SHIFT-@}"
+{CBM-M}"B
+1065:e%{CBM-M} 2:156:96
+{$de}"D
+x{CBM-R}1:1001:i{CBM-R}1{CBM-@}14:2,tt$(i):: 2:i1${CBM-R}tt$(7){CBM-N}tt$(1)
+#F
+i2${CBM-R}tt$(14){CBM-N}tt$(5){CBM-N}tt$(3){CBM-N}" "{CBM-N}tt$(4)
+#H
+1045:uh{CBM-R}a%
+i#I
+&"\n9\n4  {SHIFT-@}  Totaling Users: \%a\_26   "
+u#J
+&""
+#K
+a${CBM-R}"e.i.macro,s,r":dr{CBM-R}3:1011:e%{CBM-R}.{CBM-M}:&,2,2:mc{CBM-R}E(a$): 2
+L#L
+a${CBM-R}"e.i.prompt,s,r":dr{CBM-R}3:1011:e%{CBM-R}.{CBM-M}:&,2,2:mp{CBM-R}E(a$): 2
+{$e7}#N
+1063:e%{CBM-M} 2:156:110
+ $P
+x{CBM-R}1:1001:&,2,2:ca{CBM-R}E(a$):x{CBM-R}12:1001:&,2,2:ur{CBM-R}E(a$){CBM-Q}1
+t$R
+x{CBM-R}17:1001:&,2,2:d3${CBM-R}a$:x{CBM-R}18:1001:&,2,2:pp${CBM-R}a$
+$T
+x{CBM-R}19:1001:&,2,2:z${CBM-R}a$:x{CBM-R}20:1001:2,p1%,p2%,p3%
+K$V
+x{CBM-R}21{CBM-@}30:1001:&,2,2:fl$(x{CBM-Q}21){CBM-R}a$::x{CBM-R}31:1001:&,2,2:l1{CBM-R}E(a$)
+{$ed}$X
+x{CBM-R}E(i1$){CBM-N}2:1001:&,2,2:i3${CBM-R}a$
+!%Z
+1060:x{CBM-R}1{CBM-@}38:1001:&,2,2:st(x){CBM-R}E(a$):: 2:200
+B%{$7b}
+&"":a${CBM-R}"e.amaint,s,r":dr{CBM-R}3:1011:{CBM-Q}(e%{CBM-E}0)126:&,2,2:am${CBM-R}a$
+%{$7c}
+an${CBM-R}am$:lt${CBM-R}am$:&,15:d6${CBM-R}an$:128
+%{$7e}
+160
+{CBM-B}%
+ 2:150:&,37:53258,16{CBM-Q}(B(56577){CBM-P}16):134
+{$fd}%
+a${CBM-R}z$:1520:t1{CBM-R}a:an${CBM-R}z$:&,15:d2${CBM-R}an$:i{CBM-R}54272{CBM-@}i{CBM-N}24:i,.:
+9&
+dr{CBM-R}1:a${CBM-R}"lbsetup":1011:x{CBM-R}.{CBM-@}31:&,2,2:&,52,x,E(a$):: 2
+m&
+500: bios mod
+I&
+f1{CBM-R}3:&,27:a${CBM-R}"lo":1016
+&
+65484:a{CBM-R}E(J(z$,1,1)):148:52935,a
+{CBM-R}&
+a{CBM-R}E(J(z$,2,2)):148:52938,a
+S&
+a{CBM-R}E(J(z$,4,2)):148:52936,a
+{$f4}&
+a{CBM-R}E(J(z$,6,2)):148:52937,a
+*'
+a{CBM-R}E(J(z$,8,2)):148:b{CBM-R}a:(b{CBM-P}127){CBM-R}18{CBM-M}b{CBM-R}({CBM-POUND}b{CBM-P}128){CBM-A}18
+{$60}'
+a{CBM-R}E(J(z$,10,2)):a{CBM-R}a{CBM-N}(a{CBM-W}{CBM-E}0):148:56331,b:56330,a
+Y'
+56329,89:56328,.:
+'
+a{CBM-R}16{CBM-D}{CBM-J}(a{CBM-Z}10){CBM-N}a{CBM-Q}{CBM-J}(a{CBM-Z}10){CBM-D}10:
+{CBM-P}'
+q{CBM-R}.{CBM-@}6:bf(q){CBM-R}{CBM-Q}1:
+{CBM-J}'
+
+X' 
+a${CBM-R}"e.log":dr{CBM-R}3:1011:e%{CBM-M}164
+{$f1}'{CBM-I}
+&,2,2:d6${CBM-R}J(a$,10):
+({CBM-@}
+a${CBM-R}"e.log":1023:an${CBM-R}z$:&,15:d6${CBM-R}an$
+h({CBM-+}
+a${CBM-R}" START--"{CBM-N}d6$:2,a$:a${CBM-R}J(a$,2):1096
+X({CBM-POUND}
+a${CBM-R}""{CBM-N}H(ak$,27){CBM-N}"":2,a$:a${CBM-R}J(a$,2):1096
+({CBM-N}
+a${CBM-R}H(ak$,24):2,a$:1096
+J({CBM-D}
+ 2:1060:x{CBM-R}12{CBM-@}22:st(x){CBM-R}.:1026::st(20){CBM-R}.:1026
+{$f9}({CBM-H}
+y{CBM-R}1{CBM-@}12:a%(y)::y{CBM-R}1{CBM-@}12:ed$(y)::&"\n4"
+6){CBM-J}
+y{CBM-R}1{CBM-@}12:a${CBM-R}ed$(y):b${CBM-R}G(a%(y)):&"    \$a\_26 \$b ":
+_){CBM-U}
+a${CBM-R}"rs232":190:17152:&"\n6  {SHIFT-@}"
+){CBM-O}
+a${CBM-R}"pmodes":190:&"  {SHIFT-@}":
+{CBM-+}){CBM-V}
+(57812)dr${CBM-N}"ml."{CBM-N}a$,dv%,1:780,0
+{CBM-E}){CBM-B}
+65493
+{$e3}){SHIFT-*}
+a{CBM-R}B(780):c{CBM-R}B(783){CBM-P}1:c{CBM-R}1{CBM-P}a{CBM-R}5{CBM-M}:&"Not Found":
+
+*A
+c{CBM-R}1{CBM-M}:&"\n9\n9\_15[Load Error]"
+*B
+
+,*H
+&" - Loading - ":
+n*I
+&" - CMD Clock Utilized - "
+K*M
+15,"t-ra":&,2,15:990:
+*{$f4}133:53252,20:502
+B*{$f6}a{CBM-R}1{CBM-@}6:tt$(a{CBM-D}2{CBM-Q}1){CBM-R}J(D(dv%(a)),2):tt$(a{CBM-D}2){CBM-R}J(D(dr%(a)),2):
+{$e5}*{$f8}tt$(13){CBM-R}cc$:tt$(14){CBM-R}J(D(nc),2)
++{$fa}tt$(15){CBM-R}J(D(nv),2):tt$(16){CBM-R}J(D(nd),2)
+++{$fc}tt$(17){CBM-R}bn$:tt$(18){CBM-R}po$
+H+{$fe}tt$(19){CBM-R}"1.2 IMAGE Offline Reader v1.0 - Future Systems"
++
+b${CBM-R}"Offline Reader BIOS":606:c{CBM-R}.
+{CBM-+}+a%{CBM-R}1:b${CBM-R}"None":602
+{CBM-V}+a%{CBM-R}2:b${CBM-R}"None":602
+{CBM-*}+a%{CBM-R}3:b${CBM-R}"System Drives":602
+,a%{CBM-R}4:b${CBM-R}"Highest Serial Drive":602
+,
+a%{CBM-R}5:b${CBM-R}"None":602
+7,a%{CBM-R}6:b${CBM-R}"None":602
+\,a%{CBM-R}7:b${CBM-R}"Main Level Prompt":602
+{$7c},a%{CBM-R}8:b${CBM-R}"Save Changes":602
+{CBM-T},a%{CBM-R}9:b${CBM-R}"Boot Offline Reader":602
+X,604:a000,000,554,580,000,000,612,534,133:512
+{$f3},b${CBM-R}"Save Changes":606
+-&"Ready?"
+e-&"Press RETURN To Continue, Or A ToAbort:\g1":an${CBM-W}{CBM-E}r${CBM-M}
+B-&"Saving BIOS...\w2"
+- 15: 2:15,dv%,15,"s0:bd.data":2,dv%,2,"0:bd.data,s,w"
+{CBM-O}- i{CBM-R}1{CBM-@}19:2,tt$(i):: 2
+I-"&"Done!":
+.$&"Changes Saved... No Need To Save FromMenu.":546
+2.&1063:x{CBM-R}20:1002:2,p1%","p2%","p3%: 2:
+?.(c548:
+\.*b${CBM-R}"System Devices":606
+.,a%{CBM-R}1:b${CBM-R}"System Disk   : "{CBM-N}tt$(1){CBM-N}","{CBM-N}tt$(2):602
+H..a%{CBM-R}2:b${CBM-R}"E-Mail Disk   : "{CBM-N}tt$(3){CBM-N}","{CBM-N}tt$(4):602
+{$fe}.0a%{CBM-R}3:b${CBM-R}"Etcetera Disk : "{CBM-N}tt$(5){CBM-N}","{CBM-N}tt$(6):602
+4/2a%{CBM-R}4:b${CBM-R}"Directory Disk: "{CBM-N}tt$(7){CBM-N}","{CBM-N}tt$(8):602
+K/4a%{CBM-R}5:b${CBM-R}"P-File Disk   : "{CBM-N}tt$(9){CBM-N}","{CBM-N}tt$(10):602
+{CBM-T}/6a%{CBM-R}6:b${CBM-R}"User Disk     : "{CBM-N}tt$(11){CBM-N}","{CBM-N}tt$(12):602
+{SHIFT-*}/8604:tr%{CBM-N}11811:r{CBM-R}a:x{CBM-R}a
+{$e5}/:{CBM-Q}(an${CBM-R}r${CBM-A}an${CBM-R}"Q")512:574:554
+{$f5}/<{CBM-H}(r)554:
+'0>p${CBM-R}"Device":w${CBM-R}tt$(x{CBM-D}2{CBM-Q}1):610:tt$(x{CBM-D}2{CBM-Q}1){CBM-R}an$
+w0@p${CBM-R}"Drive ":w${CBM-R}tt$(x{CBM-D}2):610:tt$(x{CBM-D}2){CBM-R}an$:
+I0btt$(17){CBM-R}an$:
+0d&"What Is The Highest DEVICE Number You"
+{SHIFT-*}0f&"Have Connected To Your System?"
+{$e7}0h&"EXAMPLE--Device 9 Or Device 11"
+1jp${CBM-R}"Device":w${CBM-R}J(D(E(tt$(15)){CBM-N}7),2):610:tr%{CBM-R}.{CBM-M}
+/1la{CBM-W}8{CBM-A}a{CBM-E}31{CBM-M}586
+L1ntt$(15){CBM-R}D(a{CBM-Q}7):&"What Is The Highest DRIVE/LU Number"
+1p&"You Have Connected To Your System?"
+W1r&"EXAMPLE--A 1541=0 A Lt. KernalWith All LU'S Defined=9"
+
+2tp${CBM-R}"Drive ":w${CBM-R}tt$(16):610:tr%{CBM-W}1{CBM-M}
+2va{CBM-W}.{CBM-A}a{CBM-E}9{CBM-M}596
+#2xtt$(16){CBM-R}an$:
+<2z&"\_08\%a> \$b":
+[2\&"\_13Option? \g1\v7":2
+2^&"\vj \_"{CBM-N}I(D({CBM-J}(120{CBM-Q}C(b$){CBM-Z}2)),2)
+2{$60}&"\$b\vj":
+D2Bb${CBM-R}w$:pl{CBM-R}1:&,1,32:{CBM-Q}(an${CBM-W}{CBM-E}"")2:an${CBM-R}b$:2
+{$de}2Db${CBM-R}"Main Prompt":606
+3Fp${CBM-R}"Main Prompt":w${CBM-R}tt$(18):610:tr%{CBM-R}.{CBM-M}
+3Htt$(18){CBM-R}an$:
+*3J:{$fe}$line
+c3 &"  {SHIFT-@}":dr{CBM-R}3:1010
+3"m{CBM-R}234:(57812)dr${CBM-N}"ml.ecsdefs",dv%:780,0:781,0:782,m:65493
+{SHIFT-@}3$a{CBM-R}B(780):c{CBM-R}B(783){CBM-P}1:s{CBM-R}128{CBM-P}a{CBM-R}5{CBM-M}:&"Not Found":
+{$e6}3&c{CBM-R}1{CBM-M}:&"\n9\n9\_15[Load Error]":
+ 4"Commodore 64","Commodore 128","Amiga","Apple/Comp."
+D4"IBM/Comp.","Macintosh","Atari/ST","Tandy Series","Other Type"
+{CBM-D}432,32,32,32,32,32,32,32,32,32,32,32,"       SETUP","       {CBM-T}{CBM-T}{CBM-T}{CBM-T}{CBM-T}"
+{$f1}4" RS-232 Data"," Print Defs"," ECS Defs"," Dimensioning Arrays"
+a5" Configuring Data"," Checking Drives"," Verifying Info"," Totaling Users"
+m5"",""
+5{$de}z${CBM-R}H(a$,2):a{CBM-R}{CBM-Q}(z${CBM-R}"su"){CBM-Q}2{CBM-D}(z${CBM-R}"mo"){CBM-Q}3{CBM-D}(z${CBM-R}"tu"){CBM-Q}4{CBM-D}(z${CBM-R}"we"){CBM-Q}5{CBM-D}(z${CBM-R}"th")
+{SHIFT--}5{CBM-*}a{CBM-R}a{CBM-Q}6{CBM-D}(z${CBM-R}"fr"){CBM-Q}7{CBM-D}(z${CBM-R}"sa"):z${CBM-R}J(D(a),2,1){CBM-N}J(a$,12,2){CBM-N}J(a$,6,2)
+6 a{CBM-R}{CBM-Q}80{CBM-D}(J(a$,24,1){CBM-R}"p"){CBM-N}E(J(a$,15,2))
+?6{$e1}z${CBM-R}z${CBM-N}J(a$,9,2){CBM-N}I("0"{CBM-N}J(D(a),2),2){CBM-N}J(a$,18,2):tf{CBM-R}0:
+\6{$e7}:{$fe}$line er v1.0 {CBM-Q} fs'98
+
+
