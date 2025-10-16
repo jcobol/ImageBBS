@@ -138,6 +138,12 @@ With the stub now populated by real bytes, `ml_extra_sanity` also parses `ml_ext
 ## Macro handler disassembly helper
 The new `ml_extra_disasm` prototype wraps the repository opcode tables so macro payloads can be rendered as 6502 assembly without running the full PRG disassembler.【F:scripts/prototypes/ml_extra_disasm.py†L1-L395】 Slot 4’s output shows the routine copying source/destination pointers into `$c1e5/$c266/$c2e7/$c368` before incrementing `$c1e1`, matching the insertion logic traced earlier in the overlay disassembly.【314f88†L1-L33】
 
+## Macro slot staging notes
+Tracing the four non-trivial handlers revealed a shared staging loop anchored at `$c130` that walks `$c1e5/$c266/$c2e7/$c368` as circular buffers before copying the current `$03-$06` zero-page pointer tuple into the active slot.【F:scripts/prototypes/ml_extra_disasm.py†L347-L390】 Each pass keeps `$c1e1` in bounds (`<$80`) so follow-up calls reuse the recorded address pairs. The post-handler sweep at `$c196` walks those buffers in reverse, restoring the pointer tuple into `$03-$06` ahead of the indirect copy into `$ce77`. Slots `$04/$09/$0d/$14` are simply entry points into that shared loop: slot $04 seeds a new entry, slot $09 shortcuts to the write-back branch, slot $0d exits immediately, and slot $14 handles the `$0333/$0334` pointer adjustment before tail-calling the reload logic.【F:scripts/prototypes/ml_extra_disasm.py†L180-L255】 These notes give the next pass a concrete map of how `$c151/$c152` are primed before the text renderer runs.
+
+## Flag-tail dump helper
+`scripts/prototypes/ml_extra_dump_flag_strings.py` exposes the 70-byte, XOR-encoded block at `$d9c3` that feeds the flag directory tail and banner text. The helper prints both the raw payload and the decoded PETSCII, making it easy to capture the “1989 NEW IMAGE SOFTWARE, INC.” footer and surrounding metadata without manually poking the PRG.【F:scripts/prototypes/ml_extra_dump_flag_strings.py†L1-L71】 This gives us a reproducible byte-for-byte dump for transcription while the remaining macro payloads are decoded.
+
 ## Next steps
 - Trace the non-trivial slot handlers at `$c153/$c171/$c193/$c1ab` so we can capture the PETSCII that they feed back through `$c151/$c152`.
 - Once the macro payloads are transcribed, swap the stubbed strings in `ml_extra_stub.asm` for the recovered data and tighten the sanity checks accordingly.
