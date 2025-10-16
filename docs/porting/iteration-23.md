@@ -132,6 +132,12 @@ With the stub now populated by real bytes, `ml_extra_sanity` also parses `ml_ext
 
 `MLExtraDefaults.flag_dispatch` now captures the descriptor list at `$d115` alongside the slot IDs and handler pointers at `$d116/$d123`, exposing a 12-entry map from ampersand flag index to macro routine with the leading `$c0`/`$2e` markers preserved for reference.【F:scripts/prototypes/ml_extra_defaults.py†L175-L220】【F:scripts/prototypes/ml_extra_defaults.py†L362-L396】 The sanity report prints those relationships verbatim so it’s easy to confirm that, for example, flag `$04` routes to slot `$04`/`$c153` while flag `$02` lands on slot `$02`/`$c29d` when reviewing regressions.【F:scripts/prototypes/ml_extra_sanity.py†L186-L314】
 
+With those bytes decoded, `ml_extra_stub.asm` now embeds the archival lightbar,
+palette, flag-directory, and macro payloads so the bootstrap exposes the same
+constants as the recovered overlay without loading the full binary. The stub
+keeps the runtime slot ordering, macro targets, and XOR-encoded tail intact so
+tooling can diff against the source overlay during CI runs.【F:v1.2/source/ml_extra_stub.asm†L19-L136】【F:scripts/prototypes/ml_extra_sanity.py†L1-L234】
+
 ## Macro payload dump helper
 `scripts/prototypes/ml_extra_dump_macros.py` exports the same pointer directory as structured PETSCII strings so transcription work can focus on the byte-for-byte payloads rather than the surrounding report formatting.【F:scripts/prototypes/ml_extra_dump_macros.py†L1-L103】 It accepts optional `--slot` filters (decimal, `$`-prefixed hex with quoting, or `0x` literals) and prints each selection with its runtime address, byte length, complete hex listing, and decoded PETSCII, allowing the long-form flag targets at `$c153/$c171/$c193/$c1ab` to be captured verbatim for later documentation.【8f7739†L1-L7】 The tool also supports `--json` for machine-readable dumps, which will simplify the later step that replaces the stubbed constants with the recovered overlay data.
 
@@ -145,5 +151,6 @@ Tracing the four non-trivial handlers revealed a shared staging loop anchored at
 `scripts/prototypes/ml_extra_dump_flag_strings.py` exposes the 70-byte, XOR-encoded block at `$d9c3` that feeds the flag directory tail and banner text. The helper prints both the raw payload and the decoded PETSCII, making it easy to capture the “1989 NEW IMAGE SOFTWARE, INC.” footer and surrounding metadata without manually poking the PRG.【F:scripts/prototypes/ml_extra_dump_flag_strings.py†L1-L71】 This gives us a reproducible byte-for-byte dump for transcription while the remaining macro payloads are decoded.
 
 ## Next steps
-- Trace the non-trivial slot handlers at `$c153/$c171/$c193/$c1ab` so we can capture the PETSCII that they feed back through `$c151/$c152`.
-- Once the macro payloads are transcribed, swap the stubbed strings in `ml_extra_stub.asm` for the recovered data and tighten the sanity checks accordingly.
+- Finalise the PETSCII transcription of the macro payloads (particularly the
+  slot `$04/$09/$0d/$14` outputs) so the documentation includes the rendered
+  strings alongside the disassembly notes.【F:scripts/prototypes/ml_extra_dump_macros.py†L1-L118】
