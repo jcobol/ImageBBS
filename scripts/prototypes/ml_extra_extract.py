@@ -21,10 +21,16 @@ FLAG_SLOT_COUNT = 12
 class PointerDirectoryEntry:
     slot: int
     address: int
+    data: list[int]
     text: str
 
     def to_dict(self) -> dict[str, object]:
-        return {"slot": self.slot, "address": f"${self.address:04x}", "text": self.text}
+        return {
+            "slot": self.slot,
+            "address": f"${self.address:04x}",
+            "bytes": [f"${value:02x}" for value in self.data],
+            "text": self.text,
+        }
 
 
 def load_prg(path: Path) -> tuple[int, list[int]]:
@@ -81,10 +87,16 @@ def iter_pointer_directory(memory: list[int], *, load_addr: int) -> Iterator[Poi
         try:
             idx = runtime_to_index(address, load_addr=load_addr)
         except ValueError:
+            chunk: list[int] = []
             text = ""
         else:
-            text = decode_petscii(memory[idx:])
-        yield PointerDirectoryEntry(slot=slot, address=address, text=text)
+            chunk = []
+            for byte in memory[idx:]:
+                chunk.append(byte)
+                if byte == 0x00:
+                    break
+            text = decode_petscii(chunk)
+        yield PointerDirectoryEntry(slot=slot, address=address, data=chunk, text=text)
 
 
 def extract_overlay(path: Path) -> dict[str, object]:
