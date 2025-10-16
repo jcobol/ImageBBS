@@ -5,6 +5,7 @@ import argparse
 from dataclasses import dataclass
 from pathlib import Path
 import hashlib
+import json
 from typing import Iterable, List, Sequence
 
 from . import ml_extra_defaults
@@ -100,6 +101,11 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Include lightbar/palette/hardware metadata alongside the dumps",
     )
+    parser.add_argument(
+        "--metadata-json",
+        type=Path,
+        help="Write overlay metadata to the specified JSON file",
+    )
     return parser.parse_args(argv)
 
 
@@ -120,12 +126,14 @@ def main(argv: List[str] | None = None) -> None:
     defaults = ml_extra_defaults.MLExtraDefaults.from_overlay(args.overlay)
     slots = parse_slots(args.slot)
     rows = list(iter_macro_dumps(defaults, slots=slots))
+    wants_metadata = bool(args.metadata or args.metadata_json)
     metadata = None
-    if args.metadata:
+    if wants_metadata:
         metadata = ml_extra_reporting.collect_overlay_metadata(defaults)
+    if args.metadata_json:
+        args.metadata_json.parent.mkdir(parents=True, exist_ok=True)
+        args.metadata_json.write_text(json.dumps(metadata, indent=2) + "\n")
     if args.json:
-        import json
-
         payload: object
         if metadata is None:
             payload = [row.as_dict() for row in rows]
