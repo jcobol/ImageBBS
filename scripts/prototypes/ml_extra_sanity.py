@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, List
+from typing import Dict, Iterable, List, Sequence
 
 if __package__ in {None, ""}:
     import sys
@@ -17,62 +17,161 @@ else:  # pragma: no cover - exercised during package imports
 
 
 @dataclass
-class MacroComparison:
-    """Diff result between stubbed and recovered macro tables."""
+class StubMacroEntry:
+    """Concrete macro payload recovered from ``ml_extra_stub.asm``."""
 
     slot: int
     address: int
-    payload_length: int
-    decoded_preview: str
-    stub_fallback: str | None
+    payload: Sequence[int]
+
+    def decoded_text(self) -> str:
+        """Return the PETSCII rendering of :attr:`payload`."""
+
+        return ml_extra_defaults.ml_extra_extract.decode_petscii(self.payload)
+
+    def byte_preview(self, limit: int = 8) -> str:
+        """Return a short hex preview of the payload."""
+
+        prefix = (f"${value:02x}" for value in self.payload[:limit])
+        preview = ", ".join(prefix)
+        if len(self.payload) > limit:
+            preview += ", …"
+        return preview
 
 
-def parse_stub_macro_directory(stub_path: Path) -> List[str]:
-    """Return the placeholder macro names from ``ml_extra_stub.asm``."""
+@dataclass
+class MacroComparison:
+    """Diff result between recovered and stub macro tables."""
 
-    macros: list[str] = []
-    in_table = False
+    slot: int
+    address: int
+    recovered_length: int
+    stub_length: int | None
+    matches: bool
+    recovered_preview: str
+    stub_preview: str | None
+
+
+def _parse_numeric_tokens(spec: str) -> List[int]:
+    """Return integer values extracted from a ``.byte``/``.word`` line."""
+
+    values: list[int] = []
+    for token in spec.split(","):
+        chunk = token.strip()
+        if not chunk:
+            continue
+        if chunk.startswith("$"):
+            values.append(int(chunk[1:], 16))
+        elif chunk.lower().startswith("0x"):
+            values.append(int(chunk[2:], 16))
+        elif chunk.startswith("%"):
+            values.append(int(chunk[1:], 2))
+        else:
+            values.append(int(chunk, 10))
+    return values
+
+
+def _parse_label_tokens(spec: str) -> List[str]:
+    """Return label names extracted from a ``.word`` directive."""
+
+    labels: list[str] = []
+    for token in spec.split(","):
+        name = token.strip()
+        if name:
+            labels.append(name)
+    return labels
+
+
+def parse_stub_macro_directory(stub_path: Path) -> List[StubMacroEntry]:
+    """Return concrete macro payloads recovered from the stub module."""
+
+    slot_ids: list[int] = []
+    runtime_targets: list[int] = []
+    directory_labels: list[str] = []
+    payloads: Dict[str, List[int]] = {}
+
+    current_label: str | None = None
     for raw_line in stub_path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.split(";", 1)[0].strip()
+        line = raw_line.split(";", 1)[0].rstrip()
         if not line:
-            if in_table:
-                break
             continue
-        if line.startswith("macro_directory_stub:"):
-            in_table = True
+        if line.endswith(":"):
+            current_label = line[:-1]
             continue
-        if not in_table:
+        if current_label is None:
             continue
-        if not line.startswith(".byte"):
-            break
-        payload = line[len(".byte") :].strip()
-        if payload == "4":
-            # Count prefix, skip it.
-            continue
-        if not payload:
-            continue
-        if payload.startswith('"') and '"' in payload[1:]:
-            text = payload.split('"', 2)[1]
-            macros.append(text)
-    return macros
+        stripped = line.strip()
+        if current_label == "macro_slot_ids" and stripped.startswith(".byte"):
+            slot_ids.extend(_parse_numeric_tokens(stripped[len(".byte") :]))
+        elif current_label == "macro_runtime_targets" and stripped.startswith(".word"):
+            runtime_targets.extend(_parse_numeric_tokens(stripped[len(".word") :]))
+        elif current_label == "macro_payload_directory" and stripped.startswith(".word"):
+            directory_labels.extend(_parse_label_tokens(stripped[len(".word") :]))
+        elif current_label.startswith("macro_payload_") and stripped.startswith(".byte"):
+            payloads.setdefault(current_label, []).extend(
+                _parse_numeric_tokens(stripped[len(".byte") :])
+            )
+
+    if not slot_ids or not directory_labels or not runtime_targets:
+        raise ValueError("failed to parse macro directory from stub")
+    if not (
+        len(slot_ids) == len(directory_labels) == len(runtime_targets)
+    ):
+        raise ValueError("stub macro directory has mismatched counts")
+
+    entries: list[StubMacroEntry] = []
+    for slot, label, address in zip(slot_ids, directory_labels, runtime_targets):
+        if label not in payloads:
+            raise ValueError(f"macro payload {label} missing from stub")
+        payload = tuple(payloads[label])
+        entries.append(StubMacroEntry(slot=slot, address=address, payload=payload))
+    return entries
 
 
-def summarise_macros(defaults: ml_extra_defaults.MLExtraDefaults, stub_macros: List[str]) -> Iterable[MacroComparison]:
-    """Yield :class:`MacroComparison` rows for the recovered macro slots."""
+def summarise_macros(
+    defaults: ml_extra_defaults.MLExtraDefaults,
+    stub_macros: Sequence[StubMacroEntry],
+) -> tuple[List[MacroComparison], List[StubMacroEntry]]:
+    """Return comparison rows and stub-only entries for reporting."""
 
-    fallbacks = iter(stub_macros)
+    stub_map: Dict[int, StubMacroEntry] = {entry.slot: entry for entry in stub_macros}
+    seen_slots: set[int] = set()
+    comparisons: list[MacroComparison] = []
+
     for entry in defaults.macros:
-        try:
-            stub = next(fallbacks)
-        except StopIteration:
-            stub = None
-        yield MacroComparison(
-            slot=entry.slot,
-            address=entry.address,
-            payload_length=len(entry.payload),
-            decoded_preview=entry.decoded_text,
-            stub_fallback=stub,
+        stub_entry = stub_map.get(entry.slot)
+        if stub_entry is None:
+            comparisons.append(
+                MacroComparison(
+                    slot=entry.slot,
+                    address=entry.address,
+                    recovered_length=len(entry.payload),
+                    stub_length=None,
+                    matches=False,
+                    recovered_preview=entry.byte_preview(),
+                    stub_preview=None,
+                )
+            )
+            continue
+
+        recovered_payload = tuple(entry.payload)
+        stub_payload = tuple(stub_entry.payload)
+        matches = recovered_payload == stub_payload and entry.address == stub_entry.address
+        comparisons.append(
+            MacroComparison(
+                slot=entry.slot,
+                address=entry.address,
+                recovered_length=len(recovered_payload),
+                stub_length=len(stub_payload),
+                matches=matches,
+                recovered_preview=entry.byte_preview(),
+                stub_preview=stub_entry.byte_preview(),
+            )
         )
+        seen_slots.add(entry.slot)
+
+    stub_only = [entry for entry in stub_macros if entry.slot not in seen_slots]
+    return comparisons, stub_only
 
 
 def run_checks(overlay_path: Path | None = None) -> dict[str, object]:
@@ -82,23 +181,51 @@ def run_checks(overlay_path: Path | None = None) -> dict[str, object]:
     stub_path = ml_extra_defaults._REPO_ROOT / "v1.2/source/ml_extra_stub.asm"
     stub_macros = parse_stub_macro_directory(stub_path)
 
-    comparisons = list(summarise_macros(defaults, stub_macros))
+    comparisons, stub_only = summarise_macros(defaults, stub_macros)
     terminators = [entry.payload[-1] if entry.payload else None for entry in defaults.macros]
     return {
         "overlay_load_address": f"${defaults.load_address:04x}",
         "lightbar": defaults.lightbar.as_dict(),
         "palette": defaults.palette.as_dict(),
+        "hardware_defaults": defaults.hardware.as_dict(),
+        "flag_records": [record.as_dict() for record in defaults.flag_records],
+        "flag_dispatch": defaults.flag_dispatch.as_dict(),
+        "flag_directory_tail": {
+            "bytes": [f"${value:02x}" for value in defaults.flag_directory_tail],
+            "text": defaults.flag_directory_text,
+        },
         "overlay_macro_count": len(defaults.macros),
         "stub_macro_count": len(stub_macros),
+        "macro_directory": [
+            {
+                "slot": entry.slot,
+                "address": f"${entry.address:04x}",
+                "length": len(entry.payload),
+                "byte_preview": entry.byte_preview(),
+                "text": entry.decoded_text,
+            }
+            for entry in defaults.macros
+        ],
         "comparisons": [
             {
                 "slot": row.slot,
                 "address": f"${row.address:04x}",
-                "payload_length": row.payload_length,
-                "decoded_preview": row.decoded_preview,
-                "stub_fallback": row.stub_fallback,
+                "recovered_length": row.recovered_length,
+                "stub_length": row.stub_length,
+                "matches": row.matches,
+                "recovered_preview": row.recovered_preview,
+                "stub_preview": row.stub_preview,
             }
             for row in comparisons
+        ],
+        "stub_only_macros": [
+            {
+                "slot": entry.slot,
+                "address": f"${entry.address:04x}",
+                "length": len(entry.payload),
+                "byte_preview": entry.byte_preview(),
+            }
+            for entry in stub_only
         ],
         "non_terminated_macros": [
             {
@@ -121,22 +248,119 @@ def format_report(report: dict[str, object]) -> str:
             for name, value in report["lightbar"].items()
         ),
         "  palette    : " + ", ".join(report["palette"]["colours"]),
+        "  sid volume : " + report["hardware_defaults"]["sid_volume"],
+        f"  flag records: {len(report['flag_records'])}",
         f"  macro slots : {report['overlay_macro_count']}",
         f"  stub macros : {report['stub_macro_count']}",
     ]
 
+    hardware: dict[str, object] = report["hardware_defaults"]  # type: ignore[assignment]
+    lines.append("")
+    lines.append("Hardware defaults:")
+    pointer = hardware["pointer"]  # type: ignore[assignment]
+    initial = pointer["initial"]  # type: ignore[assignment]
+    lines.append(
+        "  pointer initial: "
+        f"low={initial['low']} high={initial['high']}"  # type: ignore[index]
+    )
+    lines.append(
+        f"  pointer scan limit: {pointer['scan_limit']}"  # type: ignore[index]
+    )
+    lines.append(
+        f"  pointer reset: {pointer['reset_value']}"  # type: ignore[index]
+    )
+    lines.append("  VIC writes:")
+    for entry in hardware["vic_registers"]:  # type: ignore[assignment]
+        lines.append(f"    {entry['address']}:")  # type: ignore[index]
+        for write in entry["writes"]:  # type: ignore[index]
+            value = write.get("value")
+            if value is None:
+                lines.append(f"      store @ {write['store']} (dynamic)")  # type: ignore[index]
+            else:
+                lines.append(
+                    f"      store @ {write['store']} value={value}"  # type: ignore[index]
+                )
+
+    flag_records: Iterable[dict[str, object]] = report["flag_records"]  # type: ignore[assignment]
+    lines.append("")
+    lines.append("Flag table:")
+    for entry in flag_records:
+        kind = "long" if entry["long_form"] else "short"
+        masks = f"mask=({entry['mask_c0db']},{entry['mask_c0dc']})"
+        match = entry["match_text"]
+        lines.append(
+            f"  {kind:<5} header={entry['header']} {masks} match='{match}' pointer={entry['pointer']}"
+        )
+        if entry.get("page1_text"):
+            lines.append(f"    page1='{entry['page1_text']}'")
+        if entry.get("page2_text"):
+            lines.append(f"    page2='{entry['page2_text']}'")
+        if entry.get("replacement_text"):
+            lines.append(f"    replacement='{entry['replacement_text']}'")
+
+    dispatch: dict[str, object] = report["flag_dispatch"]  # type: ignore[assignment]
+    lines.append("")
+    lines.append("Flag dispatch directory:")
+    lines.append(
+        f"  leading marker : {dispatch['leading_marker']}"  # type: ignore[index]
+    )
+    lines.append(
+        f"  trailing marker: {dispatch['trailing_marker']}"  # type: ignore[index]
+    )
+    entries: Iterable[dict[str, object]] = dispatch["entries"]  # type: ignore[assignment]
+    for entry in entries:
+        lines.append(
+            f"  flag {entry['flag_index']} -> slot {entry['slot']} handler={entry['handler']}"
+        )
+
+    tail: dict[str, object] = report["flag_directory_tail"]  # type: ignore[assignment]
+    lines.append("")
+    lines.append("Flag directory tail:")
+    lines.append(f"  bytes: {', '.join(tail['bytes'])}")
+    lines.append(f"  text : {tail['text']}")
+
+    directory: Iterable[dict[str, object]] = report["macro_directory"]  # type: ignore[assignment]
     comparisons: Iterable[dict[str, object]] = report["comparisons"]  # type: ignore[assignment]
     lines.append("")
-    lines.append("Slot diff (recovered vs. stub placeholders):")
+    lines.append("Macro directory (runtime order):")
+    for entry in directory:
+        text = entry["text"] or "<no text>"
+        if len(text) > 48:
+            text = text[:45] + "..."
+        lines.append(
+            f"  slot {entry['slot']:>2} @ {entry['address']}:"
+            f" {entry['length']:>3} bytes | bytes={entry['byte_preview']} | text='{text}'"
+        )
+
+    lines.append("")
+    lines.append("Slot diff (recovered vs. stub data):")
     for row in comparisons:
-        stub = row["stub_fallback"] or "<none>"
-        preview = row["decoded_preview"]
-        if len(preview) > 48:
-            preview = preview[:45] + "..."
+        status = "match" if row["matches"] else "DIFF"
+        recovered_preview = row["recovered_preview"]
+        if len(recovered_preview) > 48:
+            recovered_preview = recovered_preview[:45] + "..."
+        stub_preview = row["stub_preview"] or "<missing>"
+        if len(stub_preview) > 48:
+            stub_preview = stub_preview[:45] + "..."
+        stub_length = row["stub_length"]
+        stub_length_text = f"{stub_length:>3}" if stub_length is not None else "  –"
         lines.append(
             f"  slot {row['slot']:>2} @ {row['address']}:"
-            f" {row['payload_length']:>3} bytes | recovered='{preview}' | stub='{stub}'"
+            f" rec={row['recovered_length']:>3}b stub={stub_length_text}b"
+            f" | status={status}"
+            f" | recovered={recovered_preview}"
+            f" | stub={stub_preview}"
         )
+
+    stub_only: Iterable[dict[str, object]] = report["stub_only_macros"]  # type: ignore[assignment]
+    if stub_only:
+        lines.append("")
+        lines.append("Warning: stub exports macros not present in the recovered overlay:")
+        for row in stub_only:
+            lines.append(
+                f"  slot {row['slot']:>2} @ {row['address']}:"
+                f" {row['length']:>3} bytes | bytes={row['byte_preview']}"
+            )
 
     non_terminated: Iterable[dict[str, str]] = report["non_terminated_macros"]  # type: ignore[assignment]
     if non_terminated:

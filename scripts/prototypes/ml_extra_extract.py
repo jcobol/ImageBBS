@@ -52,26 +52,39 @@ def runtime_to_index(address: int, *, load_addr: int) -> int:
     raise ValueError(f"runtime address ${address:04x} is outside recognised segments")
 
 
+_PRINTABLE_ASCII = set(range(0x20, 0x7F))
+_PRINTABLE_EXTRA = {
+    0x0D: "\n",  # carriage return
+    0x8D: "\n",  # shifted carriage return (ml.extra uses both forms)
+}
+
+
+def _decode_petscii_byte(byte: int) -> str | None:
+    """Return a printable representation for ``byte`` when recognised."""
+
+    if byte in _PRINTABLE_EXTRA:
+        return _PRINTABLE_EXTRA[byte]
+    if byte in _PRINTABLE_ASCII:
+        return chr(byte)
+    if byte >= 0x80:
+        candidate = byte & 0x7F
+        if candidate in _PRINTABLE_ASCII:
+            return chr(candidate)
+        if candidate in _PRINTABLE_EXTRA:
+            return _PRINTABLE_EXTRA[candidate]
+    return None
+
+
 def decode_petscii(data: Iterable[int]) -> str:
     result: list[str] = []
     for byte in data:
         if byte == 0x00:
             break
-        if 0x41 <= byte <= 0x5A or 0x30 <= byte <= 0x39:
-            result.append(chr(byte))
-            continue
-        if 0x61 <= byte <= 0x7A:
-            result.append(chr(byte))
-            continue
-        if byte in {0x20, 0x2C, 0x2E, 0x3A, 0x3B, 0x3F, 0x21}:
-            result.append(chr(byte))
-            continue
-        if byte >= 0x80:
-            candidate = byte & 0x7F
-            if 0x41 <= candidate <= 0x5A or 0x30 <= candidate <= 0x39:
-                result.append(chr(candidate))
-                continue
-        result.append(f"{{$${byte:02x}}}")
+        decoded = _decode_petscii_byte(byte)
+        if decoded is None:
+            result.append(f"{{$${byte:02x}}}")
+        else:
+            result.append(decoded)
     return "".join(result)
 
 
