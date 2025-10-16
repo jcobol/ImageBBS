@@ -13,11 +13,9 @@
 ## Prior findings
 - Iteration 19 documented the recovery of both `setup` and `ml.extra`, emphasising that the next step is to replace the stubbed lightbar tables and ampersand handlers with the authentic overlay data. Those notes remain the authoritative source on why the stub exists and what behaviour it attempts to mimic.【F:docs/porting/iteration-19.md†L1-L27】
 
-## Stub placeholders to eliminate
-- The stub seeds deterministic lightbar defaults (`DEFAULT_PAGE1_LEFT`/`RIGHT`, underline character/colour) and pushes them into the runtime buffers, all of which should be overwritten by values extracted from the recovered overlay.【F:v1.2/source/ml_extra_stub.asm†L75-L110】
-- Human-readable flag descriptors and their default-state bytes live in `lightbar_flag_directory` and the `flag_desc_##` strings; these must be replaced with the real PETSCII records discovered in the disassembly.【F:v1.2/source/ml_extra_stub.asm†L112-L163】
-- The helper copy of the lightbar bitmaps (`lightbar_stub_bitmaps`) and the placeholder palette/macro directory need to be swapped with authentic data once identified in `ml.extra`.【F:v1.2/source/ml_extra_stub.asm†L165-L188】
+## Stub updates after decoding
+- The stub now copies the overlay's lightbar bitmaps (`$00,$03,$06,$00`) and zeroed underline defaults straight into the runtime buffers so the Y2K loader observes the same startup state as the original overlay.【F:v1.2/source/ml_extra_stub.asm†L26-L57】
+- The human-readable `lightbar_flag_directory` scaffolding has been retired; in its place the file exposes the raw lightbar/underline bytes, palette, slot IDs, runtime targets, and macro payloads recovered from the overlay for downstream tooling.【F:v1.2/source/ml_extra_stub.asm†L59-L119】
 
 ## Next steps
-- Disassemble `ml.extra` with data-aware tooling so the real flag tables, palette bytes, and macro directory can be transplanted into the source tree.
-- Update the stubs and host-side helpers to consume the recovered tables, then remove any commentary that labels them as provisional.
+- Propagate the recovered tables through the remaining host-side helpers so no documentation or tooling relies on the removed placeholders.

@@ -18,9 +18,10 @@
       *(Iteration 04 details the lookup-and-table workflow.)*
 - [x] Recover the missing overlay PRGs (`setup`, `ml.extra`, etc.) so the remaining `lbl_c2e5` variables (`D5`, `AK`, `MW`, `C1`–`C3`, `KP`) can be traced and documented. The sysop manual confirms `setup` runs immediately after `im` to DIM variables and load configuration records, so sourcing the original boot disks is prerequisite to finishing the table audit.【F:v1.2/docs/image-1_2b-sysop-manual.adoc†L6864-L6883】 *(Raised in iteration 05 follow-ups.)*
       - Iteration 10 added a D64 extraction helper so recovered disk images can be parsed directly within the repository tooling.
-      - Iteration 11 provides placeholder stubs for `setup` and `ml.extra` so host prototypes have deterministic defaults while the authentic PRGs remained missing.【F:v1.2/core/setup.stub.txt†L1-L63】【F:v1.2/source/ml_extra_stub.asm†L1-L91】
+      - Iteration 11 provides placeholder stubs for `setup` and `ml.extra` so host prototypes have deterministic defaults while the authentic PRGs remained missing.【F:v1.2/core/setup.stub.txt†L1-L63】
       - Iteration 19 documents the recovered PRGs under `v1.2/from-floppy/`, including load addresses and PETCAT listings for `setup` and `ml.extra`. Disassembly and re-integration now proceed against the authentic overlays.【F:v1.2/from-floppy/README.md†L1-L21】【F:docs/porting/iteration-19.md†L1-L27】
       - Iteration 21 re-aligns the `setup` stub with the recovered BASIC overlay and exposes helpers that harvest overlay/data defaults straight from the listing for host tooling.【F:docs/porting/iteration-21.md†L1-L24】
+      - Iteration 28 replaces the provisional `ml_extra_stub.asm` data with the recovered lightbar, palette, and macro payloads and extends the `MLExtraDefaults` helper so host tooling consumes the same bytes as the C64 overlay.【F:v1.2/source/ml_extra_stub.asm†L1-L119】【F:scripts/prototypes/ml_extra_defaults.py†L1-L149】【F:docs/porting/iteration-26.md†L1-L15】
 
 ## Design Tasks
 - [x] Outline a host-platform abstraction layer for disk, console, and modem I/O

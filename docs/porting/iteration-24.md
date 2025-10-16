@@ -10,6 +10,5 @@
 - The strings referenced by those pointers decode to PETSCII-heavy control sequences rather than human-friendly labels, implying the BASIC stub’s prose will have to be replaced with the overlay’s command macros during the data transplant.【F:scripts/prototypes/ml_extra_extract.py†L55-L69】
 
 ## Next steps
-- Extend the extractor to walk the $c200 lightbar records, accounting for the relocation gap between the $c000 and $d000 segments.
-- Replace the placeholder PETSCII decoder with a mapper that emits `{CBM-…}` tokens so the JSON mirrors the PETCAT listings.
-- Capture the palette bytes and macro directory that remain in the second segment so the stub can be updated alongside the flag data.
+- Keep refining the extractor's PETSCII mapper so JSON output captures control codes in the `{CBM-…}` notation used elsewhere in the logs.
+- Maintain the lightbar/palette offsets in the helper as additional tables are decoded so future automation does not regress the recovered addresses.
