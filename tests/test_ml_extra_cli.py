@@ -57,6 +57,20 @@ def test_dump_macros_metadata_text(capsys: pytest.CaptureFixture[str], sample_sl
     assert "sha256=" in output
 
 
+def test_dump_macros_metadata_json_file(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    defaults: ml_extra_defaults.MLExtraDefaults,
+) -> None:
+    destination = tmp_path / "metadata.json"
+    ml_extra_dump_macros.main(["--metadata-json", str(destination)])
+    payload = json.loads(destination.read_text())
+    assert payload["flag_record_count"] == len(defaults.flag_records)
+    assert payload["macro_slots"] == [entry.slot for entry in defaults.macros]
+    output = capsys.readouterr().out
+    assert "slot" in output, "expected macro dump output alongside file write"
+
+
 def test_disasm_metadata_text(capsys: pytest.CaptureFixture[str], sample_slot: int) -> None:
     ml_extra_disasm.main(["--metadata", "--slot", str(sample_slot)])
     output = capsys.readouterr().out
