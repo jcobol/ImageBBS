@@ -1,14 +1,17 @@
-"""Host-friendly view of the default data staged by ``setup.stub``.
+"""Host-friendly view of the default data staged by ``setup``.
 
-The BASIC placeholder approximating the missing ``setup`` overlay seeds
-configuration arrays, sysop metadata, and statistics counters so the rest of
-the boot sequence can proceed.  This module mirrors the same defaults in a
-Python structure that host-side prototypes can import without having to parse
-BASIC ``DATA`` statements."""
+The recovered BASIC overlay now lives in ``v1.2/source/setup.bas`` while
+``v1.2/core/setup.stub.txt`` documents its control flow with annotated
+placeholders.  This helper reads both listings so host-side prototypes can
+reference verified defaults (drive slots, sysop metadata, statistics counters)
+and the canonical ``DATA`` records without reimplementing a BASIC parser."""
 from __future__ import annotations
 
+import ast
+import re
 from dataclasses import dataclass, field
-from typing import Dict, Iterable, Optional, Protocol, Tuple
+from pathlib import Path
+from typing import Any, Dict, Iterable, Optional, Protocol, Tuple
 
 
 class DriveLocator(Protocol):
@@ -216,11 +219,18 @@ class SetupDefaults:
 
         return self.chat_mode_messages.returning_to_editor
 
+    @property
+    def data_records(self) -> SetupDataRecords:
+        """Expose the ``DATA`` statements parsed from ``setup.bas``."""
+
+        return load_setup_data_records()
+
     @classmethod
     def stub(cls) -> "SetupDefaults":
-        """Return the deterministic defaults from ``setup.stub``."""
+        """Return the deterministic defaults recorded alongside ``setup``."""
 
-        raw_assignments = ((8, 0), (9, 0), (10, 0), (11, 0), (0, 0), (0, 0))
+        defaults = load_stub_defaults()
+        raw_assignments = tuple(tuple(entry) for entry in defaults["drives"])
         drives = tuple(
             DriveAssignment(
                 slot=index,
@@ -233,46 +243,35 @@ class SetupDefaults:
             for index, (device, drive) in enumerate(raw_assignments, start=1)
         )
         inventory = derive_drive_inventory(drives)
-        sysop = SysopProfile(
-            login_id="SYSOP",
-            board_title="Image BBS",
-            handle="SYSOP",
-            password="PASSWORD",
-            first_name="SYSOP",
-            last_name="SYSOP",
-            phone="555-1212",
-        )
-        statistics = BoardStatistics(
-            message_counts=(0, 0, 0, 0),
-            status_banner="",
-            total_calls=0,
-            last_caller="NO CALLERS YET",
-            last_logon_timestamp="00/00/00 00:00",
-            password_subs_password="",
-        )
-        prime_time = PrimeTimeWindow(indicator=0, start_hour=0, end_hour=0)
-        chat_messages = ChatModeMessages(
-            entering="{cyan}* Entering Chat Mode *",
-            exiting="{yellow}* Exiting Chat Mode *",
-            returning_to_editor="{white}* Returning to the Editor *",
-        )
+        sysop = SysopProfile(**defaults["sysop"])
+        statistics = BoardStatistics(**defaults["statistics"])
+        prime_time = PrimeTimeWindow(**defaults["prime_time"])
+        chat_messages = ChatModeMessages(**defaults["chat_mode_messages"])
+
+        stub_overlays = tuple(defaults.get("overlays", ()))
+        actual_overlays = extract_overlay_sequence()
+        if stub_overlays and actual_overlays and stub_overlays != actual_overlays:
+            raise ValueError(
+                "overlay list mismatch between setup stub and setup.bas"
+            )
+        macro_modules = actual_overlays or stub_overlays
         highest_device_minus_seven = inventory.highest_device_minus_seven
         drive_count = inventory.device_count
         return cls(
             drives=drives,
             drive_inventory=inventory,
-            board_identifier="IM",
-            new_user_credits=25,
+            board_identifier=str(defaults["board_identifier"]),
+            new_user_credits=int(defaults["new_user_credits"]),
             highest_device_minus_seven=highest_device_minus_seven,
             drive_count=drive_count,
-            board_name="IMAGE BBS",
-            prompt="{pound}READY{pound}",
-            copyright_notice="(c) 1990 FandF Products",
+            board_name=str(defaults["board_name"]),
+            prompt=str(defaults["prompt"]),
+            copyright_notice=str(defaults["copyright_notice"]),
             sysop=sysop,
             statistics=statistics,
             prime_time=prime_time,
             chat_mode_messages=chat_messages,
-            macro_modules=("+.lo", "+.modem", "+.lb move", "+.lb chat"),
+            macro_modules=macro_modules,
         )
 
 
@@ -313,5 +312,120 @@ __all__ = [
     "PrimeTimeWindow",
     "SetupDefaults",
     "SysopProfile",
+    "SetupDataRecords",
+    "extract_overlay_sequence",
+    "load_setup_data_records",
+    "load_stub_defaults",
     "derive_drive_inventory",
 ]
+@dataclass(frozen=True)
+class SetupDataRecords:
+    """Structured view of the ``DATA`` statements embedded in ``setup.bas``."""
+
+    co_options: Tuple[str, ...]
+    lightbar_char_codes: Tuple[int, ...]
+    lightbar_labels: Tuple[str, ...]
+
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_SETUP_BAS_PATH = _REPO_ROOT / "v1.2/source/setup.bas"
+_SETUP_STUB_PATH = _REPO_ROOT / "v1.2/core/setup.stub.txt"
+
+_DEFAULT_PATTERN = re.compile(r"^\s*\d*\s*rem\s+stub-default\s+([a-z0-9_]+)\s*=\s*(.+)$", re.IGNORECASE)
+_DATA_PATTERN = re.compile(r"^\s*\d+\s+data\s+(.+)$", re.IGNORECASE)
+
+
+def _literal_eval(value: str, *, key: str, source: Path) -> Any:
+    """Evaluate ``value`` using :func:`ast.literal_eval` with context."""
+
+    try:
+        return ast.literal_eval(value)
+    except (ValueError, SyntaxError) as exc:  # pragma: no cover - defensive guard
+        message = f"unable to parse stub default for {key!r} in {source}: {value}"
+        raise ValueError(message) from exc
+
+
+def load_stub_defaults(stub_path: Optional[Path] = None) -> Dict[str, Any]:
+    """Return the annotated defaults recorded in ``setup.stub.txt``."""
+
+    path = stub_path or _SETUP_STUB_PATH
+    defaults: Dict[str, Any] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        match = _DEFAULT_PATTERN.match(line)
+        if not match:
+            continue
+        key, raw_value = match.groups()
+        value = _literal_eval(raw_value.strip(), key=key.lower(), source=path)
+        defaults[key.lower()] = value
+    return defaults
+
+
+def load_setup_data_records(listing_path: Optional[Path] = None) -> SetupDataRecords:
+    """Parse ``DATA`` records from the authentic ``setup.bas`` listing."""
+
+    path = listing_path or _SETUP_BAS_PATH
+    values: list[Any] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        match = _DATA_PATTERN.match(line)
+        if not match:
+            continue
+        raw_values = match.group(1).strip()
+        entries = _literal_eval(f"[{raw_values}]", key="data", source=path)
+        if isinstance(entries, tuple):
+            values.extend(entries)
+        else:
+            values.extend(entries if isinstance(entries, list) else [entries])
+
+    if len(values) < 33:
+        raise ValueError(
+            "setup.bas DATA decode produced fewer than 33 elements; listing may be stale"
+        )
+
+    co_options = tuple(str(option) for option in values[:9])
+    char_codes = tuple(int(code) for code in values[9:21])
+    lightbar_labels = tuple(str(label) for label in values[21:33])
+    return SetupDataRecords(
+        co_options=co_options,
+        lightbar_char_codes=char_codes,
+        lightbar_labels=lightbar_labels,
+    )
+
+
+def extract_overlay_sequence(listing_path: Optional[Path] = None) -> Tuple[str, ...]:
+    """Return overlays loaded by ``setup`` in execution order."""
+
+    path = listing_path or _SETUP_BAS_PATH
+    overlays: list[str] = []
+    current_literal: Optional[str] = None
+
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.lstrip()
+        if stripped[:1].isdigit():
+            parts = stripped.split(None, 1)
+            body = parts[1] if len(parts) > 1 else ""
+        else:
+            body = stripped
+        statements = [segment.strip() for segment in body.split(":")]
+        for statement in statements:
+            if statement.upper().startswith("A$ = ") and '"' in statement:
+                literal = statement.split("=", 1)[1].strip()
+                if literal.startswith('"') and literal.endswith('"'):
+                    current_literal = literal.strip('"')
+                else:
+                    current_literal = None
+                continue
+            if statement.upper().startswith("GOSUB "):
+                target = statement[6:].strip()
+                if not current_literal:
+                    current_literal = None
+                    continue
+                if target.startswith("190"):
+                    overlays.append(f"ML.{current_literal}")
+                elif target.startswith("1011"):
+                    overlays.append(current_literal)
+                current_literal = None
+                continue
+        current_literal = None
+
+    return tuple(overlays)
+

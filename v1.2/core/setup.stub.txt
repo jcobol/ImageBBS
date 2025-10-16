@@ -1,97 +1,78 @@
-0 rem IMAGE BBS 1.2B "setup" overlay (stub)
+0 rem IMAGE BBS 1.2B "setup" overlay (annotated stub)
 1 rem ---------------------------------------------------------------
-2 rem The original BASIC program that dimensions runtime variables,
-3 rem reads configuration records (bd.data, u.config, e.data, e.stats),
-4 rem and then RUNs the main BBS has not been recovered. This listing
-5 rem approximates the side effects documented in the Image 1.2B manual
-6 rem and observed from callers inside "im" so that host-side ports can
-7 rem rely on deterministic defaults until the authentic source is found.
-8 rem ---------------------------------------------------------------
+2 rem This listing mirrors the recovered BASIC program's staging flow so
+3 rem host-side tooling can reference authentic control paths and data.
+4 rem Hardware pokes, disk I/O, and overlays remain commented where the
+5 rem Commodore runtime cannot be emulated inline; placeholders are noted
+6 rem explicitly so future iterations can replace them with verified data.
+7 rem ---------------------------------------------------------------
 
-10 rem Stage 1.  Dimension arrays seeded by the machine-language bootstrap.
-20 dim dv%(6),dr%(6),bf(6),st(40),tt$(254),ud$(32),co$(16),plus$(8)
-30 for dr=1 to 6:dv%(dr)=0:dr%(dr)=0:bf(dr)=-1:next
-40 for idx=1 to 32:ud$(idx)="":next
-50 for idx=1 to 16:co$(idx)="":next
-60 zz=0:pm=0:pf=0:em=0:dc=0:uc=0:bd=0:bu=0:cr=0:pt%=0:ps=0:rp=0
-70 d3$="":pp$="":lt$="00/00/00 00:00":fl$="":jn$="":ld$="":cp$=""
-80 cc$="IM":bn$="IMAGE BBS":po$="{pound}READY{pound}":mc=0
-90 gosub 2000:gosub 3000:gosub 4000
+10 rem Stage 0 – Environment hooks and mass dimensioning (setup.bas 1-76)
+12 rem   AC% = 16 : SG = 0 : BN$ = "" : Z$ = "" : D3$ = "" : PP$ = ""
+14 rem   AK$ = " @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@" + "{RETURN}" : O = 16400
+16 rem   R$ = CHR$(13) : NL$ = CHR$(0) : QT$ = CHR$(34)
+18 rem   OPEN 4,4,7 : POKE 836,1 : POKE 650,128 : configure serial CIA bits
+20 rem   DIM TT$(254),BB$(41),DT$(91),ED$(91),NN$(91)
+22 rem   DIM A%(91),C%(91),D%(91),E%(31),F%(91),AC%(31),SO%(31)
+24 rem   DIM DV%(36),ST(38),CO$(9),FL$(9),DR%(36)
+26 rem   REM (hundreds of scalar variables A–Z also dimensioned in the original)
+28 dim dv%(36),dr%(36),bf(6),st(38),tt$(254),co$(9),fl$(9)
+29 dim a%(12),ed$(12)
 
-100 rem Stage 2.  Default drive map in lieu of bd.data (sysop manual p. 6-11).
-110 data 8,0,9,0,10,0,11,0,0,0,0,0,"IM",25,4,4,"IMAGE BBS","{pound}READY{pound}","(c) 1990 FandF Products"
-115 rem Remaining tuples mirror the unassigned slots left zeroed on new installs.
-120 for dr=1 to 6
-130   read dv%(dr),dr%(dr)
-140 next
-150 read ld$,cr,bd,bu,bn$,po$,cp$
-155 if ld$<>"" then cc$=ld$
-160 dr=1:d1%=dv%(1):d2%=dr%(1):dv%=dv%(1):dr%=dr%(1)
-170 dr$=mid$(str$(dr%(dr)),2)+":"
-180 rem Placeholder for fifth drive tuple referenced via D5.
-190 d5=8:d5%=0
-195 if bd=0 or bu=0 then gosub 500
+40 rem Stage 1 – Carousel descriptors for the setup lightbar (setup.bas 78-185)
+42 restore
+44 for i=1 to 9: read a$: co$(i)=a$: next i
+46 for y=1 to 12: read a%(y): next y
+48 for y=1 to 12: read ed$(y): next y
+50 rem   The real overlay prints these labels while loading ML.RS232/ML.PMODES.
 
-200 rem Stage 3.  SysOp profile approximated from u.config record 1.
-210 data "SYSOP","Image BBS","SYSOP","PASSWORD","SYSOP","SYSOP","555-1212"
-220 read i1$,i2$,na$,pw$,ff$,ll$,ph$
-230 if ld$="" then ld$="IM"
-235 ac%=1:ct%=0:tc%=0:co%=0
-240 ll%=60:ul=30:lf=30:em=0:dc=0:uc=0:if bd=0 then bd=4:if bu=0 then bu=4:if cr=0 then cr=25
-250 ps=0:rp=0:lt$="00/00/00 00:00":fl$="":jn$="N":id=1
-260 rem Variables only seen in later overlays – stub them explicitly.
-265 rem Chat mode banners follow the manual's "Entering/Exiting/Returning"
-266 rem strings so host ports can mirror the prompts shown during paging.
-267 rem (documented in the Image 1.2B manual's Chat Mode section)
-270 d5=8:d5%=0:ak$="":ak=0:mw=0:mw%=0
-280 c1$="{cyan}* Entering Chat Mode *":c2$="{yellow}* Exiting Chat Mode *":c3$="{white}* Returning to the Editor *":kp$="":kp=0
+60 rem Stage 2 – Disk metadata from bd.data (setup.bas 80-133)
+62 rem   OPEN 2,#dv%,#2,"bd.data,s,r" : read dv%(1..6),dr%(1..6)
+64 rem   INPUT# 2,CC$,NC,NV,ND,BN$,PO$ : close the channel
+66 rem   The recovered program immediately re-opens bd.data to pull the
+68 rem   persistent TT$ records, macro pointers, prime-time window, and
+70 rem   other overlays. Host stubs fall back to deterministic defaults:
+72 rem stub-default drives = ((8, 0), (9, 0), (10, 0), (11, 0), (0, 0), (0, 0))
+73 rem stub-placeholder drives = "bd.data header pending verification from disk dump"
+74 rem stub-default board_identifier = "IM"
+75 rem stub-default board_name = "IMAGE BBS"
+76 rem stub-default prompt = "{pound}READY{pound}"
+77 rem stub-default new_user_credits = 25
+78 rem stub-default copyright_notice = "(c) 1990 FandF Products"
+79 rem stub-default sysop = {"login_id": "SYSOP", "board_title": "Image BBS", "handle": "SYSOP", "password": "PASSWORD", "first_name": "SYSOP", "last_name": "SYSOP", "phone": "555-1212"}
+80 rem stub-placeholder sysop = "Populate from u.config record 1 when disk image is decoded"
 
-300 rem Stage 4.  Message counters and caller stats from e.data/e.stats.
-305 rem st(1-4) mirror the BAR counters; d3$ and lt$ preserve the last caller
-306 rem handle/timestamp, tt tracks total calls, and pp$ holds the password-sub
-307 rem credential described in records 17-20 of the sysop manual summary.
-310 data 0,0,0,0,"NO CALLERS YET","",0,"00/00/00 00:00","",0,0,0
-320 read st(1),st(2),st(3),st(4),d3$,tt$,tt,lt$,pp$,p1%,p2%,p3%
-330 rem Additional REL records (e.stats) are left zeroed; the real program
-340 rem walks the first 30 entries to seed BAR statistics on boot.
+90 rem Stage 3 – Statistics and timers from e.data/e.stats (setup.bas 100-172)
+92 rem   INPUT# 2,TT$(1..30) : derived values drive menus, prompts, and
+94 rem   prime-time scheduling. Records 17-20 set the last caller banner,
+96 rem   password subs password, and total call counters.
+98 rem stub-default statistics = {"message_counts": (0, 0, 0, 0), "status_banner": "", "total_calls": 0, "last_caller": "NO CALLERS YET", "last_logon_timestamp": "00/00/00 00:00", "password_subs_password": ""}
+99 rem stub-placeholder statistics = "Replace with e.data record 17-20 once recovered"
+100 rem stub-default prime_time = {"indicator": 0, "start_hour": 0, "end_hour": 0}
+101 rem stub-placeholder prime_time = "e.data record 20 minutes window pending disk dump"
+102 rem stub-default chat_mode_messages = {"entering": "{cyan}* Entering Chat Mode *", "exiting": "{yellow}* Exiting Chat Mode *", "returning_to_editor": "{white}* Returning to the Editor *"}
+103 rem stub-placeholder chat_mode_messages = "Manual excerpt – setup.bas does not stage these strings directly"
 
-400 rem Stage 5.  In production, setup would load screen overlays and
-410 rem swap in ml.extra/ml.editor before running the main dispatcher.
-420 rem Without the original assets we only record the intent.
-430 plus$(1)="+.lo":plus$(2)="+.modem":plus$(3)="+.lb move":plus$(4)="+.lb chat"
-440 plus_files=4
+110 rem Stage 4 – Overlay loads (setup.bas 180-190, 107-134, 131-132)
+112 rem   A$="RS232": GOSUB 190 (loads ML.RS232)
+114 rem   A$="PMODES": GOSUB 190 (loads ML.PMODES)
+116 rem   A$="E.I.MACRO,S,R":DR=3:GOSUB 1011
+118 rem   A$="E.I.PROMPT,S,R":DR=3:GOSUB 1011
+120 rem   A$="E.AMAINT,S,R":DR=3:GOSUB 1011
+122 rem   A$="E.LOG":DR=3:GOSUB 1011 (falls back to templating when missing)
+124 rem   DR=1:A$="LBSETUP":GOSUB 1011 (loads lightbar definitions)
+126 rem stub-default overlays = ("E.I.MACRO,S,R", "E.I.PROMPT,S,R", "E.AMAINT,S,R", "LBSETUP", "E.LOG", "ML.RS232", "ML.PMODES")
+127 rem stub-placeholder overlays = "Derived from setup.bas GOSUB 190/1011 call sites"
 
-500 rem Derive bd.data metadata when fields are omitted or zeroed.
-510 hd=0
-520 for idx=1 to 6
-530   if dv%(idx)>hd then hd=dv%(idx)
-540 next
-550 if bd=0 and hd>0 then bd=hd-7
-560 if bu=0 then dd=0
-570 for idx=1 to 6
-580   dv=dv%(idx)
-590   if dv<>0 then
-600     found=0
-610     for jd=1 to idx-1
-620       if dv%(jd)=dv then found=1
-630     next jd
-640     if found=0 then dd=dd+1
-650   end if
-660 next idx
-670 if dd>0 then bu=dd
-680 end if
-690 return
+140 rem Stage 5 – Transfer to the main dispatcher (setup.bas 132-133)
+142 rem   After staging ML vectors and REL overlays, setup branches to 500,
+144 rem   executes the BIOS modifier, and eventually RUNs the resident IM program.
+146 rem   Host ports should hand off to their own dispatcher here.
+148 end
 
-9000 rem Stage 6.  Transfer control to the main Image program.
-9010 rem The genuine overlay ends with RUN or GOTO to enter "im".
-9020 rem A host implementation should jump into its dispatcher here.
-9030 end
-
-2000 rem placeholder to emphasise staged loader - nothing to execute.
-2010 return
-
-3000 rem placeholder for configuration-driven feature toggles.
-3010 return
-
-4000 rem placeholder for additional disk overlays invoked by setup.
-4010 return
+900 data "COMMODORE 64","COMMODORE 128","AMIGA","APPLE/COMP."
+902 data "IBM/COMP.","MACINTOSH","ATARI/ST","TANDY SERIES","OTHER TYPE"
+904 data 32,32,32,32,32,32,32,32,32,32,32,32,"CONT       SETUP","       #####"
+905 data " RS-232 DATA"," PRINT DEFS"," ECS DEFS"," DIMENSIONING ARRAYS"
+906 data " CONFIGURING DATA"," CHECKING DRIVES"," VERIFYING INFO"," TOTALING USERS"
+907 data "","CONT"

@@ -20,6 +20,7 @@
       - Iteration 10 added a D64 extraction helper so recovered disk images can be parsed directly within the repository tooling.
       - Iteration 11 provides placeholder stubs for `setup` and `ml.extra` so host prototypes have deterministic defaults while the authentic PRGs remained missing.【F:v1.2/core/setup.stub.txt†L1-L63】【F:v1.2/source/ml_extra_stub.asm†L1-L91】
       - Iteration 19 documents the recovered PRGs under `v1.2/from-floppy/`, including load addresses and PETCAT listings for `setup` and `ml.extra`. Disassembly and re-integration now proceed against the authentic overlays.【F:v1.2/from-floppy/README.md†L1-L21】【F:docs/porting/iteration-19.md†L1-L27】
+      - Iteration 21 re-aligns the `setup` stub with the recovered BASIC overlay and exposes helpers that harvest overlay/data defaults straight from the listing for host tooling.【F:docs/porting/iteration-21.md†L1-L24】
 
 ## Design Tasks
 - [x] Outline a host-platform abstraction layer for disk, console, and modem I/O
