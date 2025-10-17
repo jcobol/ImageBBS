@@ -1,8 +1,10 @@
 """In-memory PETSCII renderer approximating the C64 text screen."""
 from __future__ import annotations
 
+from dataclasses import dataclass
 from functools import lru_cache
-from typing import Sequence
+from types import MappingProxyType
+from typing import Iterable, Mapping, Sequence
 
 from . import ml_extra_defaults
 from . import petscii_glyphs
@@ -363,3 +365,215 @@ class PetsciiScreen:
                 return char.upper()
             return char
         return " "
+
+
+class _TracingPetsciiScreen(PetsciiScreen):
+    """Instrumented screen that records glyphs drawn during rendering."""
+
+    def __init__(
+        self,
+        recorder: list[GlyphCell],
+        *,
+        defaults: ml_extra_defaults.MLExtraDefaults | None = None,
+    ) -> None:
+        super().__init__(defaults=defaults)
+        self._recorder = recorder
+
+    def _put_character(
+        self,
+        byte: int,
+        char: str,
+        *,
+        glyph_bank: int | None = None,
+        reverse: bool | None = None,
+    ) -> None:
+        bank = glyph_bank if glyph_bank is not None else (1 if self._lowercase_mode else 0)
+        reverse_flag = self._reverse_mode if reverse is None else reverse
+        code = byte & 0xFF
+        lowercase = bool(bank)
+        self._recorder.append(
+            GlyphCell(
+                code=code,
+                position=(self._cursor_x, self._cursor_y),
+                lowercase=lowercase,
+                reverse=reverse_flag,
+                glyph_index=petscii_glyphs.get_glyph_index(code, lowercase=lowercase),
+                glyph=petscii_glyphs.get_glyph(code, lowercase=lowercase),
+            )
+        )
+        super()._put_character(
+            byte,
+            char,
+            glyph_bank=glyph_bank,
+            reverse=reverse,
+        )
+
+
+def _strip_terminator(payload: Iterable[int]) -> tuple[int, ...]:
+    """Return ``payload`` truncated at the first zero terminator."""
+
+    trimmed: list[int] = []
+    for raw in payload:
+        value = raw & 0xFF
+        if value == 0x00:
+            break
+        trimmed.append(value)
+    return tuple(trimmed)
+
+
+def _render_payload_glyphs(
+    payload: Iterable[int],
+    *,
+    defaults: ml_extra_defaults.MLExtraDefaults,
+) -> tuple[GlyphCell, ...]:
+    """Render ``payload`` through :class:`PetsciiScreen` and capture glyph metadata."""
+
+    data = _strip_terminator(payload)
+    if not data:
+        return ()
+    recorder: list[GlyphCell] = []
+    screen = _TracingPetsciiScreen(recorder, defaults=defaults)
+    screen.write(bytes(data))
+    return tuple(recorder)
+
+
+def _make_glyph_run(
+    payload: Iterable[int],
+    text: str,
+    *,
+    defaults: ml_extra_defaults.MLExtraDefaults,
+) -> GlyphRun:
+    """Return a :class:`GlyphRun` describing ``payload`` rendered as PETSCII."""
+
+    raw = tuple(int(byte) & 0xFF for byte in payload)
+    rendered = _strip_terminator(raw)
+    glyphs = _render_payload_glyphs(rendered, defaults=defaults)
+    return GlyphRun(text=text, payload=raw, rendered=rendered, glyphs=glyphs)
+
+
+def _optional_glyph_run(
+    payload: Iterable[int] | None,
+    text: str,
+    *,
+    defaults: ml_extra_defaults.MLExtraDefaults,
+) -> GlyphRun | None:
+    if payload is None:
+        return None
+    return _make_glyph_run(payload, text, defaults=defaults)
+
+
+def build_overlay_glyph_lookup(
+    defaults: ml_extra_defaults.MLExtraDefaults | None = None,
+) -> OverlayGlyphLookup:
+    """Return glyph metadata derived from the recovered overlay text tables."""
+
+    resolved = defaults or _load_editor_defaults()
+
+    macros_by_slot: dict[int, GlyphRun] = {}
+    macros_by_text: dict[str, GlyphRun] = {}
+    for entry in resolved.macros:
+        run = _make_glyph_run(entry.payload, entry.decoded_text, defaults=resolved)
+        macros_by_slot[entry.slot] = run
+        macros_by_text[entry.decoded_text] = run
+
+    flag_runs: list[FlagGlyphMapping] = []
+    for record in resolved.flag_records:
+        match_run = _make_glyph_run(
+            record.match_sequence,
+            record.match_text,
+            defaults=resolved,
+        )
+        flag_runs.append(
+            FlagGlyphMapping(
+                record=record,
+                match=match_run,
+                replacement=_optional_glyph_run(
+                    record.replacement,
+                    record.replacement_text,
+                    defaults=resolved,
+                ),
+                page1=_optional_glyph_run(
+                    record.page1_payload,
+                    record.page1_text,
+                    defaults=resolved,
+                ),
+                page2=_optional_glyph_run(
+                    record.page2_payload,
+                    record.page2_text,
+                    defaults=resolved,
+                ),
+            )
+        )
+
+    directory_run = _make_glyph_run(
+        resolved.flag_directory_tail,
+        resolved.flag_directory_text,
+        defaults=resolved,
+    )
+
+    return OverlayGlyphLookup(
+        macros_by_slot=MappingProxyType(macros_by_slot),
+        macros_by_text=MappingProxyType(macros_by_text),
+        flag_records=tuple(flag_runs),
+        flag_directory=directory_run,
+    )
+
+
+def render_petscii_payload(
+    payload: Iterable[int],
+    *,
+    defaults: ml_extra_defaults.MLExtraDefaults | None = None,
+    text: str | None = None,
+) -> GlyphRun:
+    """Render ``payload`` and return a :class:`GlyphRun` describing the glyphs."""
+
+    resolved = defaults or _load_editor_defaults()
+    label = text if text is not None else ""
+    return _make_glyph_run(payload, label, defaults=resolved)
+@dataclass(frozen=True)
+class GlyphCell:
+    """Single rendered glyph sampled from a PETSCII payload."""
+
+    code: int
+    position: tuple[int, int]
+    lowercase: bool
+    reverse: bool
+    glyph_index: int
+    glyph: petscii_glyphs.GlyphMatrix
+
+
+@dataclass(frozen=True)
+class GlyphRun:
+    """Rendered snapshot of a PETSCII byte sequence."""
+
+    text: str
+    payload: tuple[int, ...]
+    rendered: tuple[int, ...]
+    glyphs: tuple[GlyphCell, ...]
+
+    @property
+    def codes(self) -> tuple[int, ...]:
+        """Return the rendered PETSCII codes in draw order."""
+
+        return tuple(cell.code for cell in self.glyphs)
+
+
+@dataclass(frozen=True)
+class FlagGlyphMapping:
+    """Rendered glyph runs for a decoded ampersand flag record."""
+
+    record: ml_extra_defaults.FlagRecord
+    match: GlyphRun
+    replacement: GlyphRun | None
+    page1: GlyphRun | None
+    page2: GlyphRun | None
+
+
+@dataclass(frozen=True)
+class OverlayGlyphLookup:
+    """Lookup table mirroring overlay text rendered through :class:`PetsciiScreen`."""
+
+    macros_by_slot: Mapping[int, GlyphRun]
+    macros_by_text: Mapping[str, GlyphRun]
+    flag_records: tuple[FlagGlyphMapping, ...]
+    flag_directory: GlyphRun

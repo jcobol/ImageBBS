@@ -9,7 +9,10 @@ import pytest
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from scripts.prototypes import ml_extra_defaults, petscii_glyphs
-from scripts.prototypes.console_renderer import PetsciiScreen
+from scripts.prototypes.console_renderer import (
+    PetsciiScreen,
+    render_petscii_payload,
+)
 from scripts.prototypes.device_context import Console
 
 
@@ -143,6 +146,17 @@ def test_console_exposes_overlay_defaults(
     assert console.macros == editor_defaults.macros
 
 
+def test_console_exposes_overlay_glyph_lookup() -> None:
+    console = Console()
+
+    lookup = console.overlay_glyph_lookup
+    assert console.macro_glyphs is lookup.macros_by_slot
+    assert console.macro_glyphs_by_text is lookup.macros_by_text
+    assert console.flag_glyph_records == lookup.flag_records
+    assert console.flag_directory_glyphs == lookup.flag_directory
+    assert len(console.macro_glyphs) >= len(console.macros)
+
+
 def test_console_exposes_hardware_defaults(
     editor_defaults: ml_extra_defaults.MLExtraDefaults,
 ) -> None:
@@ -177,6 +191,54 @@ def test_screen_tracks_glyph_banks() -> None:
     glyphs = screen.glyph_matrix[0]
     assert glyphs[0] == petscii_glyphs.get_glyph(0x41)
     assert glyphs[1] == petscii_glyphs.get_glyph(0x61, lowercase=True)
+
+
+def test_macro_glyph_lookup_matches_renderer(
+    editor_defaults: ml_extra_defaults.MLExtraDefaults,
+) -> None:
+    console = Console()
+    slot = 20
+    macro_entry = console.defaults.macros_by_slot[slot]
+    macro_run = console.macro_glyphs[slot]
+
+    # The rendered payload omits the zero terminator stored in the directory.
+    expected_rendered_list: list[int] = []
+    for value in macro_entry.payload:
+        byte = value & 0xFF
+        if byte == 0x00:
+            break
+        expected_rendered_list.append(byte)
+    expected_rendered = tuple(expected_rendered_list)
+    assert macro_run.rendered == expected_rendered
+    assert macro_run.text == macro_entry.decoded_text
+
+    screen = PetsciiScreen(defaults=editor_defaults)
+    screen.write(bytes(macro_run.rendered))
+
+    for cell in macro_run.glyphs:
+        x, y = cell.position
+        assert screen.code_matrix[y][x] == cell.code
+        assert screen.glyph_index_matrix[y][x] == cell.glyph_index
+        assert screen.glyph_matrix[y][x] == cell.glyph
+        assert petscii_glyphs.get_glyph_index(
+            cell.code, lowercase=cell.lowercase
+        ) == cell.glyph_index
+        assert petscii_glyphs.get_glyph(cell.code, lowercase=cell.lowercase) == cell.glyph
+
+
+def test_render_petscii_payload_handles_lowercase_bank() -> None:
+    run = render_petscii_payload([0x0E, 0x61, 0x62, 0x8E, 0x41])
+
+    assert [cell.lowercase for cell in run.glyphs] == [True, True, False]
+    expected_codes = [0x61, 0x62, 0x41]
+    assert [cell.code for cell in run.glyphs] == expected_codes
+    for code, cell in zip(expected_codes, run.glyphs, strict=True):
+        assert cell.glyph_index == petscii_glyphs.get_glyph_index(
+            code, lowercase=cell.lowercase
+        )
+        assert cell.glyph == petscii_glyphs.get_glyph(
+            code, lowercase=cell.lowercase
+        )
 
 
 def test_reverse_mode_swaps_render_colours(editor_defaults: ml_extra_defaults.MLExtraDefaults) -> None:
