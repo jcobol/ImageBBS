@@ -22,6 +22,7 @@
       - Iteration 19 documents the recovered PRGs under `v1.2/from-floppy/`, including load addresses and PETCAT listings for `setup` and `ml.extra`. Disassembly and re-integration now proceed against the authentic overlays.【F:v1.2/from-floppy/README.md†L1-L21】【F:docs/porting/iteration-19.md†L1-L27】
       - Iteration 21 re-aligns the `setup` stub with the recovered BASIC overlay and exposes helpers that harvest overlay/data defaults straight from the listing for host tooling.【F:docs/porting/iteration-21.md†L1-L24】
       - Iteration 28 replaces the provisional `ml_extra_stub.asm` data with the recovered lightbar, palette, and macro payloads and extends the `MLExtraDefaults` helper so host tooling consumes the same bytes as the C64 overlay.【F:v1.2/source/ml_extra_stub.asm†L1-L119】【F:scripts/prototypes/ml_extra_defaults.py†L1-L149】【F:docs/porting/iteration-26.md†L1-L15】
+      - Iteration 31 standardises the `ml_extra_sanity --metadata-json` snapshot so each verification run refreshes the committed overlay metadata diff alongside the text report.【F:docs/porting/iteration-31.md†L1-L15】
 
 ## Design Tasks
 - [x] Outline a host-platform abstraction layer for disk, console, and modem I/O
@@ -35,3 +36,7 @@
       transfers, networking).
 - [ ] Identify acceptable deviations from original hardware behaviors (e.g.,
       timing, color codes, PETSCII rendering).
+
+## Automation Follow-ups
+- [ ] Diff successive overlay rescans by comparing the committed `ml_extra_sanity` metadata snapshot against fresh runs, emitting actionable reports when fields diverge.【F:docs/porting/iteration-31.md†L17-L18】
+- [ ] Extend the sanity CLI to accept a baseline snapshot path and highlight changes relative to the canonical artefact produced during iteration 31.【F:docs/porting/iteration-31.md†L17-L19】

@@ -1,0 +1,197 @@
+{
+  "flag_directory_tail": {
+    "bytes": [
+      "$31",
+      "$39",
+      "$38",
+      "$39",
+      "$20",
+      "$ce",
+      "$c5",
+      "$d7",
+      "$20",
+      "$c9",
+      "$cd",
+      "$c1",
+      "$c7",
+      "$c5",
+      "$20",
+      "$d3",
+      "$cf",
+      "$c6",
+      "$d4",
+      "$d7",
+      "$c1",
+      "$d2",
+      "$c5",
+      "$2c",
+      "$20",
+      "$c9",
+      "$ce",
+      "$c3",
+      "$2e",
+      "$8b"
+    ],
+    "text": "1989 NEW IMAGE SOFTWARE, INC.{CBM-$8b}"
+  },
+  "flag_dispatch": {
+    "entries": [
+      {
+        "flag_index": "$04",
+        "handler": "$c153",
+        "slot": "$04"
+      },
+      {
+        "flag_index": "$09",
+        "handler": "$c171",
+        "slot": "$09"
+      },
+      {
+        "flag_index": "$0d",
+        "handler": "$c193",
+        "slot": "$0d"
+      },
+      {
+        "flag_index": "$14",
+        "handler": "$c1ab",
+        "slot": "$14"
+      },
+      {
+        "flag_index": "$15",
+        "handler": "$c1e6",
+        "slot": "$15"
+      },
+      {
+        "flag_index": "$16",
+        "handler": "$c1f4",
+        "slot": "$16"
+      },
+      {
+        "flag_index": "$17",
+        "handler": "$c20d",
+        "slot": "$17"
+      },
+      {
+        "flag_index": "$18",
+        "handler": "$c225",
+        "slot": "$18"
+      },
+      {
+        "flag_index": "$19",
+        "handler": "$c230",
+        "slot": "$19"
+      },
+      {
+        "flag_index": "$0e",
+        "handler": "$c24a",
+        "slot": "$0e"
+      },
+      {
+        "flag_index": "$0f",
+        "handler": "$c261",
+        "slot": "$0f"
+      },
+      {
+        "flag_index": "$02",
+        "handler": "$c29d",
+        "slot": "$02"
+      }
+    ],
+    "leading_marker": "$c0",
+    "trailing_marker": "$2e"
+  },
+  "flag_record_count": 2,
+  "hardware": {
+    "pointer": {
+      "initial": {
+        "high": "$2c",
+        "low": "$00"
+      },
+      "reset_value": "$2c",
+      "scan_limit": "$44"
+    },
+    "sid_volume": "$0f",
+    "vic_registers": [
+      {
+        "address": "$d403",
+        "writes": [
+          {
+            "store": "$da4b",
+            "value": "$08"
+          }
+        ]
+      },
+      {
+        "address": "$d404",
+        "writes": [
+          {
+            "store": "$da31",
+            "value": "$10"
+          },
+          {
+            "store": "$da3b",
+            "value": "$00"
+          },
+          {
+            "store": "$da61",
+            "value": "$00"
+          },
+          {
+            "store": "$dad6",
+            "value": "$00"
+          },
+          {
+            "store": "$dad9"
+          }
+        ]
+      },
+      {
+        "address": "$d405",
+        "writes": [
+          {
+            "store": "$dac6"
+          }
+        ]
+      },
+      {
+        "address": "$d406",
+        "writes": [
+          {
+            "store": "$dac9"
+          }
+        ]
+      }
+    ]
+  },
+  "lightbar": {
+    "page1_left": "$00",
+    "page1_right": "$03",
+    "page2_left": "$06",
+    "page2_right": "$00",
+    "underline_char": "$00",
+    "underline_color": "$00"
+  },
+  "load_address": "$1000",
+  "macro_slots": [
+    4,
+    9,
+    13,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    14,
+    15,
+    2
+  ],
+  "palette": {
+    "colours": [
+      "$0a",
+      "$02",
+      "$08",
+      "$00"
+    ]
+  }
+}
