@@ -37,29 +37,35 @@ def test_console_renders_startup_banner(editor_defaults: ml_extra_defaults.MLExt
     console.write(banner_sequence)
 
     screen = console.screen
-    rows = screen.characters
+    snapshot = console.snapshot()
+    rows = snapshot["characters"]
+    assert rows == screen.characters
     assert len(rows) == screen.height
 
     expected_row = rows[11]
     assert expected_row[15:24] == "Image 1.2"
     assert expected_row[:15] == " " * 15
 
-    colours = screen.colour_matrix[11]
+    colours = snapshot["colour_matrix"][11]
+    assert colours == screen.colour_matrix[11]
     for index in range(15, 24):
         assert colours[index] == console.screen_colour
 
-    codes = screen.code_matrix[11]
+    codes = snapshot["code_matrix"][11]
+    assert codes == screen.code_matrix[11]
     expected_codes = (0xC9, 0x6D, 0x61, 0x67, 0x65, 0x20, 0x31, 0x2E, 0x32)
     assert tuple(codes[15:24]) == expected_codes
 
-    glyph_indices = screen.glyph_index_matrix[11]
+    glyph_indices = snapshot["glyph_indices"][11]
+    assert glyph_indices == screen.glyph_index_matrix[11]
     expected_indices = tuple(
         petscii_glyphs.get_glyph_index(code, lowercase=True)
         for code in expected_codes
     )
     assert tuple(glyph_indices[15:24]) == expected_indices
 
-    glyphs = screen.glyph_matrix[11]
+    glyphs = snapshot["glyphs"][11]
+    assert glyphs == screen.glyph_matrix[11]
     expected_glyphs = tuple(
         petscii_glyphs.get_glyph(code, lowercase=True)
         for code in expected_codes
@@ -67,8 +73,11 @@ def test_console_renders_startup_banner(editor_defaults: ml_extra_defaults.MLExt
     assert tuple(glyphs[15:24]) == expected_glyphs
 
     assert console.screen_colour == 1  # PETSCII white
+    assert snapshot["screen_colour"] == console.screen_colour
     assert console.background_colour == editor_defaults.palette.colours[2]
+    assert snapshot["background_colour"] == console.background_colour
     assert console.border_colour == editor_defaults.palette.colours[3]
+    assert snapshot["border_colour"] == console.border_colour
     assert console.transcript_bytes == banner_sequence
     assert console.transcript == banner_sequence.decode("latin-1")
 
