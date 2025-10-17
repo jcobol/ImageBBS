@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -88,3 +89,47 @@ def test_disasm_metadata_text(capsys: pytest.CaptureFixture[str], sample_slot: i
     assert "flag dispatch:" in output
     assert f"Macro slot {sample_slot}" in output
     assert "Macro payload hashes:" in output
+
+
+def _run_snapshot_guard(args: list[str]) -> subprocess.CompletedProcess[str]:
+    command = [
+        sys.executable,
+        "-m",
+        "scripts.prototypes.ml_extra_snapshot_guard",
+        *args,
+    ]
+    return subprocess.run(
+        command,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+
+def _baseline_path() -> Path:
+    return (
+        Path(__file__).resolve().parents[1]
+        / "docs"
+        / "porting"
+        / "artifacts"
+        / "ml-extra-overlay-metadata.json"
+    )
+
+
+def test_snapshot_guard_matches_baseline() -> None:
+    result = _run_snapshot_guard(["--baseline", str(_baseline_path())])
+    assert result.returncode == 0
+    assert "Baseline snapshot matches" in result.stdout
+    assert result.stderr == ""
+
+
+def test_snapshot_guard_detects_drift(tmp_path: Path) -> None:
+    baseline_data = json.loads(_baseline_path().read_text(encoding="utf-8"))
+    baseline_data["flag_directory_tail"]["text"] = "Modified baseline text"
+    altered = tmp_path / "baseline.json"
+    altered.write_text(json.dumps(baseline_data, indent=2))
+
+    result = _run_snapshot_guard(["--baseline", str(altered)])
+    assert result.returncode == 1
+    assert "Drift detected" in result.stdout
+    assert "changed flag_directory_tail.text" in result.stdout
