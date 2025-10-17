@@ -72,6 +72,17 @@ def test_console_renders_startup_banner(editor_defaults: ml_extra_defaults.MLExt
     )
     assert tuple(glyphs[15:24]) == expected_glyphs
 
+    reverse_flags = snapshot["reverse_matrix"][11]
+    assert reverse_flags == screen.reverse_matrix[11]
+    assert all(flag is False for flag in reverse_flags)
+
+    resolved_colours = snapshot["resolved_colour_matrix"][11]
+    assert resolved_colours == screen.resolved_colour_matrix[11]
+    for index in range(15, 24):
+        foreground, background = resolved_colours[index]
+        assert foreground == colours[index]
+        assert background == console.background_colour
+
     assert console.screen_colour == 1  # PETSCII white
     assert snapshot["screen_colour"] == console.screen_colour
     assert console.background_colour == editor_defaults.palette.colours[2]
@@ -99,3 +110,33 @@ def test_screen_tracks_glyph_banks() -> None:
     glyphs = screen.glyph_matrix[0]
     assert glyphs[0] == petscii_glyphs.get_glyph(0x41)
     assert glyphs[1] == petscii_glyphs.get_glyph(0x61, lowercase=True)
+
+
+def test_reverse_mode_swaps_render_colours(editor_defaults: ml_extra_defaults.MLExtraDefaults) -> None:
+    console = Console()
+    console.write(bytes([0x93]))  # clear
+    console.write(bytes([0x05]))  # white foreground
+    initial_background = console.background_colour
+
+    console.write(bytes([0x12]))  # reverse on
+    console.write(b"A")
+    console.write(bytes([0x92]))  # reverse off
+    console.write(b"B")
+
+    snapshot = console.snapshot()
+    characters = snapshot["characters"][0]
+    assert characters[:2] == "AB"
+
+    colour_row = snapshot["colour_matrix"][0]
+    assert colour_row[0] == colour_row[1] == console.screen_colour
+
+    reverse_row = snapshot["reverse_matrix"][0]
+    assert reverse_row[0] is True
+    assert reverse_row[1] is False
+
+    resolved_row = snapshot["resolved_colour_matrix"][0]
+    assert resolved_row[0] == (initial_background, colour_row[0])
+    assert resolved_row[1] == (colour_row[1], initial_background)
+
+    assert snapshot["background_colour"] == initial_background == editor_defaults.palette.colours[2]
+    assert snapshot["screen_colour"] == console.screen_colour
