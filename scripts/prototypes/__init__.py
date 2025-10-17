@@ -36,6 +36,13 @@ from .setup_defaults import (
     derive_drive_inventory,
 )
 from .setup_config import SetupConfig, load_drive_config
+from .storage_config import (
+    DriveMapping,
+    StorageConfig,
+    StorageConfigError,
+    load_storage_config,
+    validate_filename,
+)
 from .ml_extra_defaults import (
     MLExtraDefaults,
     MacroDirectoryEntry,
@@ -62,6 +69,7 @@ __all__ = [
     "DriveLocator",
     "DeviceDriveMap",
     "DriveInventory",
+    "DriveMapping",
     "FilesystemDriveLocator",
     "D64Image",
     "DirectoryEntry",
@@ -86,10 +94,14 @@ __all__ = [
     "derive_drive_inventory",
     "default_overlay_path",
     "load_drive_config",
+    "load_storage_config",
     "SetupConfig",
+    "StorageConfig",
+    "StorageConfigError",
     "get_glyph",
     "get_glyph_index",
     "load_character_rom",
     "reset_character_rom",
+    "validate_filename",
     "TransitionError",
 ]
