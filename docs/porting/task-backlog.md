@@ -31,11 +31,18 @@
       a modern language (e.g., module decomposition, state machine extraction).
 
 ## Open Questions for Stakeholders
-- [ ] Confirm target runtime environment (emulation wrapper vs. full rewrite).
-- [ ] Determine priority subsystems for parity (sysop UI, messaging, file
+- [x] Confirm target runtime environment (emulation wrapper vs. full rewrite).
+      *(Resolved in the [runtime strategy](design-decisions.md#runtime-strategy)
+      section of the design decisions.)*
+- [x] Determine priority subsystems for parity (sysop UI, messaging, file
       transfers, networking).
-- [ ] Identify acceptable deviations from original hardware behaviors (e.g.,
+      *(Answered by the [preservation of experience](design-decisions.md#preservation-of-experience)
+      guidance that names the must-have subsystems.)*
+- [x] Identify acceptable deviations from original hardware behaviors (e.g.,
       timing, color codes, PETSCII rendering).
+      *(See the [character set fidelity](design-decisions.md#character-set-fidelity)
+      and [runtime strategy](design-decisions.md#runtime-strategy) decisions for
+      the agreed-upon limits.)*
 
 ## Automation Follow-ups
 - [x] Diff successive overlay rescans by comparing the committed `ml_extra_sanity` metadata snapshot against fresh runs, emitting actionable reports when fields diverge.【F:docs/porting/iteration-32.md†L5-L17】
