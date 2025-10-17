@@ -52,3 +52,13 @@ Runtime expectations:
 - We will not be running the ported system under an emulator.
 - Runtime execution speed does not need artificial throttling; the host can run at native pace.
 - BAUD rate must remain configurable and should cap network throughput to simulate the original communication limits.
+
+### Managing timing-sensitive behaviour at native speed
+- The host runtime will reuse the device-context and service-layer abstractions outlined in the Iteration 08 plan to broker access to modem, console, and overlay services without emulating the 6502 cycle timing. Each device context exposes asynchronous read/write primitives so subsystems can retain their original control flow while the host scheduler cooperatively multitasks between services.
+- Timing-sensitive routines (for example, the modem ISR equivalents and ampersand handlers that expect buffered serial data) will target the shared modem facade rather than direct sleep loops. The facade is responsible for managing ring buffers, IRQ-style callbacks, and poll operations so routines continue to receive data in the order and grouping the original code expected even when executed at full host speed.
+- Host services that originally depended on cycle delays must express their requirements in terms of buffer thresholds or scheduled callbacks. The runtime scheduler will expose lightweight timers so modules can request deferred work without blocking the entire process, keeping parity with routines that previously spun on CIA timers.
+
+### BAUD limiter configuration and enforcement
+- Expose BAUD control through the runtime configuration file alongside other device settings. The `[modem]` table should include a `baud_limit` field expressed in bits per second plus optional overrides for individual endpoints (for example, per-inbound connection profiles) so deployments can mirror ImageBBS modem speeds.
+- The modem facade enforces throughput caps by scheduling transmit and receive budget replenishment according to the configured BAUD rate. Buffers accumulate host bytes immediately, but the dispatcher releases data to user modules only when the time budget permits, ensuring bursts do not exceed the original line speed.
+- When BAUD limiting is active the facade records timestamped counters for both directions and exposes them to the service registry. Diagnostics and sysop tooling can query these counters to confirm throttling behaviour and adjust limits without restarting the runtime.
