@@ -10,6 +10,7 @@ from .device_context import (
     LoopbackModemTransport,
     Modem,
     ModemTransport,
+    bootstrap_device_context,
 )
 from .disk_image import D64Image, DirectoryEntry
 from .message_editor import (
@@ -27,11 +28,13 @@ from .setup_defaults import (
     DriveLocator,
     DeviceDriveMap,
     DriveInventory,
+    FilesystemDriveLocator,
     PrimeTimeWindow,
     SetupDefaults,
     SysopProfile,
     derive_drive_inventory,
 )
+from .setup_config import load_drive_config
 from .ml_extra_defaults import (
     MLExtraDefaults,
     MacroDirectoryEntry,
@@ -48,6 +51,7 @@ __all__ = [
     "DriveLocator",
     "DeviceDriveMap",
     "DriveInventory",
+    "FilesystemDriveLocator",
     "D64Image",
     "DirectoryEntry",
     "DeviceContext",
@@ -60,6 +64,7 @@ __all__ = [
     "Modem",
     "LoopbackModemTransport",
     "ModemTransport",
+    "bootstrap_device_context",
     "MLExtraDefaults",
     "MacroDirectoryEntry",
     "PrimeTimeWindow",
@@ -68,5 +73,6 @@ __all__ = [
     "SysopProfile",
     "derive_drive_inventory",
     "default_overlay_path",
+    "load_drive_config",
     "TransitionError",
 ]

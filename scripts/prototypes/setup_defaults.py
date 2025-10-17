@@ -35,6 +35,19 @@ class CommodoreDeviceDrive:
 
 
 @dataclass(frozen=True)
+class FilesystemDriveLocator:
+    """Host filesystem directory referenced by a logical drive slot."""
+
+    path: Path
+    scheme: str = field(init=False, default="fs")
+
+    def describe(self) -> str:
+        """Return a human-readable representation of the backing directory."""
+
+        return str(self.path)
+
+
+@dataclass(frozen=True)
 class DriveAssignment:
     """Maps a logical ImageBBS drive slot to a host-specific locator."""
 
@@ -305,6 +318,7 @@ __all__ = [
     "CommodoreDeviceDrive",
     "DriveAssignment",
     "DriveLocator",
+    "FilesystemDriveLocator",
     "DeviceDriveMap",
     "DriveInventory",
     "BoardStatistics",
