@@ -93,6 +93,17 @@ def test_console_renders_startup_banner(editor_defaults: ml_extra_defaults.MLExt
     assert console.transcript == banner_sequence.decode("latin-1")
 
 
+def test_console_exposes_overlay_defaults(
+    editor_defaults: ml_extra_defaults.MLExtraDefaults,
+) -> None:
+    console = Console()
+
+    assert console.defaults == editor_defaults
+    assert console.lightbar_defaults == editor_defaults.lightbar
+    assert console.flag_dispatch == editor_defaults.flag_dispatch
+    assert console.macros == editor_defaults.macros
+
+
 def test_screen_tracks_glyph_banks() -> None:
     screen = PetsciiScreen()
     screen.write(bytes([0x41, 0x0E, 0x61]))

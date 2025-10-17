@@ -16,6 +16,7 @@ from typing import Deque, Dict, Iterable, Iterator, Optional, Tuple
 
 from .setup_defaults import DriveAssignment, FilesystemDriveLocator
 from .console_renderer import PetsciiScreen
+from . import ml_extra_defaults
 
 
 class DeviceError(RuntimeError):
@@ -119,9 +120,18 @@ class ConsoleChannel(LogicalChannel):
 class Console(Device):
     name = "console"
 
-    def __init__(self, screen: PetsciiScreen | None = None) -> None:
+    def __init__(
+        self,
+        screen: PetsciiScreen | None = None,
+        defaults: ml_extra_defaults.MLExtraDefaults | None = None,
+    ) -> None:
         self.output: Deque[str] = deque()
-        self._screen = screen or PetsciiScreen()
+        if screen is not None:
+            self._screen = screen
+            self._defaults = defaults or screen.defaults
+        else:
+            self._screen = PetsciiScreen(defaults=defaults)
+            self._defaults = self._screen.defaults
         self._transcript: bytearray = bytearray()
 
     def open(self, descriptor: ChannelDescriptor) -> LogicalChannel:
@@ -143,6 +153,30 @@ class Console(Device):
         """Return the backing PETSCII screen buffer."""
 
         return self._screen
+
+    @property
+    def defaults(self) -> ml_extra_defaults.MLExtraDefaults:
+        """Expose the cached overlay defaults backing the console."""
+
+        return self._defaults
+
+    @property
+    def lightbar_defaults(self) -> ml_extra_defaults.LightbarDefaults:
+        """Return the recovered lightbar underline and bitmap defaults."""
+
+        return self._defaults.lightbar
+
+    @property
+    def flag_dispatch(self) -> ml_extra_defaults.FlagDispatchTable:
+        """Return the recovered flag dispatch table."""
+
+        return self._defaults.flag_dispatch
+
+    @property
+    def macros(self) -> Tuple[ml_extra_defaults.MacroDirectoryEntry, ...]:
+        """Return the decoded macro directory entries."""
+
+        return self._defaults.macros
 
     @property
     def screen_colour(self) -> int:
