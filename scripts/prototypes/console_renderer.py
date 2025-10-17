@@ -82,6 +82,18 @@ class PetsciiScreen:
             hardware.vic_registers
         )
 
+        lightbar = self._defaults.lightbar
+        self._lightbar_bitmaps: list[int] = [
+            lightbar.page1_left,
+            lightbar.page1_right,
+            lightbar.page2_left,
+            lightbar.page2_right,
+        ]
+        self._underline_char: int = lightbar.underline_char & 0xFF
+        self._underline_colour: int = self._resolve_palette_colour(
+            lightbar.underline_color, default_index=0
+        )
+
         screen_colour = self._palette[0]
         background_colour = self._palette[2]
         border_colour = self._palette[3]
@@ -98,9 +110,15 @@ class PetsciiScreen:
         if vic_border is not None:
             border_colour = vic_border
 
-        self._screen_colour: int = screen_colour
-        self._background_colour: int = background_colour
-        self._border_colour: int = border_colour
+        self._screen_colour: int = self._resolve_palette_colour(
+            screen_colour, default_index=0
+        )
+        self._background_colour: int = self._resolve_palette_colour(
+            background_colour, default_index=2
+        )
+        self._border_colour: int = self._resolve_palette_colour(
+            border_colour, default_index=3
+        )
         self._cursor_x: int = 0
         self._cursor_y: int = 0
         self._lowercase_mode = False
@@ -114,12 +132,33 @@ class PetsciiScreen:
         self._reverse_flags: list[list[bool]] = [
             [False for _ in range(self.width)] for _ in range(self.height)
         ]
+        self._underline_flags: list[list[bool]] = [
+            [False for _ in range(self.width)] for _ in range(self.height)
+        ]
 
     @property
     def defaults(self) -> ml_extra_defaults.MLExtraDefaults:
         """Expose the cached overlay defaults backing the renderer."""
 
         return self._defaults
+
+    @property
+    def lightbar_bitmaps(self) -> tuple[int, int, int, int]:
+        """Return the cached lightbar bitmap bytes in overlay order."""
+
+        return tuple(self._lightbar_bitmaps)
+
+    @property
+    def underline_char(self) -> int:
+        """Return the PETSCII code the overlay uses for lightbar underlines."""
+
+        return self._underline_char
+
+    @property
+    def underline_colour(self) -> int:
+        """Return the VIC-II colour used when drawing lightbar underlines."""
+
+        return self._underline_colour
 
     @property
     def palette(self) -> tuple[int, int, int, int]:
@@ -194,6 +233,12 @@ class PetsciiScreen:
         return tuple(tuple(row) for row in self._reverse_flags)
 
     @property
+    def underline_matrix(self) -> tuple[tuple[bool, ...], ...]:
+        """Expose the per-cell underline state derived from the lightbar defaults."""
+
+        return tuple(tuple(row) for row in self._underline_flags)
+
+    @property
     def vic_registers(self) -> dict[int, int | None]:
         """Return the resolved VIC register defaults."""
 
@@ -203,17 +248,45 @@ class PetsciiScreen:
     def resolved_colour_matrix(self) -> tuple[tuple[tuple[int, int], ...], ...]:
         """Return the foreground/background colour pairs for each cell."""
 
-        background = self._background_colour
+        background = self._resolve_palette_colour(
+            self._background_colour, default_index=2
+        )
         return tuple(
             tuple(
                 (
-                    background if reverse else colour,
-                    colour if reverse else background,
+                    background if reverse else self._resolve_palette_colour(
+                        colour, default_index=0
+                    ),
+                    self._resolve_palette_colour(colour, default_index=0)
+                    if reverse
+                    else background,
                 )
                 for colour, reverse in zip(colour_row, reverse_row)
             )
             for colour_row, reverse_row in zip(self._colours, self._reverse_flags)
         )
+
+    def set_lightbar_bitmaps(self, bitmaps: Sequence[int]) -> None:
+        """Override the cached lightbar bitmaps using overlay ordering."""
+
+        if len(bitmaps) != 4:
+            raise ValueError("lightbar bitmap sequence must contain four entries")
+        self._lightbar_bitmaps = [int(value) & 0xFF for value in bitmaps]
+
+    def set_underline(
+        self,
+        *,
+        char: int | None = None,
+        colour: int | None = None,
+    ) -> None:
+        """Update the underline PETSCII code or colour using palette-safe values."""
+
+        if char is not None:
+            self._underline_char = int(char) & 0xFF
+        if colour is not None:
+            self._underline_colour = self._resolve_palette_colour(
+                int(colour), default_index=0
+            )
 
     def clear(self) -> None:
         """Clear the screen and home the cursor."""
@@ -225,6 +298,7 @@ class PetsciiScreen:
                 self._codes[y][x] = 0x20
                 self._glyph_bank[y][x] = 0
                 self._reverse_flags[y][x] = False
+                self._underline_flags[y][x] = False
         self._cursor_x = 0
         self._cursor_y = 0
 
@@ -302,7 +376,7 @@ class PetsciiScreen:
         colour = _COLOR_CODES.get(byte)
         if colour is None:
             return False
-        self._screen_colour = colour
+        self._screen_colour = self._resolve_palette_colour(colour, default_index=0)
         return True
 
     def _draw_character(self, byte: int) -> None:
@@ -321,15 +395,26 @@ class PetsciiScreen:
         *,
         glyph_bank: int | None = None,
         reverse: bool | None = None,
+        underline: bool | None = None,
     ) -> None:
         if 0 <= self._cursor_y < self.height and 0 <= self._cursor_x < self.width:
             bank = glyph_bank if glyph_bank is not None else (1 if self._lowercase_mode else 0)
             reverse_flag = self._reverse_mode if reverse is None else reverse
+            raw_code = byte & 0xFF
+            underline_flag = (
+                bool(underline)
+                if underline is not None
+                else raw_code == self._underline_char
+            )
+            colour = (
+                self._underline_colour if underline_flag else self._screen_colour
+            )
             self._chars[self._cursor_y][self._cursor_x] = char
-            self._colours[self._cursor_y][self._cursor_x] = self._screen_colour
-            self._codes[self._cursor_y][self._cursor_x] = byte & 0xFF
+            self._colours[self._cursor_y][self._cursor_x] = colour
+            self._codes[self._cursor_y][self._cursor_x] = raw_code
             self._glyph_bank[self._cursor_y][self._cursor_x] = bank
             self._reverse_flags[self._cursor_y][self._cursor_x] = reverse_flag
+            self._underline_flags[self._cursor_y][self._cursor_x] = underline_flag
 
     def _clamp_cursor(self) -> None:
         if self._cursor_y < self.height:
@@ -342,11 +427,13 @@ class PetsciiScreen:
         self._codes.pop(0)
         self._glyph_bank.pop(0)
         self._reverse_flags.pop(0)
+        self._underline_flags.pop(0)
         self._chars.append([" " for _ in range(self.width)])
         self._colours.append([self._screen_colour for _ in range(self.width)])
         self._codes.append([0x20 for _ in range(self.width)])
         self._glyph_bank.append([0 for _ in range(self.width)])
         self._reverse_flags.append([False for _ in range(self.width)])
+        self._underline_flags.append([False for _ in range(self.width)])
         self._cursor_y = self.height - 1
 
     def _translate_character(self, byte: int) -> str:
@@ -365,6 +452,18 @@ class PetsciiScreen:
                 return char.upper()
             return char
         return " "
+
+    def _resolve_palette_colour(self, value: int, *, default_index: int) -> int:
+        """Clamp ``value`` to one of the four palette entries."""
+
+        resolved = int(value) & 0xFF
+        if resolved in self._palette:
+            return resolved
+        if 0 <= resolved < len(self._palette):
+            return self._palette[resolved]
+        if not 0 <= default_index < len(self._palette):
+            raise ValueError("default_index must reference a palette entry")
+        return self._palette[default_index]
 
 
 class _TracingPetsciiScreen(PetsciiScreen):

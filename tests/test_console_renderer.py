@@ -1,6 +1,7 @@
 """Console rendering tests for the PETSCII host shim."""
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -120,7 +121,7 @@ def test_console_renders_startup_banner(editor_defaults: ml_extra_defaults.MLExt
         assert foreground == colours[index]
         assert background == console.background_colour
 
-    assert console.screen_colour == 1  # PETSCII white
+    assert console.screen_colour == console.screen.palette[1]
     assert snapshot["screen_colour"] == console.screen_colour
     assert console.background_colour == editor_defaults.palette.colours[2]
     assert snapshot["background_colour"] == console.background_colour
@@ -135,6 +136,14 @@ def test_console_renders_startup_banner(editor_defaults: ml_extra_defaults.MLExt
     assert console.transcript == banner_sequence.decode("latin-1")
 
 
+def _load_overlay_metadata() -> dict[str, object]:
+    path = (
+        Path(__file__).resolve().parents[1]
+        / "docs/porting/artifacts/ml-extra-overlay-metadata.json"
+    )
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 def test_console_exposes_overlay_defaults(
     editor_defaults: ml_extra_defaults.MLExtraDefaults,
 ) -> None:
@@ -144,6 +153,58 @@ def test_console_exposes_overlay_defaults(
     assert console.lightbar_defaults == editor_defaults.lightbar
     assert console.flag_dispatch == editor_defaults.flag_dispatch
     assert console.macros == editor_defaults.macros
+
+
+def test_screen_lightbar_defaults_match_metadata(
+    editor_defaults: ml_extra_defaults.MLExtraDefaults,
+) -> None:
+    screen = PetsciiScreen(defaults=editor_defaults)
+    metadata = _load_overlay_metadata()
+    lightbar_metadata = metadata["lightbar"]  # type: ignore[index]
+    expected_bitmaps = tuple(
+        int(lightbar_metadata[key][1:], 16)
+        for key in (
+            "page1_left",
+            "page1_right",
+            "page2_left",
+            "page2_right",
+        )
+    )
+    assert screen.lightbar_bitmaps == expected_bitmaps
+    assert screen.underline_char == int(lightbar_metadata["underline_char"][1:], 16)
+    expected_colour = int(lightbar_metadata["underline_color"][1:], 16)
+    palette = screen.palette
+    if expected_colour in palette:
+        expected_mapped = expected_colour
+    elif 0 <= expected_colour < len(palette):
+        expected_mapped = palette[expected_colour]
+    else:
+        expected_mapped = palette[0]
+    assert screen.underline_colour == expected_mapped
+
+
+def test_lightbar_underline_colour_applied() -> None:
+    screen = PetsciiScreen()
+    screen.set_underline(char=0x2D, colour=1)
+    screen.write(bytes([0x2D]))
+    assert screen.underline_matrix[0][0] is True
+    assert screen.colour_matrix[0][0] == screen.underline_colour
+    resolved = screen.resolved_colour_matrix[0][0]
+    assert resolved[0] == screen.underline_colour
+    assert resolved[1] == screen.background_colour
+
+
+def test_reverse_video_respects_palette_mapping() -> None:
+    screen = PetsciiScreen()
+    screen.write(bytes([0x05]))  # map to palette index 1
+    screen.write("A")
+    normal_pair = screen.resolved_colour_matrix[0][0]
+    assert normal_pair == (screen.screen_colour, screen.background_colour)
+
+    screen.write(bytes([0x12]))  # reverse on
+    screen.write("B")
+    reverse_pair = screen.resolved_colour_matrix[0][1]
+    assert reverse_pair == (screen.background_colour, screen.screen_colour)
 
 
 def test_console_exposes_overlay_glyph_lookup() -> None:
