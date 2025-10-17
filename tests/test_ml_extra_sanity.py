@@ -100,3 +100,40 @@ def test_main_writes_metadata_json(
     assert "Macro directory (runtime order):" in capture.out
     assert "Macro payload hashes" in capture.out
     assert "Slot diff (recovered vs. stub data):" in capture.out
+
+
+def test_main_with_matching_baseline(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    metadata_snapshot: dict[str, object],
+) -> None:
+    baseline = tmp_path / "baseline.json"
+    baseline.write_text(json.dumps(metadata_snapshot, indent=2, sort_keys=True))
+
+    ml_extra_sanity.main(["--baseline-metadata", str(baseline)])
+
+    capture = capsys.readouterr()
+    assert "Baseline metadata snapshot matches recovered overlay." in capture.out
+
+
+def test_main_with_tampered_baseline(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    metadata_snapshot: dict[str, object],
+) -> None:
+    baseline_data = json.loads(json.dumps(metadata_snapshot))
+    baseline_data["load_address"] = "$c100"
+
+    baseline = tmp_path / "baseline.json"
+    baseline.write_text(json.dumps(baseline_data, indent=2, sort_keys=True))
+
+    with pytest.raises(SystemExit) as excinfo:
+        ml_extra_sanity.main(["--baseline-metadata", str(baseline), "--json"])
+
+    assert excinfo.value.code == 1
+
+    capture = capsys.readouterr()
+    payload = json.loads(capture.out)
+    assert payload["baseline_diff"]["matches"] is False
+    changed_paths = {entry["path"] for entry in payload["baseline_diff"]["changed"]}
+    assert "load_address" in changed_paths
