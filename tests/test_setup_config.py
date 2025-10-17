@@ -10,6 +10,7 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from scripts.prototypes import (  # noqa: E402
     SetupDefaults,
+    SetupConfig,
     bootstrap_device_context,
     derive_drive_inventory,
     load_drive_config,
@@ -40,7 +41,10 @@ def sample_config(tmp_path: Path) -> Path:
 
 
 def test_load_drive_config_merges_stub_defaults(sample_config: Path) -> None:
-    assignments = load_drive_config(sample_config)
+    config = load_drive_config(sample_config)
+    assert isinstance(config, SetupConfig)
+
+    assignments = config.drives
     lookup = {assignment.slot: assignment for assignment in assignments}
 
     defaults = SetupDefaults.stub()
@@ -62,15 +66,15 @@ def test_load_drive_config_merges_stub_defaults(sample_config: Path) -> None:
 
 
 def test_bootstrap_device_context_registers_filesystem_drives(sample_config: Path) -> None:
-    assignments = load_drive_config(sample_config)
-    context = bootstrap_device_context(assignments)
+    config = load_drive_config(sample_config)
+    context = bootstrap_device_context(config.drives)
 
     drive5 = context.devices.get("drive5")
     drive6 = context.devices.get("drive6")
     assert isinstance(drive5, DiskDrive)
     assert isinstance(drive6, DiskDrive)
 
-    lookup = {assignment.slot: assignment for assignment in assignments}
+    lookup = {assignment.slot: assignment for assignment in config.drives}
     assert drive5.root == lookup[5].locator.path
     assert drive6.root == lookup[6].locator.path
 
@@ -89,7 +93,7 @@ def test_load_drive_config_accepts_string_slot_keys(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    assignments = load_drive_config(config_path)
+    assignments = load_drive_config(config_path).drives
     lookup = {assignment.slot: assignment for assignment in assignments}
 
     fs_seven = lookup[7].locator
@@ -108,3 +112,22 @@ def test_load_drive_config_rejects_non_positive_slot(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="drive slot numbers must be positive"):
         load_drive_config(config_path)
+
+
+def test_load_drive_config_parses_ampersand_overrides(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "drive").mkdir()
+
+    config_path = config_dir / "storage.toml"
+    config_path.write_text(
+        "[slots]\n"
+        "8 = \"drive\"\n\n"
+        "[ampersand_overrides]\n"
+        "0 = \"package.module:callable\"\n"
+        '"0x21" = "pkg.mod.attr"\n',
+        encoding="utf-8",
+    )
+
+    config = load_drive_config(config_path)
+    assert config.ampersand_overrides == {0: "package.module:callable", 0x21: "pkg.mod.attr"}

@@ -54,6 +54,43 @@ def test_registry_override_can_call_default() -> None:
     assert default_result.handler_address == dispatch_entry.handler_address
 
 
+def test_registry_loads_override_imports(tmp_path: Path) -> None:
+    flag_index = MessageEditor.INTRO_MACRO_INDEX
+
+    module_path = tmp_path / "custom_ampersand.py"
+    module_path.write_text(
+        "from scripts.prototypes.ampersand_registry import AmpersandResult\n"
+        "from scripts.prototypes.ml_extra_defaults import MLExtraDefaults\n"
+        f"FLAG_INDEX = {flag_index}\n"
+        "_DEFAULTS = MLExtraDefaults.from_overlay()\n\n"
+        "def intro_override(context):\n"
+        "    return AmpersandResult(\n"
+        "        flag_index=FLAG_INDEX,\n"
+        "        slot=0xFE,\n"
+        "        handler_address=0xBEEF,\n"
+        "        flag_records=_DEFAULTS.flag_records,\n"
+        "        flag_directory_block=_DEFAULTS.flag_directory_block,\n"
+        "        flag_directory_tail=_DEFAULTS.flag_directory_tail,\n"
+        "        flag_directory_text=_DEFAULTS.flag_directory_text,\n"
+        "        context=context,\n"
+        "        rendered_text=\"CONFIG OVERRIDE\",\n"
+        "    )\n",
+        encoding="utf-8",
+    )
+
+    sys.path.insert(0, str(tmp_path))
+    try:
+        registry = AmpersandRegistry(override_imports={flag_index: "custom_ampersand:intro_override"})
+        result = registry.dispatch(flag_index, context=None)
+        assert result.rendered_text == "CONFIG OVERRIDE"
+
+        default_result = registry.dispatch(flag_index, context=None, use_default=True)
+        assert default_result.rendered_text != "CONFIG OVERRIDE"
+    finally:
+        sys.path.remove(str(tmp_path))
+        sys.modules.pop("custom_ampersand", None)
+
+
 def test_message_editor_uses_registry_override_for_intro_banner() -> None:
     registry = AmpersandRegistry()
     flag_index = MessageEditor.INTRO_MACRO_INDEX
