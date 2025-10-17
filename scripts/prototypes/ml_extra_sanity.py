@@ -311,6 +311,145 @@ def _tail_report(
     return report
 
 
+def diff_metadata_snapshots(
+    baseline: Dict[str, object], current: Dict[str, object]
+) -> Dict[str, object]:
+    """Return a structured diff between two overlay metadata snapshots."""
+
+    added: list[dict[str, object]] = []
+    removed: list[dict[str, object]] = []
+    changed: list[dict[str, object]] = []
+
+    def format_path(segments: list[str]) -> str:
+        path = ""
+        for segment in segments:
+            if segment.startswith("["):
+                path += segment
+            elif path:
+                path += f".{segment}"
+            else:
+                path = segment
+        return path or "<root>"
+
+    def walk(
+        baseline_value: object, current_value: object, segments: list[str]
+    ) -> None:
+        if isinstance(baseline_value, dict) and isinstance(current_value, dict):
+            baseline_keys = set(baseline_value)
+            current_keys = set(current_value)
+            for key in sorted(baseline_keys - current_keys):
+                segments.append(key)
+                removed.append(
+                    {
+                        "path": format_path(segments),
+                        "value": baseline_value[key],
+                    }
+                )
+                segments.pop()
+            for key in sorted(current_keys - baseline_keys):
+                segments.append(key)
+                added.append(
+                    {
+                        "path": format_path(segments),
+                        "value": current_value[key],
+                    }
+                )
+                segments.pop()
+            for key in sorted(baseline_keys & current_keys):
+                segments.append(key)
+                walk(baseline_value[key], current_value[key], segments)
+                segments.pop()
+            return
+
+        if isinstance(baseline_value, list) and isinstance(current_value, list):
+            common_length = min(len(baseline_value), len(current_value))
+            for index in range(common_length):
+                segments.append(f"[{index}]")
+                walk(baseline_value[index], current_value[index], segments)
+                segments.pop()
+            for index in range(common_length, len(baseline_value)):
+                segments.append(f"[{index}]")
+                removed.append(
+                    {
+                        "path": format_path(segments),
+                        "value": baseline_value[index],
+                    }
+                )
+                segments.pop()
+            for index in range(common_length, len(current_value)):
+                segments.append(f"[{index}]")
+                added.append(
+                    {
+                        "path": format_path(segments),
+                        "value": current_value[index],
+                    }
+                )
+                segments.pop()
+            return
+
+        if baseline_value != current_value:
+            changed.append(
+                {
+                    "path": format_path(segments),
+                    "baseline": baseline_value,
+                    "current": current_value,
+                }
+            )
+
+    walk(baseline, current, [])
+
+    matches = not (added or removed or changed)
+
+    baseline_lines = ml_extra_reporting.format_overlay_metadata(baseline)
+    current_lines = ml_extra_reporting.format_overlay_metadata(current)
+
+    report_lines: list[str] = []
+    if matches:
+        report_lines.append("Baseline metadata snapshot matches recovered overlay.")
+    else:
+        report_lines.append(
+            "Differences detected between baseline and recovered overlay:"
+        )
+        for entry in changed:
+            report_lines.append(
+                "  changed {path}: baseline={baseline} current={current}".format(
+                    path=entry["path"],
+                    baseline=entry["baseline"],
+                    current=entry["current"],
+                )
+            )
+        for entry in added:
+            report_lines.append(
+                "  added {path}: {value}".format(
+                    path=entry["path"],
+                    value=entry["value"],
+                )
+            )
+        for entry in removed:
+            report_lines.append(
+                "  removed {path}: {value}".format(
+                    path=entry["path"],
+                    value=entry["value"],
+                )
+            )
+
+    report_lines.append("Baseline snapshot:")
+    report_lines.extend(f"  {line}" for line in baseline_lines)
+    report_lines.append("")
+    report_lines.append("Current snapshot:")
+    report_lines.extend(f"  {line}" for line in current_lines)
+
+    return {
+        "matches": matches,
+        "added": added,
+        "removed": removed,
+        "changed": changed,
+        "baseline_lines": baseline_lines,
+        "current_lines": current_lines,
+        "report_lines": report_lines,
+    }
+
+
 def run_checks(overlay_path: Path | None = None) -> dict[str, object]:
     """Compute diff metadata for regression review."""
 
@@ -412,6 +551,15 @@ def format_report(report: dict[str, object]) -> str:
     if metadata:
         lines.extend(ml_extra_reporting.format_overlay_metadata(metadata))
         lines.append("")
+
+    baseline_diff: Dict[str, object] | None = report.get("baseline_diff")  # type: ignore[assignment]
+    if baseline_diff:
+        diff_lines: Iterable[str] = baseline_diff.get("report_lines", [])  # type: ignore[assignment]
+        if diff_lines:
+            lines.append("Baseline comparison:")
+            for entry in diff_lines:
+                lines.append(f"  {entry}")
+            lines.append("")
 
     lines.extend(
         [
@@ -615,27 +763,53 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=Path,
         help="Write overlay metadata to the specified JSON file",
     )
+    parser.add_argument(
+        "--baseline-metadata",
+        type=Path,
+        default=None,
+        help=(
+            "Compare against a baseline metadata snapshot (e.g. "
+            "docs/porting/artifacts/ml-extra-overlay-metadata.json)"
+        ),
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> None:
+    import json
+
     args = parse_args(argv)
     report = run_checks(args.overlay)
     metadata_snapshot: Dict[str, object] | None = report.get("metadata_snapshot")  # type: ignore[assignment]
-    if args.metadata_json and metadata_snapshot is not None:
-        import json
+    exit_code = 0
 
+    if args.baseline_metadata:
+        baseline_path = args.baseline_metadata
+        if not baseline_path.exists():
+            raise SystemExit(f"baseline metadata not found: {baseline_path}")
+        if metadata_snapshot is None:
+            raise SystemExit(
+                "baseline comparison requested but metadata snapshot is unavailable"
+            )
+        baseline_snapshot = json.loads(baseline_path.read_text(encoding="utf-8"))
+        baseline_diff = diff_metadata_snapshots(baseline_snapshot, metadata_snapshot)
+        report["baseline_diff"] = baseline_diff
+        if not baseline_diff.get("matches", False):
+            exit_code = 1
+
+    if args.metadata_json and metadata_snapshot is not None:
         args.metadata_json.parent.mkdir(parents=True, exist_ok=True)
         # Persist the canonical overlay banner so automation can diff metadata without re-rendering reports.
         args.metadata_json.write_text(
             json.dumps(metadata_snapshot, indent=2, sort_keys=True) + "\n"
         )
     if args.json:
-        import json
-
         print(json.dumps(report, indent=2))
     else:
         print(format_report(report))
+
+    if exit_code:
+        raise SystemExit(exit_code)
 
 
 if __name__ == "__main__":  # pragma: no cover
