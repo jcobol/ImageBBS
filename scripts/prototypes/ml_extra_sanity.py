@@ -13,8 +13,10 @@ if __package__ in {None, ""}:
 
     sys.path.append(str(Path(__file__).resolve().parents[2]))
     from scripts.prototypes import ml_extra_defaults  # type: ignore
+    from scripts.prototypes import ml_extra_reporting  # type: ignore
 else:  # pragma: no cover - exercised during package imports
     from . import ml_extra_defaults
+    from . import ml_extra_reporting
 
 
 @dataclass
@@ -316,6 +318,7 @@ def run_checks(overlay_path: Path | None = None) -> dict[str, object]:
     stub_path = ml_extra_defaults._REPO_ROOT / "v1.2/source/ml_extra_stub.asm"
     stub_macros = parse_stub_macro_directory(stub_path)
     stub_static = parse_stub_static_data(stub_path)
+    metadata_snapshot = ml_extra_reporting.collect_overlay_metadata(defaults)
 
     comparisons, stub_only = summarise_macros(defaults, stub_macros)
     overlay_hashes = {
@@ -340,6 +343,7 @@ def run_checks(overlay_path: Path | None = None) -> dict[str, object]:
         ),
     }
     return {
+        "metadata_snapshot": metadata_snapshot,  # Canonical overlay view for automation alongside diff payloads.
         "overlay_load_address": f"${defaults.load_address:04x}",
         "lightbar": defaults.lightbar.as_dict(),
         "palette": defaults.palette.as_dict(),
@@ -403,20 +407,28 @@ def run_checks(overlay_path: Path | None = None) -> dict[str, object]:
 
 
 def format_report(report: dict[str, object]) -> str:
-    lines = [
-        "Recovered overlay summary:",
-        f"  load address: {report['overlay_load_address']}",
-        "  lightbar   : "
-        + ", ".join(
-            f"{name}={value}"
-            for name, value in report["lightbar"].items()
-        ),
-        "  palette    : " + ", ".join(report["palette"]["colours"]),
-        "  sid volume : " + report["hardware_defaults"]["sid_volume"],
-        f"  flag records: {len(report['flag_records'])}",
-        f"  macro slots : {report['overlay_macro_count']}",
-        f"  stub macros : {report['stub_macro_count']}",
-    ]
+    lines: List[str] = []
+    metadata: Dict[str, object] | None = report.get("metadata_snapshot")  # type: ignore[assignment]
+    if metadata:
+        lines.extend(ml_extra_reporting.format_overlay_metadata(metadata))
+        lines.append("")
+
+    lines.extend(
+        [
+            "Recovered overlay summary:",
+            f"  load address: {report['overlay_load_address']}",
+            "  lightbar   : "
+            + ", ".join(
+                f"{name}={value}"
+                for name, value in report["lightbar"].items()
+            ),
+            "  palette    : " + ", ".join(report["palette"]["colours"]),
+            "  sid volume : " + report["hardware_defaults"]["sid_volume"],
+            f"  flag records: {len(report['flag_records'])}",
+            f"  macro slots : {report['overlay_macro_count']}",
+            f"  stub macros : {report['stub_macro_count']}",
+        ]
+    )
 
     hardware: dict[str, object] = report["hardware_defaults"]  # type: ignore[assignment]
     lines.append("")
@@ -598,12 +610,26 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Emit machine-readable JSON instead of a text summary",
     )
+    parser.add_argument(
+        "--metadata-json",
+        type=Path,
+        help="Write overlay metadata to the specified JSON file",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
     report = run_checks(args.overlay)
+    metadata_snapshot: Dict[str, object] | None = report.get("metadata_snapshot")  # type: ignore[assignment]
+    if args.metadata_json and metadata_snapshot is not None:
+        import json
+
+        args.metadata_json.parent.mkdir(parents=True, exist_ok=True)
+        # Persist the canonical overlay banner so automation can diff metadata without re-rendering reports.
+        args.metadata_json.write_text(
+            json.dumps(metadata_snapshot, indent=2, sort_keys=True) + "\n"
+        )
     if args.json:
         import json
 
