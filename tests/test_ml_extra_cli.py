@@ -106,6 +106,21 @@ def _run_snapshot_guard(args: list[str]) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _run_refresh_pipeline(args: list[str]) -> subprocess.CompletedProcess[str]:
+    command = [
+        sys.executable,
+        "-m",
+        "scripts.prototypes.ml_extra_refresh_pipeline",
+        *args,
+    ]
+    return subprocess.run(
+        command,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+
 def _baseline_path() -> Path:
     return (
         Path(__file__).resolve().parents[1]
@@ -133,3 +148,90 @@ def test_snapshot_guard_detects_drift(tmp_path: Path) -> None:
     assert result.returncode == 1
     assert "Drift detected" in result.stdout
     assert "changed flag_directory_tail.text" in result.stdout
+    assert json.loads(altered.read_text()) == baseline_data
+
+
+def test_snapshot_guard_json_output() -> None:
+    result = _run_snapshot_guard(["--baseline", str(_baseline_path()), "--json"])
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    assert payload["matches"] is True
+    assert payload["baseline_lines"], "expected baseline text summary"
+    assert payload["added"] == []
+    assert result.stderr == ""
+
+
+def test_snapshot_guard_update_baseline(tmp_path: Path) -> None:
+    baseline_data = json.loads(_baseline_path().read_text(encoding="utf-8"))
+    baseline_data["flag_directory_tail"]["text"] = "Modified baseline text"
+    altered = tmp_path / "baseline.json"
+    altered.write_text(json.dumps(baseline_data, indent=2) + "\n", encoding="utf-8")
+
+    result = _run_snapshot_guard(
+        ["--baseline", str(altered), "--update-baseline"]
+    )
+
+    assert result.returncode == 0
+    assert "Drift detected" in result.stdout
+    assert "Refreshed baseline snapshot" in result.stdout
+    refreshed_payload = json.loads(altered.read_text(encoding="utf-8"))
+    expected_payload = json.loads(
+        _baseline_path().read_text(encoding="utf-8")
+    )
+    assert refreshed_payload == expected_payload
+
+
+def test_refresh_pipeline_matches_baseline(tmp_path: Path) -> None:
+    baseline_copy = tmp_path / "baseline.json"
+    baseline_copy.write_text(
+        _baseline_path().read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    metadata_path = tmp_path / "metadata.json"
+
+    result = _run_refresh_pipeline(
+        [
+            "--baseline",
+            str(baseline_copy),
+            "--metadata-json",
+            str(metadata_path),
+        ]
+    )
+
+    assert result.returncode == 0
+    assert "Baseline snapshot matches" in result.stdout
+    assert result.stderr == ""
+
+    baseline_payload = json.loads(baseline_copy.read_text(encoding="utf-8"))
+    metadata_payload = json.loads(metadata_path.read_text(encoding="utf-8"))
+    expected_snapshot = json.loads(
+        _baseline_path().read_text(encoding="utf-8")
+    )
+    assert baseline_payload == expected_snapshot
+    assert metadata_payload == expected_snapshot
+
+
+def test_refresh_pipeline_detects_drift(tmp_path: Path) -> None:
+    baseline_data = json.loads(_baseline_path().read_text(encoding="utf-8"))
+    baseline_data["flag_directory_tail"]["text"] = "Modified baseline text"
+    altered = tmp_path / "baseline.json"
+    altered.write_text(json.dumps(baseline_data, indent=2), encoding="utf-8")
+    metadata_path = tmp_path / "metadata.json"
+
+    result = _run_refresh_pipeline(
+        [
+            "--baseline",
+            str(altered),
+            "--metadata-json",
+            str(metadata_path),
+        ]
+    )
+
+    assert result.returncode == 1
+    assert "Drift detected" in result.stdout
+    assert result.stderr == ""
+
+    metadata_payload = json.loads(metadata_path.read_text(encoding="utf-8"))
+    expected_snapshot = json.loads(
+        _baseline_path().read_text(encoding="utf-8")
+    )
+    assert metadata_payload == expected_snapshot

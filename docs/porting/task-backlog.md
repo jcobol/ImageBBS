@@ -40,5 +40,5 @@
 ## Automation Follow-ups
 - [x] Diff successive overlay rescans by comparing the committed `ml_extra_sanity` metadata snapshot against fresh runs, emitting actionable reports when fields diverge.【F:docs/porting/iteration-32.md†L5-L17】
 - [x] Extend the sanity CLI to accept a baseline snapshot path and highlight changes relative to the canonical artefact produced during iteration 31.【F:docs/porting/iteration-32.md†L9-L17】
-- [ ] Wire `ml_extra_snapshot_guard` into the overlay refresh automation so rescans fail fast when the committed baseline diverges from freshly decoded metadata.【F:scripts/prototypes/ml_extra_snapshot_guard.py†L1-L96】
-- [ ] Add an opt-in JSON mode or baseline-refresh flag to the snapshot guard so CI jobs can capture machine-readable diffs or bless intentional overlay updates without manual edits.【F:scripts/prototypes/ml_extra_snapshot_guard.py†L49-L96】
+- [x] Wire `ml_extra_snapshot_guard` into the overlay refresh automation so rescans fail fast when the committed baseline diverges from freshly decoded metadata.【F:scripts/prototypes/ml_extra_refresh_pipeline.py†L1-L77】【F:tests/test_ml_extra_cli.py†L139-L194】
+- [x] Add an opt-in JSON mode or baseline-refresh flag to the snapshot guard so CI jobs can capture machine-readable diffs or bless intentional overlay updates without manual edits.【F:scripts/prototypes/ml_extra_snapshot_guard.py†L24-L105】【F:tests/test_ml_extra_cli.py†L206-L267】
