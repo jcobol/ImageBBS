@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Deque, Dict, Iterable, Iterator, Optional, Tuple
 
 from .setup_defaults import DriveAssignment, FilesystemDriveLocator
+from .console_renderer import PetsciiScreen
 
 
 class DeviceError(RuntimeError):
@@ -99,17 +100,79 @@ class DiskDrive(Device):
         raise DeviceError(f"disk: unsupported command '{raw}'")
 
 
+class ConsoleChannel(LogicalChannel):
+    """Logical channel that mirrors writes to the host console."""
+
+    def __init__(self, descriptor: ChannelDescriptor, console: "Console") -> None:
+        super().__init__(descriptor)
+        self._console = console
+
+    def write(self, data: str | bytes) -> None:
+        if isinstance(data, bytes):
+            text = data.decode("latin-1", errors="replace")
+        else:
+            text = data
+        super().write(text)
+        self._console.write(data)
+
+
 class Console(Device):
     name = "console"
 
-    def __init__(self) -> None:
+    def __init__(self, screen: PetsciiScreen | None = None) -> None:
         self.output: Deque[str] = deque()
+        self._screen = screen or PetsciiScreen()
+        self._transcript: bytearray = bytearray()
 
     def open(self, descriptor: ChannelDescriptor) -> LogicalChannel:
-        return LogicalChannel(descriptor)
+        return ConsoleChannel(descriptor, self)
 
-    def write(self, data: str) -> None:
-        self.output.append(data)
+    def write(self, data: str | bytes) -> None:
+        if isinstance(data, bytes):
+            payload = data
+            text = data.decode("latin-1", errors="replace")
+        else:
+            payload = data.encode("latin-1", errors="replace")
+            text = data
+        self.output.append(text)
+        self._transcript.extend(payload)
+        self._screen.write(payload)
+
+    @property
+    def screen(self) -> PetsciiScreen:
+        """Return the backing PETSCII screen buffer."""
+
+        return self._screen
+
+    @property
+    def screen_colour(self) -> int:
+        """Return the current foreground colour."""
+
+        return self._screen.screen_colour
+
+    @property
+    def background_colour(self) -> int:
+        """Return the current background colour."""
+
+        return self._screen.background_colour
+
+    @property
+    def border_colour(self) -> int:
+        """Return the current border colour."""
+
+        return self._screen.border_colour
+
+    @property
+    def transcript(self) -> str:
+        """Return the accumulated transcript as a decoded string."""
+
+        return "".join(self.output)
+
+    @property
+    def transcript_bytes(self) -> bytes:
+        """Return the accumulated transcript as raw bytes."""
+
+        return bytes(self._transcript)
 
 
 class ModemTransport(ABC):
