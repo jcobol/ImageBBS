@@ -76,3 +76,35 @@ def test_bootstrap_device_context_registers_filesystem_drives(sample_config: Pat
 
     # Commodore-backed slots are intentionally not mounted as host paths.
     assert "drive1" not in context.devices
+
+
+def test_load_drive_config_accepts_string_slot_keys(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "string_drive").mkdir()
+
+    config_path = config_dir / "storage.toml"
+    config_path.write_text(
+        "[slots]\n" '"7" = "string_drive"\n',
+        encoding="utf-8",
+    )
+
+    assignments = load_drive_config(config_path)
+    lookup = {assignment.slot: assignment for assignment in assignments}
+
+    fs_seven = lookup[7].locator
+    assert isinstance(fs_seven, FilesystemDriveLocator)
+    assert fs_seven.path == (config_dir / "string_drive").resolve()
+
+
+def test_load_drive_config_rejects_non_positive_slot(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    config_path = config_dir / "storage.toml"
+    config_path.write_text(
+        "[slots]\n" "0 = 'invalid'\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="drive slot numbers must be positive"):
+        load_drive_config(config_path)
