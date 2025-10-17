@@ -41,7 +41,7 @@ For EACH task, output EXACTLY this 4-line block, including the linefeeds:
 
 Where:
 - <LINEFEED> = an actual empty line (a single linefeed). There MUST be one before and one after every block.
-- Line 1 and Line 4 are completely empty (no spaces, tabs, or characters).
+- Line 1 and Line 5 are completely empty (no spaces, tabs, or characters).
 - Line 2 is EXACTLY: :::task-stub{title="<TITLE>"}  (no leading/trailing spaces; no other characters)
 - Line 3 is the BODY, copied verbatim from input (preserve all original line breaks and characters).
 - Line 4 is EXACTLY: :::  (no leading/trailing spaces; no other characters)
@@ -65,6 +65,7 @@ Treat the final output as plain text (not markdown). Ensure EVERY task block mat
 Additionally:
 - The line BEFORE every header and the line AFTER every footer MUST be empty.
 - There MUST be no extra text anywhere else.
+- The renderer looks for a header at the start of the line (^:::task-stub{title="..."}) and for truly empty blank lines. A line that is " " (space + LF) is not empty.
 
 If you cannot produce output that passes ALL checks while preserving the bodies verbatim, output EXACTLY:
 ERROR_FORMAT_VIOLATION
