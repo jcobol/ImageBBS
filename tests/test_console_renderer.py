@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from typing import Any, Dict, Iterable, Mapping
 
 import pytest
 
@@ -20,6 +21,227 @@ from scripts.prototypes.device_context import Console
 @pytest.fixture(scope="module")
 def editor_defaults() -> ml_extra_defaults.MLExtraDefaults:
     return ml_extra_defaults.MLExtraDefaults.from_overlay()
+
+
+def _artifact_root() -> Path:
+    return Path(__file__).resolve().parents[1] / "docs/porting/artifacts"
+
+
+def _load_artifact_json(name: str) -> Any:
+    path = _artifact_root() / name
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _parse_hex_value(value: Any) -> Any:
+    if isinstance(value, str) and value.startswith("$"):
+        return int(value[1:], 16)
+    return value
+
+
+def _parse_hex_sequence(values: Iterable[Any]) -> tuple[int, ...]:
+    return tuple(int(str(value)[1:], 16) if isinstance(value, str) and value.startswith("$") else int(value) for value in values)
+
+
+def _normalise_snapshot_value(value: Any) -> Any:
+    if isinstance(value, list):
+        return tuple(_normalise_snapshot_value(item) for item in value)
+    if isinstance(value, dict):
+        return {key: _normalise_snapshot_value(item) for key, item in value.items()}
+    return _parse_hex_value(value)
+
+
+def _normalise_snapshot(snapshot: Mapping[str, Any]) -> Dict[str, Any]:
+    normalised: Dict[str, Any] = {}
+    for key, value in snapshot.items():
+        if key == "hardware" and isinstance(value, Mapping):
+            vic_registers: Dict[int, int | None] = {}
+            raw_registers = value.get("vic_registers")
+            if isinstance(raw_registers, Mapping):
+                for register, register_value in raw_registers.items():
+                    register_key = _parse_hex_value(register)
+                    if not isinstance(register_key, int):
+                        continue
+                    if register_value is None:
+                        vic_registers[register_key] = None
+                    else:
+                        vic_registers[register_key] = _parse_hex_value(register_value)
+            sid_volume = value.get("sid_volume")
+            normalised["hardware"] = {
+                "vic_registers": vic_registers,
+                "sid_volume": _parse_hex_value(sid_volume),
+            }
+            continue
+        if key == "characters" and isinstance(value, list):
+            normalised[key] = tuple(value)
+            continue
+        normalised[key] = _normalise_snapshot_value(value)
+    return normalised
+
+
+def _load_macro_screen_artifacts() -> list[Dict[str, Any]]:
+    data = _load_artifact_json("ml-extra-macro-screens.json")
+    records: list[Dict[str, Any]] = []
+    for entry in data:
+        record: Dict[str, Any] = {
+            "slot": entry["slot"],
+            "address": _parse_hex_value(entry.get("address")),
+            "byte_count": entry.get("byte_count"),
+            "payload": bytes(_parse_hex_sequence(entry.get("bytes", []))),
+            "text": entry.get("text"),
+        }
+        snapshot_data = entry.get("snapshot")
+        if isinstance(snapshot_data, Mapping):
+            record["snapshot"] = _normalise_snapshot(snapshot_data)
+        records.append(record)
+    return records
+
+
+def _load_flag_screen_artifacts() -> Dict[str, Any]:
+    data = _load_artifact_json("ml-extra-flag-screens.json")
+    records: list[Dict[str, Any]] = []
+    for entry in data.get("records", []):
+        record: Dict[str, Any] = {
+            "index": entry.get("index"),
+            "header": _parse_hex_value(entry.get("header")),
+            "mask_c0db": _parse_hex_value(entry.get("mask_c0db")),
+            "mask_c0dc": _parse_hex_value(entry.get("mask_c0dc")),
+            "long_form": entry.get("long_form"),
+            "match_bytes": bytes(_parse_hex_sequence(entry.get("match_bytes", []))),
+            "match_text": entry.get("match_text"),
+            "pointer": _parse_hex_value(entry.get("pointer")),
+        }
+        if "replacement_bytes" in entry:
+            record["replacement_bytes"] = bytes(
+                _parse_hex_sequence(entry.get("replacement_bytes", []))
+            )
+            record["replacement_text"] = entry.get("replacement_text")
+        if "page1_bytes" in entry:
+            record["page1_bytes"] = bytes(
+                _parse_hex_sequence(entry.get("page1_bytes", []))
+            )
+            record["page1_text"] = entry.get("page1_text")
+        if "page2_bytes" in entry:
+            record["page2_bytes"] = bytes(
+                _parse_hex_sequence(entry.get("page2_bytes", []))
+            )
+            record["page2_text"] = entry.get("page2_text")
+        snapshot_data = entry.get("snapshot")
+        if isinstance(snapshot_data, Mapping):
+            record["snapshot"] = _normalise_snapshot(snapshot_data)
+        records.append(record)
+
+    def _load_directory(name: str) -> Dict[str, Any]:
+        directory_entry = data.get(name, {})
+        record: Dict[str, Any] = {
+            "bytes": bytes(_parse_hex_sequence(directory_entry.get("bytes", []))),
+        }
+        if "text" in directory_entry:
+            record["text"] = directory_entry["text"]
+        snapshot_data = directory_entry.get("snapshot") if isinstance(directory_entry, Mapping) else None
+        if isinstance(snapshot_data, Mapping):
+            record["snapshot"] = _normalise_snapshot(snapshot_data)
+        return record
+
+    return {
+        "records": records,
+        "directory_tail": _load_directory("directory_tail"),
+        "directory_block": _load_directory("directory_block"),
+    }
+
+
+@pytest.fixture(scope="module")
+def macro_screen_captures() -> list[Dict[str, Any]]:
+    return _load_macro_screen_artifacts()
+
+
+@pytest.fixture(scope="module")
+def flag_screen_captures() -> Dict[str, Any]:
+    return _load_flag_screen_artifacts()
+
+
+_SNAPSHOT_MATRIX_KEYS = (
+    "characters",
+    "colour_matrix",
+    "glyph_indices",
+    "glyphs",
+    "reverse_matrix",
+    "resolved_colour_matrix",
+)
+
+
+def _assert_snapshot_structure(snapshot: Mapping[str, Any]) -> None:
+    characters = snapshot.get("characters")
+    if characters is not None:
+        assert isinstance(characters, tuple)
+        assert all(isinstance(row, str) for row in characters)
+
+    for key in _SNAPSHOT_MATRIX_KEYS[1:]:
+        rows = snapshot.get(key)
+        if rows is None:
+            continue
+        assert isinstance(rows, tuple)
+        for row in rows:
+            assert isinstance(row, tuple)
+            if key == "reverse_matrix":
+                assert all(isinstance(cell, bool) for cell in row)
+            elif key == "glyphs":
+                for glyph in row:
+                    assert isinstance(glyph, tuple)
+                    for glyph_row in glyph:
+                        assert isinstance(glyph_row, tuple)
+                        assert all(isinstance(pixel, int) for pixel in glyph_row)
+            elif key == "resolved_colour_matrix":
+                for cell in row:
+                    assert isinstance(cell, tuple)
+                    assert len(cell) == 2
+                    assert all(isinstance(component, int) for component in cell)
+            else:
+                assert all(isinstance(cell, int) for cell in row)
+
+
+def test_macro_screen_artifacts_are_normalised(
+    macro_screen_captures: list[Dict[str, Any]],
+) -> None:
+    assert macro_screen_captures, "expected macro captures from artifact payload"
+    for capture in macro_screen_captures:
+        payload = capture["payload"]
+        assert isinstance(payload, bytes)
+        byte_count = capture.get("byte_count")
+        if isinstance(byte_count, int):
+            assert len(payload) == byte_count
+        snapshot = capture.get("snapshot")
+        if isinstance(snapshot, Mapping):
+            _assert_snapshot_structure(snapshot)
+
+
+def test_flag_screen_artifacts_are_normalised(
+    flag_screen_captures: Dict[str, Any],
+) -> None:
+    records = flag_screen_captures["records"]
+    assert records, "expected flag capture records"
+    for record in records:
+        assert isinstance(record["match_bytes"], bytes)
+        assert isinstance(record.get("header"), int | type(None))
+        assert isinstance(record.get("mask_c0db"), int | type(None))
+        assert isinstance(record.get("mask_c0dc"), int | type(None))
+        assert isinstance(record.get("pointer"), int | type(None))
+        for field in ("replacement_bytes", "page1_bytes", "page2_bytes"):
+            payload = record.get(field)
+            if payload is not None:
+                assert isinstance(payload, bytes)
+        snapshot = record.get("snapshot")
+        if isinstance(snapshot, Mapping):
+            _assert_snapshot_structure(snapshot)
+
+    tail = flag_screen_captures["directory_tail"]
+    assert isinstance(tail["bytes"], bytes)
+    if isinstance(tail.get("snapshot"), Mapping):
+        _assert_snapshot_structure(tail["snapshot"])
+
+    block = flag_screen_captures["directory_block"]
+    assert isinstance(block["bytes"], bytes)
+    if isinstance(block.get("snapshot"), Mapping):
+        _assert_snapshot_structure(block["snapshot"])
 
 
 def _resolve_vic_registers(
