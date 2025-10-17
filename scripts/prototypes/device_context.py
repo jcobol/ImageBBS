@@ -133,6 +133,8 @@ class Console(Device):
             self._screen = PetsciiScreen(defaults=defaults)
             self._defaults = self._screen.defaults
         self._transcript: bytearray = bytearray()
+        self._sid_volume: int = self._defaults.hardware.sid_volume
+        self._vic_registers: dict[int, int | None] = self._screen.vic_registers
 
     def open(self, descriptor: ChannelDescriptor) -> LogicalChannel:
         return ConsoleChannel(descriptor, self)
@@ -197,6 +199,18 @@ class Console(Device):
         return self._screen.border_colour
 
     @property
+    def vic_registers(self) -> dict[int, int | None]:
+        """Return the resolved VIC register defaults."""
+
+        return dict(self._vic_registers)
+
+    @property
+    def sid_volume(self) -> int:
+        """Return the recovered SID volume default."""
+
+        return self._sid_volume
+
+    @property
     def transcript(self) -> str:
         """Return the accumulated transcript as a decoded string."""
 
@@ -223,6 +237,10 @@ class Console(Device):
             "screen_colour": self.screen_colour,
             "background_colour": self.background_colour,
             "border_colour": self.border_colour,
+            "hardware": {
+                "vic_registers": self.vic_registers,
+                "sid_volume": self.sid_volume,
+            },
         }
 
 

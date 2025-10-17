@@ -18,12 +18,46 @@ def editor_defaults() -> ml_extra_defaults.MLExtraDefaults:
     return ml_extra_defaults.MLExtraDefaults.from_overlay()
 
 
+def _resolve_vic_registers(
+    defaults: ml_extra_defaults.MLExtraDefaults,
+) -> dict[int, int | None]:
+    registers: dict[int, int | None] = {}
+    for entry in defaults.hardware.vic_registers:
+        last_value: int | None = None
+        for _, value in entry.writes:
+            if value is not None:
+                last_value = value
+        registers[entry.address] = last_value
+    return registers
+
+
 def test_screen_seeds_overlay_palette(editor_defaults: ml_extra_defaults.MLExtraDefaults) -> None:
     screen = PetsciiScreen()
     assert screen.palette == editor_defaults.palette.colours
     assert screen.screen_colour == editor_defaults.palette.colours[0]
     assert screen.background_colour == editor_defaults.palette.colours[2]
     assert screen.border_colour == editor_defaults.palette.colours[3]
+
+
+def test_screen_replays_hardware_colour_defaults(
+    editor_defaults: ml_extra_defaults.MLExtraDefaults,
+) -> None:
+    screen = PetsciiScreen()
+    registers = _resolve_vic_registers(editor_defaults)
+
+    assert screen.vic_registers == registers
+
+    screen_register = registers.get(0xD405)
+    if screen_register is not None:
+        assert screen.screen_colour == screen_register
+
+    background_register = registers.get(0xD403)
+    if background_register is not None:
+        assert screen.background_colour == background_register
+
+    border_register = registers.get(0xD404)
+    if border_register is not None:
+        assert screen.border_colour == border_register
 
 
 def test_console_renders_startup_banner(editor_defaults: ml_extra_defaults.MLExtraDefaults) -> None:
@@ -89,6 +123,11 @@ def test_console_renders_startup_banner(editor_defaults: ml_extra_defaults.MLExt
     assert snapshot["background_colour"] == console.background_colour
     assert console.border_colour == editor_defaults.palette.colours[3]
     assert snapshot["border_colour"] == console.border_colour
+    hardware = snapshot["hardware"]
+    registers = _resolve_vic_registers(editor_defaults)
+    assert hardware["vic_registers"] == registers
+    assert hardware["sid_volume"] == editor_defaults.hardware.sid_volume
+
     assert console.transcript_bytes == banner_sequence
     assert console.transcript == banner_sequence.decode("latin-1")
 
@@ -103,6 +142,23 @@ def test_console_exposes_overlay_defaults(
     assert console.flag_dispatch == editor_defaults.flag_dispatch
     assert console.macros == editor_defaults.macros
 
+
+def test_console_exposes_hardware_defaults(
+    editor_defaults: ml_extra_defaults.MLExtraDefaults,
+) -> None:
+    console = Console()
+    registers = _resolve_vic_registers(editor_defaults)
+
+    assert console.vic_registers == registers
+    assert console.sid_volume == editor_defaults.hardware.sid_volume
+
+    background = registers.get(0xD403)
+    if background is not None:
+        assert console.background_colour == background
+
+    border = registers.get(0xD404)
+    if border is not None:
+        assert console.border_colour == border
 
 def test_screen_tracks_glyph_banks() -> None:
     screen = PetsciiScreen()
