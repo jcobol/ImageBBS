@@ -1,0 +1,9 @@
+ImageBBS lightbar reference screenshot (user-provided)
+Source: user-supplied capture from the referenced YouTube video; exact URL and timestamp not provided in the conversation transcript.
+
+Visual description:
+- Commodore 64 text-mode screen with the characteristic deep blue background and lighter blue border.
+- Main content area displays Image BBS menu text in light blue characters, arranged in multiple columns of uppercase menu items.
+- A solid white reverse-text status bar runs along the very bottom row, contrasting with the blue background.
+- The bar is segmented into labelled cells, each showing a macro legend such as "F1", "F3", "F5", "F7", "SHIFT-F1", "SHIFT-F3", "SHIFT-F5", and "SHIFT-F7" alongside the corresponding command titles.
+- The inverse-video styling of the bar highlights the active lightbar selection and anchors the macro hotkey terminology for the interface.
