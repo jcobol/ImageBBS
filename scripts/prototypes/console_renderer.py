@@ -5,6 +5,7 @@ from functools import lru_cache
 from typing import Sequence
 
 from . import ml_extra_defaults
+from . import petscii_glyphs
 
 _WIDTH = 40
 _HEIGHT = 25
@@ -59,6 +60,8 @@ class PetsciiScreen:
         self._colours: list[list[int]] = [
             [self._screen_colour for _ in range(self.width)] for _ in range(self.height)
         ]
+        self._codes: list[list[int]] = [[0x20 for _ in range(self.width)] for _ in range(self.height)]
+        self._glyph_bank: list[list[int]] = [[0 for _ in range(self.width)] for _ in range(self.height)]
 
     @property
     def palette(self) -> tuple[int, int, int, int]:
@@ -96,6 +99,36 @@ class PetsciiScreen:
 
         return tuple(tuple(row) for row in self._colours)
 
+    @property
+    def code_matrix(self) -> tuple[tuple[int, ...], ...]:
+        """Expose the PETSCII character code staged in each screen cell."""
+
+        return tuple(tuple(row) for row in self._codes)
+
+    @property
+    def glyph_index_matrix(self) -> tuple[tuple[int, ...], ...]:
+        """Return glyph ROM indices corresponding to each screen cell."""
+
+        return tuple(
+            tuple(
+                petscii_glyphs.get_glyph_index(code, lowercase=bool(self._glyph_bank[y][x]))
+                for x, code in enumerate(row)
+            )
+            for y, row in enumerate(self._codes)
+        )
+
+    @property
+    def glyph_matrix(self) -> tuple[tuple[petscii_glyphs.GlyphMatrix, ...], ...]:
+        """Return the rendered glyph bitmaps for each screen cell."""
+
+        return tuple(
+            tuple(
+                petscii_glyphs.get_glyph(code, lowercase=bool(self._glyph_bank[y][x]))
+                for x, code in enumerate(row)
+            )
+            for y, row in enumerate(self._codes)
+        )
+
     def clear(self) -> None:
         """Clear the screen and home the cursor."""
 
@@ -103,6 +136,8 @@ class PetsciiScreen:
             for x in range(self.width):
                 self._chars[y][x] = " "
                 self._colours[y][x] = self._screen_colour
+                self._codes[y][x] = 0x20
+                self._glyph_bank[y][x] = 0
         self._cursor_x = 0
         self._cursor_y = 0
 
@@ -160,7 +195,7 @@ class PetsciiScreen:
         if byte == 0x14:  # delete/backspace
             if self._cursor_x > 0:
                 self._cursor_x -= 1
-            self._put_character(" ")
+            self._put_character(0x20, " ", glyph_bank=0)
             return True
         if byte == 0x12:  # reverse on
             return True
@@ -183,17 +218,20 @@ class PetsciiScreen:
 
     def _draw_character(self, byte: int) -> None:
         char = self._translate_character(byte)
-        self._put_character(char)
+        self._put_character(byte, char)
         self._cursor_x += 1
         if self._cursor_x >= self.width:
             self._cursor_x = 0
             self._cursor_y += 1
             self._clamp_cursor()
 
-    def _put_character(self, char: str) -> None:
+    def _put_character(self, byte: int, char: str, *, glyph_bank: int | None = None) -> None:
         if 0 <= self._cursor_y < self.height and 0 <= self._cursor_x < self.width:
+            bank = glyph_bank if glyph_bank is not None else (1 if self._lowercase_mode else 0)
             self._chars[self._cursor_y][self._cursor_x] = char
             self._colours[self._cursor_y][self._cursor_x] = self._screen_colour
+            self._codes[self._cursor_y][self._cursor_x] = byte & 0xFF
+            self._glyph_bank[self._cursor_y][self._cursor_x] = bank
 
     def _clamp_cursor(self) -> None:
         if self._cursor_y < self.height:
@@ -203,8 +241,12 @@ class PetsciiScreen:
     def _scroll(self) -> None:
         self._chars.pop(0)
         self._colours.pop(0)
+        self._codes.pop(0)
+        self._glyph_bank.pop(0)
         self._chars.append([" " for _ in range(self.width)])
         self._colours.append([self._screen_colour for _ in range(self.width)])
+        self._codes.append([0x20 for _ in range(self.width)])
+        self._glyph_bank.append([0 for _ in range(self.width)])
         self._cursor_y = self.height - 1
 
     def _translate_character(self, byte: int) -> str:

@@ -40,6 +40,13 @@ from .ml_extra_defaults import (
     MacroDirectoryEntry,
     default_overlay_path,
 )
+from .petscii_glyphs import (
+    GlyphMatrix,
+    get_glyph,
+    get_glyph_index,
+    load_character_rom,
+    reset_character_rom,
+)
 
 __all__ = [
     "ChannelDescriptor",
@@ -67,6 +74,7 @@ __all__ = [
     "bootstrap_device_context",
     "MLExtraDefaults",
     "MacroDirectoryEntry",
+    "GlyphMatrix",
     "PrimeTimeWindow",
     "SessionContext",
     "SetupDefaults",
@@ -74,5 +82,9 @@ __all__ = [
     "derive_drive_inventory",
     "default_overlay_path",
     "load_drive_config",
+    "get_glyph",
+    "get_glyph_index",
+    "load_character_rom",
+    "reset_character_rom",
     "TransitionError",
 ]
