@@ -149,9 +149,12 @@ def _load_flag_screen_artifacts() -> Dict[str, Any]:
     }
 
 
+_MACRO_SCREEN_ARTIFACTS = _load_macro_screen_artifacts()
+
+
 @pytest.fixture(scope="module")
 def macro_screen_captures() -> list[Dict[str, Any]]:
-    return _load_macro_screen_artifacts()
+    return _MACRO_SCREEN_ARTIFACTS
 
 
 @pytest.fixture(scope="module")
@@ -197,6 +200,37 @@ def _assert_snapshot_structure(snapshot: Mapping[str, Any]) -> None:
                     assert all(isinstance(component, int) for component in cell)
             else:
                 assert all(isinstance(cell, int) for cell in row)
+
+
+@pytest.mark.parametrize(
+    "record",
+    [
+        pytest.param(
+            record,
+            id=f"slot-{record['slot']}" if "slot" in record else None,
+        )
+        for record in _MACRO_SCREEN_ARTIFACTS
+    ],
+)
+def test_console_macro_screens_match_artifacts(record: Dict[str, Any]) -> None:
+    snapshot = record.get("snapshot")
+    if not isinstance(snapshot, Mapping):
+        pytest.skip("macro capture lacks snapshot data")
+
+    console = Console()
+    console.write(bytes(record["payload"]))
+
+    actual_snapshot = console.snapshot()
+    for key in (
+        "characters",
+        "code_matrix",
+        "colour_matrix",
+        "glyph_indices",
+        "glyphs",
+        "reverse_matrix",
+        "resolved_colour_matrix",
+    ):
+        assert actual_snapshot[key] == snapshot[key]
 
 
 def test_macro_screen_artifacts_are_normalised(
