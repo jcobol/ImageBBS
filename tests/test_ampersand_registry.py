@@ -109,6 +109,11 @@ def test_registry_default_handler_uses_device_context_console_service() -> None:
     assert result.services["console"] is console_service
     assert console_service.device.transcript_bytes != before
     assert result.rendered_text is not None
+    after = console_service.device.transcript_bytes
+    appended = after[len(before) :]
+    glyph_run = console_service.glyph_lookup.macros_by_slot[result.slot]
+    assert appended == bytes(glyph_run.payload)
+    assert result.rendered_text == glyph_run.text
 
 
 def test_message_editor_uses_registry_override_for_intro_banner() -> None:

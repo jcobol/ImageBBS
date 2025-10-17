@@ -223,7 +223,13 @@ class Console(Device):
     def flag_directory_glyphs(self) -> GlyphRun:
         """Return rendered glyph metadata for the flag directory tail text."""
 
-        return self._glyph_lookup.flag_directory
+        return self._glyph_lookup.flag_directory_tail
+
+    @property
+    def flag_directory_block_glyphs(self) -> GlyphRun:
+        """Return rendered glyph metadata for the flag directory block payload."""
+
+        return self._glyph_lookup.flag_directory_block
 
     @property
     def screen_colour(self) -> int:
@@ -407,13 +413,13 @@ class ConsoleService:
     def push_macro_slot(self, slot: int) -> GlyphRun | None:
         """Render a macro by slot identifier and mirror it to the console."""
 
-        macro_entry = self.device.defaults.macros_by_slot.get(slot)
-        if macro_entry is None:
+        run = self.glyph_lookup.macros_by_slot.get(slot)
+        if run is None:
             return None
-        payload = bytes(macro_entry.payload)
+        payload = bytes(run.payload)
         if payload:
             self.device.write(payload)
-        return self.device.macro_glyphs.get(slot)
+        return run
 
     def push_flag_macro(self, flag_index: int) -> GlyphRun | None:
         """Render the macro associated with ``flag_index`` via dispatch data."""

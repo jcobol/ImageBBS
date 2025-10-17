@@ -7,6 +7,7 @@ from types import MappingProxyType
 from typing import Iterable, Mapping, Sequence
 
 from . import ml_extra_defaults
+from . import ml_extra_extract
 from . import petscii_glyphs
 
 _WIDTH = 40
@@ -535,25 +536,27 @@ class _TracingPetsciiScreen(PetsciiScreen):
         glyph_bank: int | None = None,
         reverse: bool | None = None,
     ) -> None:
-        bank = glyph_bank if glyph_bank is not None else (1 if self._lowercase_mode else 0)
-        reverse_flag = self._reverse_mode if reverse is None else reverse
-        code = byte & 0xFF
-        lowercase = bool(bank)
-        self._recorder.append(
-            GlyphCell(
-                code=code,
-                position=(self._cursor_x, self._cursor_y),
-                lowercase=lowercase,
-                reverse=reverse_flag,
-                glyph_index=petscii_glyphs.get_glyph_index(code, lowercase=lowercase),
-                glyph=petscii_glyphs.get_glyph(code, lowercase=lowercase),
-            )
-        )
+        x, y = self._cursor_x, self._cursor_y
         super()._put_character(
             byte,
             char,
             glyph_bank=glyph_bank,
             reverse=reverse,
+        )
+        lowercase = bool(self._glyph_bank[y][x])
+        code = self.code_matrix[y][x]
+        glyph_index = self.glyph_index_matrix[y][x]
+        glyph_bitmap = self.glyph_matrix[y][x]
+        reverse_flag = self.reverse_matrix[y][x]
+        self._recorder.append(
+            GlyphCell(
+                code=code,
+                position=(x, y),
+                lowercase=lowercase,
+                reverse=reverse_flag,
+                glyph_index=glyph_index,
+                glyph=glyph_bitmap,
+            )
         )
 
 
@@ -617,12 +620,14 @@ def build_overlay_glyph_lookup(
 
     resolved = defaults or _load_editor_defaults()
 
+    macro_runs: list[GlyphRun] = []
     macros_by_slot: dict[int, GlyphRun] = {}
     macros_by_text: dict[str, GlyphRun] = {}
     for entry in resolved.macros:
         run = _make_glyph_run(entry.payload, entry.decoded_text, defaults=resolved)
+        macro_runs.append(run)
         macros_by_slot[entry.slot] = run
-        macros_by_text[entry.decoded_text] = run
+        macros_by_text.setdefault(entry.decoded_text, run)
 
     flag_runs: list[FlagGlyphMapping] = []
     for record in resolved.flag_records:
@@ -659,11 +664,19 @@ def build_overlay_glyph_lookup(
         defaults=resolved,
     )
 
+    directory_block_run = _make_glyph_run(
+        resolved.flag_directory_block,
+        ml_extra_extract.decode_petscii(resolved.flag_directory_block),
+        defaults=resolved,
+    )
+
     return OverlayGlyphLookup(
+        macros=tuple(macro_runs),
         macros_by_slot=MappingProxyType(macros_by_slot),
         macros_by_text=MappingProxyType(macros_by_text),
         flag_records=tuple(flag_runs),
-        flag_directory=directory_run,
+        flag_directory_tail=directory_run,
+        flag_directory_block=directory_block_run,
     )
 
 
@@ -721,7 +734,9 @@ class FlagGlyphMapping:
 class OverlayGlyphLookup:
     """Lookup table mirroring overlay text rendered through :class:`PetsciiScreen`."""
 
+    macros: tuple[GlyphRun, ...]
     macros_by_slot: Mapping[int, GlyphRun]
     macros_by_text: Mapping[str, GlyphRun]
     flag_records: tuple[FlagGlyphMapping, ...]
-    flag_directory: GlyphRun
+    flag_directory_tail: GlyphRun
+    flag_directory_block: GlyphRun
