@@ -8,7 +8,7 @@ import pytest
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from scripts.prototypes import ml_extra_defaults
+from scripts.prototypes import ml_extra_defaults, petscii_glyphs
 from scripts.prototypes.console_renderer import PetsciiScreen
 from scripts.prototypes.device_context import Console
 
@@ -48,8 +48,45 @@ def test_console_renders_startup_banner(editor_defaults: ml_extra_defaults.MLExt
     for index in range(15, 24):
         assert colours[index] == console.screen_colour
 
+    codes = screen.code_matrix[11]
+    expected_codes = (0xC9, 0x6D, 0x61, 0x67, 0x65, 0x20, 0x31, 0x2E, 0x32)
+    assert tuple(codes[15:24]) == expected_codes
+
+    glyph_indices = screen.glyph_index_matrix[11]
+    expected_indices = tuple(
+        petscii_glyphs.get_glyph_index(code, lowercase=True)
+        for code in expected_codes
+    )
+    assert tuple(glyph_indices[15:24]) == expected_indices
+
+    glyphs = screen.glyph_matrix[11]
+    expected_glyphs = tuple(
+        petscii_glyphs.get_glyph(code, lowercase=True)
+        for code in expected_codes
+    )
+    assert tuple(glyphs[15:24]) == expected_glyphs
+
     assert console.screen_colour == 1  # PETSCII white
     assert console.background_colour == editor_defaults.palette.colours[2]
     assert console.border_colour == editor_defaults.palette.colours[3]
     assert console.transcript_bytes == banner_sequence
     assert console.transcript == banner_sequence.decode("latin-1")
+
+
+def test_screen_tracks_glyph_banks() -> None:
+    screen = PetsciiScreen()
+    screen.write(bytes([0x41, 0x0E, 0x61]))
+
+    assert screen.characters[0][:2] == "Aa"
+
+    codes = screen.code_matrix[0]
+    assert codes[0] == 0x41
+    assert codes[1] == 0x61
+
+    glyph_indices = screen.glyph_index_matrix[0]
+    assert glyph_indices[0] == petscii_glyphs.get_glyph_index(0x41)
+    assert glyph_indices[1] == petscii_glyphs.get_glyph_index(0x61, lowercase=True)
+
+    glyphs = screen.glyph_matrix[0]
+    assert glyphs[0] == petscii_glyphs.get_glyph(0x41)
+    assert glyphs[1] == petscii_glyphs.get_glyph(0x61, lowercase=True)
