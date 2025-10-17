@@ -167,6 +167,26 @@ class PetsciiScreen:
         return tuple(self._palette)
 
     @property
+    def cursor_position(self) -> tuple[int, int]:
+        """Return the current cursor position as ``(x, y)`` coordinates."""
+
+        return self._cursor_x, self._cursor_y
+
+    def home_cursor(self) -> None:
+        """Home the cursor without clearing the backing character matrix."""
+
+        self._cursor_x = 0
+        self._cursor_y = 0
+
+    def set_cursor(self, x: int, y: int) -> None:
+        """Position the cursor, clamping to the renderer's visible bounds."""
+
+        clamped_x = max(0, min(int(x), self.width - 1))
+        clamped_y = max(0, min(int(y), self.height - 1))
+        self._cursor_x = clamped_x
+        self._cursor_y = clamped_y
+
+    @property
     def screen_colour(self) -> int:
         """Return the current text colour."""
 

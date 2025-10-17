@@ -12,6 +12,7 @@ from abc import ABC, abstractmethod
 from collections import defaultdict, deque
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
 from typing import Deque, Dict, Iterable, Iterator, Mapping, Optional, Tuple
 
 from .setup_defaults import DriveAssignment, FilesystemDriveLocator
@@ -287,6 +288,90 @@ class Console(Device):
         }
 
 
+@dataclass
+class ConsoleService:
+    """Service wrapper that exposes console metadata and helpers."""
+
+    device: Console
+    name: str = "console"
+
+    @property
+    def defaults(self) -> ml_extra_defaults.MLExtraDefaults:
+        """Return the overlay defaults driving the console renderer."""
+
+        return self.device.defaults
+
+    @property
+    def screen(self) -> PetsciiScreen:
+        """Expose the PETSCII-aware screen backing the console."""
+
+        return self.device.screen
+
+    @property
+    def palette(self) -> tuple[int, int, int, int]:
+        """Return the recovered VIC-II palette tuple."""
+
+        return self.screen.palette
+
+    @property
+    def cursor_position(self) -> tuple[int, int]:
+        """Return the current cursor position from the renderer."""
+
+        return self.screen.cursor_position
+
+    @property
+    def flag_dispatch(self) -> ml_extra_defaults.FlagDispatchTable:
+        """Expose the decoded ampersand flag dispatch table."""
+
+        return self.device.flag_dispatch
+
+    @property
+    def glyph_lookup(self) -> OverlayGlyphLookup:
+        """Expose the rendered glyph lookup derived from ``ml.extra``."""
+
+        return self.device.overlay_glyph_lookup
+
+    @property
+    def macro_glyphs(self) -> Mapping[int, GlyphRun]:
+        """Return rendered glyph metadata keyed by macro slot."""
+
+        return self.device.macro_glyphs
+
+    def home_cursor(self) -> None:
+        """Home the renderer cursor without clearing the buffer."""
+
+        self.screen.home_cursor()
+
+    def set_cursor(self, x: int, y: int) -> None:
+        """Move the renderer cursor, clamping to the visible area."""
+
+        self.screen.set_cursor(x, y)
+
+    def write(self, data: str | bytes) -> None:
+        """Proxy writes through to the underlying console device."""
+
+        self.device.write(data)
+
+    def push_macro_slot(self, slot: int) -> GlyphRun | None:
+        """Render a macro by slot identifier and mirror it to the console."""
+
+        macro_entry = self.device.defaults.macros_by_slot.get(slot)
+        if macro_entry is None:
+            return None
+        payload = bytes(macro_entry.payload)
+        if payload:
+            self.device.write(payload)
+        return self.device.macro_glyphs.get(slot)
+
+    def push_flag_macro(self, flag_index: int) -> GlyphRun | None:
+        """Render the macro associated with ``flag_index`` via dispatch data."""
+
+        for entry in self.device.flag_dispatch.entries:
+            if entry.flag_index == flag_index:
+                return self.push_macro_slot(entry.slot)
+        return None
+
+
 class ModemTransport(ABC):
     """Strategy object that hides the underlying modem transport."""
 
@@ -403,9 +488,16 @@ class DeviceContext:
         self.channels: Dict[Tuple[int, int], LogicalChannel] = {}
         self.command_channels: Dict[int, LogicalChannel] = {}
         self.directory_cache: Dict[str, Tuple[str, ...]] = defaultdict(tuple)
+        self.services: Dict[str, object] = {}
+        self._service_view: Mapping[str, object] = MappingProxyType(self.services)
 
     def register(self, name: str, device: Device) -> None:
         self.devices[name] = device
+
+    def register_service(self, name: str, service: object) -> None:
+        """Register a host service keyed by Commodore device name."""
+
+        self.services[name] = service
 
     def open(self, device_name: str, logical_number: int, secondary_address: int) -> LogicalChannel:
         if device_name not in self.devices:
@@ -445,12 +537,28 @@ class DeviceContext:
         for channel in self.channels.values():
             yield channel.descriptor
 
+    def get_service(self, name: str) -> object:
+        """Return the registered service associated with ``name``."""
+
+        try:
+            return self.services[name]
+        except KeyError as exc:
+            raise DeviceError(f"no such service '{name}'") from exc
+
+    @property
+    def service_registry(self) -> Mapping[str, object]:
+        """Expose a read-only view of the registered device services."""
+
+        return self._service_view
+
 
 def bootstrap_device_context(assignments: Iterable[DriveAssignment]) -> DeviceContext:
     """Instantiate a device context with modern drive mappings."""
 
     context = DeviceContext()
-    context.register("console", Console())
+    console = Console()
+    context.register("console", console)
+    context.register_service("console", ConsoleService(console))
     context.register("modem", Modem())
     for assignment in assignments:
         locator = assignment.locator
@@ -462,6 +570,7 @@ def bootstrap_device_context(assignments: Iterable[DriveAssignment]) -> DeviceCo
 __all__ = [
     "ChannelDescriptor",
     "Console",
+    "ConsoleService",
     "DeviceContext",
     "DeviceError",
     "DiskDrive",
