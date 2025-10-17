@@ -1,68 +1,96 @@
-"""Tests for the PETSCII glyph atlas helper."""
-from __future__ import annotations
+import sys
+from pathlib import Path
+
+import pytest
+
+sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from scripts.prototypes import petscii_glyphs
 
 
-def _rows_from_matrix(matrix: petscii_glyphs.GlyphMatrix) -> tuple[int, ...]:
-    return tuple(
-        int("".join(str(bit) for bit in row), 2)
-        for row in matrix
+def _matrix(*rows: str) -> petscii_glyphs.GlyphMatrix:
+    if any(len(row) != 8 for row in rows):
+        raise ValueError("each glyph row must contain exactly eight cells")
+    return tuple(tuple(1 if char == "#" else 0 for char in row) for row in rows)
+
+
+def setup_function(function: object) -> None:
+    petscii_glyphs.reset_character_rom()
+
+
+def test_lowercase_a_matches_character_rom() -> None:
+    glyph = petscii_glyphs.get_glyph(0x41, lowercase=True)
+    expected = _matrix(
+        "...##...",
+        "..####..",
+        ".##..##.",
+        ".######.",
+        ".##..##.",
+        ".##..##.",
+        ".##..##.",
+        "........",
     )
+    assert glyph == expected
 
 
-def test_uppercase_a_matches_default_pattern() -> None:
-    glyph = petscii_glyphs.get_glyph(0x41)
-    assert _rows_from_matrix(glyph) == (
-        0x18,
-        0x3C,
-        0x66,
-        0x66,
-        0x7E,
-        0x66,
-        0x66,
-        0x00,
+def test_uppercase_graphic_s_matches_character_rom() -> None:
+    glyph = petscii_glyphs.get_glyph(0x53)
+    expected = _matrix(
+        "..##.##.",
+        ".#######",
+        ".#######",
+        ".#######",
+        "..#####.",
+        "...###..",
+        "....#...",
+        "........",
     )
+    assert glyph == expected
 
 
-def test_lowercase_a_uses_lowercase_bank() -> None:
-    glyph = petscii_glyphs.get_glyph(0x61, lowercase=True)
-    assert _rows_from_matrix(glyph) == (
-        0x00,
-        0x00,
-        0x3C,
-        0x06,
-        0x7E,
-        0xC6,
-        0x7E,
-        0x00,
+def test_petscii_block_glyph_matches_character_rom() -> None:
+    glyph = petscii_glyphs.get_glyph(0x6F)
+    expected = _matrix(
+        "........",
+        "........",
+        "........",
+        "........",
+        "........",
+        "........",
+        "########",
+        "########",
     )
+    assert glyph == expected
 
 
-def test_arrow_up_graphic_matches_expected_pattern() -> None:
-    glyph = petscii_glyphs.get_glyph(0x5E)
-    assert _rows_from_matrix(glyph) == (
-        0x18,
-        0x3C,
-        0x7E,
-        0x18,
-        0x18,
-        0x18,
-        0x18,
-        0x00,
+def test_invalid_length_rom_rejected() -> None:
+    with pytest.raises(ValueError):
+        petscii_glyphs.load_character_rom(b"\x00" * 1024)
+
+
+def test_loading_alternate_rom_clears_cache() -> None:
+    custom = bytes([0x00, 0xFF]) * 1024  # 2 KiB alternating rows
+    petscii_glyphs.load_character_rom(custom)
+    glyph = petscii_glyphs.get_glyph(0x00)
+    assert glyph == _matrix(
+        "........",
+        "########",
+        "........",
+        "########",
+        "........",
+        "########",
+        "........",
+        "########",
     )
-
-
-def test_custom_character_rom_overrides_default() -> None:
-    payload = bytearray(4096)
-    offset = petscii_glyphs.get_glyph_index(0x41) * 8
-    for index, value in enumerate(range(8)):
-        payload[offset + index] = value
-
-    try:
-        petscii_glyphs.load_character_rom(payload)
-        glyph = petscii_glyphs.get_glyph(0x41)
-        assert _rows_from_matrix(glyph) == tuple(range(8))
-    finally:
-        petscii_glyphs.reset_character_rom()
-
+    petscii_glyphs.reset_character_rom()
+    restored = petscii_glyphs.get_glyph(0x6F)
+    assert restored == _matrix(
+        "........",
+        "........",
+        "........",
+        "........",
+        "........",
+        "........",
+        "########",
+        "########",
+    )

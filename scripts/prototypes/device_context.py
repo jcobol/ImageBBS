@@ -174,6 +174,21 @@ class Console(Device):
 
         return bytes(self._transcript)
 
+    def snapshot(self) -> Dict[str, object]:
+        """Return a structured view of the console screen buffer."""
+
+        screen = self._screen
+        return {
+            "characters": screen.characters,
+            "colour_matrix": screen.colour_matrix,
+            "code_matrix": screen.code_matrix,
+            "glyph_indices": screen.glyph_index_matrix,
+            "glyphs": screen.glyph_matrix,
+            "screen_colour": self.screen_colour,
+            "background_colour": self.background_colour,
+            "border_colour": self.border_colour,
+        }
+
 
 class ModemTransport(ABC):
     """Strategy object that hides the underlying modem transport."""
