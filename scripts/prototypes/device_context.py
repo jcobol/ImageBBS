@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Deque, Dict, Iterable, Iterator, Optional, Tuple
 
+from .setup_defaults import DriveAssignment, FilesystemDriveLocator
+
 
 class DeviceError(RuntimeError):
     """Raised when a device or channel is misused."""
@@ -269,12 +271,26 @@ class DeviceContext:
             yield channel.descriptor
 
 
+def bootstrap_device_context(assignments: Iterable[DriveAssignment]) -> DeviceContext:
+    """Instantiate a device context with modern drive mappings."""
+
+    context = DeviceContext()
+    context.register("console", Console())
+    context.register("modem", Modem())
+    for assignment in assignments:
+        locator = assignment.locator
+        if isinstance(locator, FilesystemDriveLocator):
+            context.register(f"drive{assignment.slot}", DiskDrive(locator.path))
+    return context
+
+
 __all__ = [
     "ChannelDescriptor",
     "Console",
     "DeviceContext",
     "DeviceError",
     "DiskDrive",
+    "bootstrap_device_context",
     "LogicalChannel",
     "LoopbackModemTransport",
     "Modem",
