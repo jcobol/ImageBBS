@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import Dict, List, Sequence
+from typing import Dict, Iterable, List, Sequence
 
 from . import ml_extra_defaults
 from .device_context import Console
@@ -14,19 +14,31 @@ def _format_bytes(values: Sequence[int]) -> List[str]:
     return [f"${value:02x}" for value in values]
 
 
+def _capture_snapshot(
+    payload: Iterable[int],
+    *,
+    defaults: ml_extra_defaults.MLExtraDefaults,
+) -> Dict[str, object]:
+    """Render ``payload`` through :class:`Console` and return a snapshot."""
+
+    console = Console(defaults=defaults)
+    rendered = bytes(payload)
+    if rendered:
+        console.write(rendered)
+
+    snapshot = console.snapshot()
+    snapshot["transcript_bytes"] = _format_bytes(console.transcript_bytes)
+    snapshot["transcript_text"] = console.transcript
+    snapshot["palette"] = _format_bytes(console.screen.palette)
+    return snapshot
+
+
 def _collect_macro_screens(
     defaults: ml_extra_defaults.MLExtraDefaults,
 ) -> List[Dict[str, object]]:
     rows: List[Dict[str, object]] = []
     for entry in defaults.macros:
-        console = Console(defaults=defaults)
-        payload = bytes(entry.payload)
-        if payload:
-            console.write(payload)
-        snapshot = console.snapshot()
-        snapshot["transcript_bytes"] = _format_bytes(console.transcript_bytes)
-        snapshot["transcript_text"] = console.transcript
-        snapshot["palette"] = _format_bytes(console.screen.palette)
+        snapshot = _capture_snapshot(entry.payload, defaults=defaults)
         rows.append(
             {
                 "slot": entry.slot,
@@ -58,20 +70,33 @@ def _collect_flag_payloads(
         if record.replacement is not None:
             data["replacement_bytes"] = _format_bytes(record.replacement)
             data["replacement_text"] = record.replacement_text
+            data["replacement_snapshot"] = _capture_snapshot(
+                record.replacement, defaults=defaults
+            )
         if record.page1_payload is not None:
             data["page1_bytes"] = _format_bytes(record.page1_payload)
             data["page1_text"] = record.page1_text
+            data["page1_snapshot"] = _capture_snapshot(
+                record.page1_payload, defaults=defaults
+            )
         if record.page2_payload is not None:
             data["page2_bytes"] = _format_bytes(record.page2_payload)
             data["page2_text"] = record.page2_text
+            data["page2_snapshot"] = _capture_snapshot(
+                record.page2_payload, defaults=defaults
+            )
         records.append(data)
 
+    tail_payload = defaults.flag_directory_tail
     tail = {
-        "bytes": _format_bytes(defaults.flag_directory_tail),
+        "bytes": _format_bytes(tail_payload),
         "text": defaults.flag_directory_text,
+        "snapshot": _capture_snapshot(tail_payload, defaults=defaults),
     }
+    block_payload = defaults.flag_directory_block
     block = {
-        "bytes": _format_bytes(defaults.flag_directory_block),
+        "bytes": _format_bytes(block_payload),
+        "snapshot": _capture_snapshot(block_payload, defaults=defaults),
     }
     return {
         "records": records,
