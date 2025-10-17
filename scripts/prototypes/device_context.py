@@ -12,10 +12,16 @@ from abc import ABC, abstractmethod
 from collections import defaultdict, deque
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Deque, Dict, Iterable, Iterator, Optional, Tuple
+from typing import Deque, Dict, Iterable, Iterator, Mapping, Optional, Tuple
 
 from .setup_defaults import DriveAssignment, FilesystemDriveLocator
-from .console_renderer import PetsciiScreen
+from .console_renderer import (
+    FlagGlyphMapping,
+    GlyphRun,
+    OverlayGlyphLookup,
+    PetsciiScreen,
+    build_overlay_glyph_lookup,
+)
 from . import ml_extra_defaults
 
 
@@ -135,6 +141,9 @@ class Console(Device):
         self._transcript: bytearray = bytearray()
         self._sid_volume: int = self._defaults.hardware.sid_volume
         self._vic_registers: dict[int, int | None] = self._screen.vic_registers
+        self._glyph_lookup: OverlayGlyphLookup = build_overlay_glyph_lookup(
+            self._defaults
+        )
 
     def open(self, descriptor: ChannelDescriptor) -> LogicalChannel:
         return ConsoleChannel(descriptor, self)
@@ -179,6 +188,36 @@ class Console(Device):
         """Return the decoded macro directory entries."""
 
         return self._defaults.macros
+
+    @property
+    def overlay_glyph_lookup(self) -> OverlayGlyphLookup:
+        """Expose rendered glyph metadata derived from the overlay text tables."""
+
+        return self._glyph_lookup
+
+    @property
+    def macro_glyphs(self) -> Mapping[int, GlyphRun]:
+        """Return rendered glyph runs for macros keyed by slot."""
+
+        return self._glyph_lookup.macros_by_slot
+
+    @property
+    def macro_glyphs_by_text(self) -> Mapping[str, GlyphRun]:
+        """Return rendered glyph runs for macros keyed by decoded text."""
+
+        return self._glyph_lookup.macros_by_text
+
+    @property
+    def flag_glyph_records(self) -> tuple[FlagGlyphMapping, ...]:
+        """Expose rendered glyph runs for each ampersand flag record."""
+
+        return self._glyph_lookup.flag_records
+
+    @property
+    def flag_directory_glyphs(self) -> GlyphRun:
+        """Return rendered glyph metadata for the flag directory tail text."""
+
+        return self._glyph_lookup.flag_directory
 
     @property
     def screen_colour(self) -> int:
