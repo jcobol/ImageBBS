@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Dict, List, Sequence
 
 from . import ml_extra_defaults
+from .device_context import Console
 
 
 def _format_bytes(values: Sequence[int]) -> List[str]:
@@ -18,6 +19,14 @@ def _collect_macro_screens(
 ) -> List[Dict[str, object]]:
     rows: List[Dict[str, object]] = []
     for entry in defaults.macros:
+        console = Console(defaults=defaults)
+        payload = bytes(entry.payload)
+        if payload:
+            console.write(payload)
+        snapshot = console.snapshot()
+        snapshot["transcript_bytes"] = _format_bytes(console.transcript_bytes)
+        snapshot["transcript_text"] = console.transcript
+        snapshot["palette"] = _format_bytes(console.screen.palette)
         rows.append(
             {
                 "slot": entry.slot,
@@ -25,6 +34,7 @@ def _collect_macro_screens(
                 "byte_count": len(entry.payload),
                 "bytes": _format_bytes(entry.payload),
                 "text": entry.decoded_text,
+                "snapshot": snapshot,
             }
         )
     return rows
@@ -100,8 +110,9 @@ def main(argv: Sequence[str] | None = None) -> None:
     macro_path = output_dir / "ml-extra-macro-screens.json"
     flag_path = output_dir / "ml-extra-flag-screens.json"
 
-    macro_path.write_text(json.dumps(macro_payload, indent=2) + "\n", encoding="utf-8")
-    flag_path.write_text(json.dumps(flag_payload, indent=2) + "\n", encoding="utf-8")
+    json_kwargs = {"separators": (",", ":")}
+    macro_path.write_text(json.dumps(macro_payload, **json_kwargs) + "\n", encoding="utf-8")
+    flag_path.write_text(json.dumps(flag_payload, **json_kwargs) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":  # pragma: no cover - CLI entry point
