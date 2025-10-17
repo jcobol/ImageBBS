@@ -10,6 +10,10 @@ from . import petscii_glyphs
 _WIDTH = 40
 _HEIGHT = 25
 
+_VIC_REGISTER_BACKGROUND = 0xD403
+_VIC_REGISTER_BORDER = 0xD404
+_VIC_REGISTER_SCREEN = 0xD405
+
 
 @lru_cache()
 def _load_editor_defaults() -> ml_extra_defaults.MLExtraDefaults:
@@ -38,6 +42,21 @@ _COLOR_CODES: dict[int, int] = {
 }
 
 
+def _resolve_vic_register_defaults(
+    entries: Sequence[ml_extra_defaults.HardwareRegisterWrite],
+) -> dict[int, int | None]:
+    """Return the final value written to each recovered VIC register."""
+
+    resolved: dict[int, int | None] = {}
+    for entry in entries:
+        last_value: int | None = None
+        for _, value in entry.writes:
+            if value is not None:
+                last_value = value
+        resolved[entry.address] = last_value
+    return dict(sorted(resolved.items()))
+
+
 class PetsciiScreen:
     """Simplified representation of the 40×25 ImageBBS console."""
 
@@ -56,9 +75,30 @@ class PetsciiScreen:
         if len(palette_values) != 4:
             raise ValueError("palette must contain four VIC-II colour entries")
         self._palette: list[int] = list(palette_values)
-        self._screen_colour: int = self._palette[0]
-        self._background_colour: int = self._palette[2]
-        self._border_colour: int = self._palette[3]
+        hardware = self._defaults.hardware
+        self._vic_registers: dict[int, int | None] = _resolve_vic_register_defaults(
+            hardware.vic_registers
+        )
+
+        screen_colour = self._palette[0]
+        background_colour = self._palette[2]
+        border_colour = self._palette[3]
+
+        vic_screen = self._vic_registers.get(_VIC_REGISTER_SCREEN)
+        if vic_screen is not None:
+            screen_colour = vic_screen
+
+        vic_background = self._vic_registers.get(_VIC_REGISTER_BACKGROUND)
+        if vic_background is not None:
+            background_colour = vic_background
+
+        vic_border = self._vic_registers.get(_VIC_REGISTER_BORDER)
+        if vic_border is not None:
+            border_colour = vic_border
+
+        self._screen_colour: int = screen_colour
+        self._background_colour: int = background_colour
+        self._border_colour: int = border_colour
         self._cursor_x: int = 0
         self._cursor_y: int = 0
         self._lowercase_mode = False
@@ -150,6 +190,12 @@ class PetsciiScreen:
         """Expose the per-cell reverse attribute state."""
 
         return tuple(tuple(row) for row in self._reverse_flags)
+
+    @property
+    def vic_registers(self) -> dict[int, int | None]:
+        """Return the resolved VIC register defaults."""
+
+        return dict(self._vic_registers)
 
     @property
     def resolved_colour_matrix(self) -> tuple[tuple[tuple[int, int], ...], ...]:
