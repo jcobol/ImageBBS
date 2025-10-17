@@ -35,7 +35,7 @@ from .setup_defaults import (
     SysopProfile,
     derive_drive_inventory,
 )
-from .setup_config import load_drive_config
+from .setup_config import SetupConfig, load_drive_config
 from .ml_extra_defaults import (
     MLExtraDefaults,
     MacroDirectoryEntry,
@@ -86,6 +86,7 @@ __all__ = [
     "derive_drive_inventory",
     "default_overlay_path",
     "load_drive_config",
+    "SetupConfig",
     "get_glyph",
     "get_glyph_index",
     "load_character_rom",

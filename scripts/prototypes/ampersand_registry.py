@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Dict, Iterable, MutableMapping, Optional
+from importlib import import_module
+from typing import Callable, Dict, Iterable, Mapping, MutableMapping, Optional
 
 from .ml_extra_defaults import FlagRecord, MLExtraDefaults
 
@@ -28,10 +29,16 @@ AmpersandHandler = Callable[[object], AmpersandResult]
 class AmpersandRegistry:
     """Registry that resolves ampersand flag indices to callable handlers."""
 
-    def __init__(self, defaults: Optional[MLExtraDefaults] = None) -> None:
+    def __init__(
+        self,
+        defaults: Optional[MLExtraDefaults] = None,
+        override_imports: Optional[Mapping[int, str]] = None,
+    ) -> None:
         self._defaults = defaults or MLExtraDefaults.from_overlay()
         self._default_handlers = self._build_default_handlers()
         self._overrides: Dict[int, AmpersandHandler] = {}
+        if override_imports:
+            self._load_override_imports(override_imports)
 
     @property
     def defaults(self) -> MLExtraDefaults:
@@ -110,6 +117,49 @@ class AmpersandRegistry:
             )
 
         return handler
+
+    def _load_override_imports(self, override_imports: Mapping[int, str]) -> None:
+        for flag_index, import_path in override_imports.items():
+            handler = self._import_handler(import_path)
+            self.register_handler(flag_index, handler)
+
+    def _import_handler(self, import_path: str) -> AmpersandHandler:
+        module_name, attribute_path = _split_import_path(import_path)
+        module = import_module(module_name)
+        handler: object = module
+        for attribute in attribute_path.split("."):
+            try:
+                handler = getattr(handler, attribute)
+            except AttributeError as exc:  # pragma: no cover - defensive guard
+                raise ImportError(
+                    f"ampersand override '{import_path}' missing attribute '{attribute}'"
+                ) from exc
+
+        if not callable(handler):
+            raise TypeError(
+                f"ampersand override '{import_path}' resolved to non-callable {type(handler)!r}"
+            )
+
+        return handler
+
+
+def _split_import_path(import_path: str) -> tuple[str, str]:
+    if ":" in import_path:
+        module_name, attribute_path = import_path.split(":", 1)
+    else:
+        try:
+            module_name, attribute_path = import_path.rsplit(".", 1)
+        except ValueError as exc:  # pragma: no cover - defensive guard
+            raise ValueError(
+                "ampersand override must include a module and attribute"
+            ) from exc
+
+    module_name = module_name.strip()
+    attribute_path = attribute_path.strip()
+    if not module_name or not attribute_path:
+        raise ValueError("ampersand override must specify a module and attribute")
+
+    return module_name, attribute_path
 
 
 __all__ = ["AmpersandRegistry", "AmpersandResult", "AmpersandHandler"]
