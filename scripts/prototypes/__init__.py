@@ -4,6 +4,7 @@ from .ampersand_registry import AmpersandHandler, AmpersandRegistry, AmpersandRe
 from .device_context import (
     ChannelDescriptor,
     Console,
+    ConsoleService,
     DeviceContext,
     DeviceError,
     DiskDrive,
@@ -62,6 +63,7 @@ __all__ = [
     "AmpersandRegistry",
     "AmpersandResult",
     "Console",
+    "ConsoleService",
     "BoardStatistics",
     "ChatModeMessages",
     "CommodoreDeviceDrive",

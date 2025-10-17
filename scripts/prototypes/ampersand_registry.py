@@ -1,10 +1,12 @@
 """Service registry for dispatching ImageBBS ampersand handlers."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from importlib import import_module
+from types import MappingProxyType
 from typing import Callable, Dict, Iterable, Mapping, MutableMapping, Optional
 
+from .device_context import Console, ConsoleService
 from .ml_extra_defaults import FlagRecord, MLExtraDefaults
 
 
@@ -21,6 +23,9 @@ class AmpersandResult:
     flag_directory_text: str
     context: object
     rendered_text: Optional[str] = None
+    services: Mapping[str, object] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
 
 
 AmpersandHandler = Callable[[object], AmpersandResult]
@@ -33,8 +38,20 @@ class AmpersandRegistry:
         self,
         defaults: Optional[MLExtraDefaults] = None,
         override_imports: Optional[Mapping[int, str]] = None,
+        services: Optional[MutableMapping[str, object]] = None,
     ) -> None:
         self._defaults = defaults or MLExtraDefaults.from_overlay()
+        if services is None:
+            console = Console()
+            console_service = ConsoleService(console)
+            self._services: MutableMapping[str, object] = {
+                console_service.name: console_service
+            }
+        elif isinstance(services, dict):
+            self._services = services
+        else:
+            self._services = dict(services)
+        self._service_view: Mapping[str, object] = MappingProxyType(self._services)
         self._default_handlers = self._build_default_handlers()
         self._overrides: Dict[int, AmpersandHandler] = {}
         if override_imports:
@@ -46,12 +63,23 @@ class AmpersandRegistry:
 
         return self._defaults
 
+    @property
+    def services(self) -> Mapping[str, object]:
+        """Expose a read-only view of the registered services."""
+
+        return self._service_view
+
     def register_handler(self, flag_index: int, handler: AmpersandHandler) -> None:
         """Register an override handler for ``flag_index``."""
 
         if flag_index not in self._default_handlers:
             raise KeyError(f"unknown ampersand flag index: {flag_index:#x}")
         self._overrides[flag_index] = handler
+
+    def register_service(self, name: str, service: object) -> None:
+        """Attach a runtime service that handlers may inspect."""
+
+        self._services[name] = service
 
     def unregister_handler(self, flag_index: int) -> None:
         """Remove a previously-registered override handler."""
@@ -105,6 +133,13 @@ class AmpersandRegistry:
         self, flag_index: int, slot: int, handler_address: int
     ) -> AmpersandHandler:
         def handler(context: object) -> AmpersandResult:
+            rendered_text: Optional[str] = None
+            glyph_run = None
+            console_service = self._resolve_console_service()
+            if isinstance(console_service, ConsoleService):
+                glyph_run = console_service.push_flag_macro(flag_index)
+                if glyph_run is not None:
+                    rendered_text = glyph_run.text or ""
             return AmpersandResult(
                 flag_index=flag_index,
                 slot=slot,
@@ -114,9 +149,17 @@ class AmpersandRegistry:
                 flag_directory_tail=self._defaults.flag_directory_tail,
                 flag_directory_text=self._defaults.flag_directory_text,
                 context=context,
+                rendered_text=rendered_text,
+                services=self.services,
             )
 
         return handler
+
+    def _resolve_console_service(self) -> ConsoleService | None:
+        service = self._services.get("console")
+        if isinstance(service, ConsoleService):
+            return service
+        return None
 
     def _load_override_imports(self, override_imports: Mapping[int, str]) -> None:
         for flag_index, import_path in override_imports.items():

@@ -6,6 +6,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from scripts.prototypes.ampersand_registry import AmpersandRegistry, AmpersandResult
+from scripts.prototypes.device_context import ConsoleService, bootstrap_device_context
 from scripts.prototypes.message_editor import Event, MessageEditor, SessionContext
 
 
@@ -20,6 +21,9 @@ def test_registry_default_dispatch_exposes_overlay_data() -> None:
     assert result.flag_records == defaults.flag_records
     assert result.flag_directory_tail == defaults.flag_directory_tail
     assert result.flag_directory_text == defaults.flag_directory_text
+    assert "console" in result.services
+    assert isinstance(result.services["console"], ConsoleService)
+    assert result.rendered_text is not None
 
 
 def test_registry_override_can_call_default() -> None:
@@ -89,6 +93,22 @@ def test_registry_loads_override_imports(tmp_path: Path) -> None:
     finally:
         sys.path.remove(str(tmp_path))
         sys.modules.pop("custom_ampersand", None)
+
+
+def test_registry_default_handler_uses_device_context_console_service() -> None:
+    context = bootstrap_device_context(assignments=())
+    console_service = context.get_service("console")
+    assert isinstance(console_service, ConsoleService)
+    before = console_service.device.transcript_bytes
+
+    registry = AmpersandRegistry(services=context.services)
+    flag_index = next(iter(registry.available_flag_indices()))
+
+    result = registry.dispatch(flag_index, context=None, use_default=True)
+
+    assert result.services["console"] is console_service
+    assert console_service.device.transcript_bytes != before
+    assert result.rendered_text is not None
 
 
 def test_message_editor_uses_registry_override_for_intro_banner() -> None:
