@@ -26,6 +26,10 @@ Need a modem emulator? Here's [tcpser source](https://github.com/go4retro/tcpser
 
 Want to telnet to some Image BBSes? Our network has 13 nodes! Check out the [Commodore BBS Outpost](http://cbbsoutpost.servebbs.com/index.php)!
 
+# Porting Research Tooling
+
+Repository-hosted tooling recovers the `ml.extra` overlay and validates that the checked-in stub matches the archival bytes. After any overlay rescan, refresh the canonical metadata snapshot with `python -m scripts.prototypes.ml_extra_sanity --metadata-json docs/porting/artifacts/ml-extra-overlay-metadata.json`, then gate the results by running `python -m scripts.prototypes.ml_extra_snapshot_guard --baseline docs/porting/artifacts/ml-extra-overlay-metadata.json` to confirm the recovered metadata still matches the committed baseline.【F:scripts/prototypes/ml_extra_sanity.py†L760-L812】【F:scripts/prototypes/ml_extra_snapshot_guard.py†L1-L96】
+
 # Docker Build
 
 Thanks to the efforts of user `jcobol`, we have the beginnings of a Docker-based build for the assembly language.
