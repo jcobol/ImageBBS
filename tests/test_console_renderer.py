@@ -12,6 +12,8 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from scripts.prototypes import ml_extra_defaults, ml_extra_extract, petscii_glyphs
 from scripts.prototypes.console_renderer import (
+    GlyphCell,
+    GlyphRun,
     PetsciiScreen,
     VicRegisterTimelineEntry,
     render_petscii_payload,
@@ -390,6 +392,30 @@ def _assert_payload_snapshot(
         assert decoded == expected_text
 
 
+def _assert_lookup_run_matches_snapshot(
+    run: GlyphRun, snapshot: Mapping[str, Any]
+) -> None:
+    transcript_bytes = snapshot.get("transcript_bytes")
+    if transcript_bytes is not None:
+        assert tuple(run.payload) == tuple(transcript_bytes)
+
+    glyph_indices = snapshot.get("glyph_indices")
+    glyphs = snapshot.get("glyphs")
+    reverse_matrix = snapshot.get("reverse_matrix")
+
+    latest_cells: dict[tuple[int, int], GlyphCell] = {}
+    for cell in run.glyphs:
+        latest_cells[cell.position] = cell
+
+    for (x, y), cell in latest_cells.items():
+        if glyph_indices is not None:
+            assert glyph_indices[y][x] == cell.glyph_index
+        if glyphs is not None:
+            assert tuple(glyphs[y][x]) == tuple(cell.glyph)
+        if reverse_matrix is not None:
+            assert reverse_matrix[y][x] == cell.reverse
+
+
 @pytest.mark.parametrize(
     "record",
     [
@@ -617,6 +643,103 @@ def test_console_flag_directory_block_snapshot_matches_artifact(
     )
 
 
+def test_overlay_macro_lookup_aligns_with_macro_artifacts(
+    macro_screen_captures: list[Dict[str, Any]]
+) -> None:
+    console = Console()
+    lookup = console.overlay_glyph_lookup
+
+    assert len(lookup.macros) == len(macro_screen_captures)
+    assert len(lookup.macros_by_slot) == len(macro_screen_captures)
+
+    for record in macro_screen_captures:
+        snapshot = record.get("snapshot")
+        if not isinstance(snapshot, Mapping):
+            continue
+        slot = record["slot"]
+        run = lookup.macros_by_slot[slot]
+        assert run in lookup.macros
+        _assert_lookup_run_matches_snapshot(run, snapshot)
+        assert tuple(run.payload) == tuple(snapshot["transcript_bytes"])
+        assert tuple(run.payload) == tuple(record["payload"])
+        expected_text = record.get("text") or ""
+        assert run.text == expected_text
+
+
+def test_overlay_flag_lookup_aligns_with_flag_artifacts(
+    flag_screen_captures: Dict[str, Any]
+) -> None:
+    console = Console()
+    lookup = console.overlay_glyph_lookup
+
+    records = flag_screen_captures["records"]
+    assert len(lookup.flag_records) == len(records)
+
+    for mapping, record in zip(lookup.flag_records, records):
+        assert tuple(mapping.record.match_sequence) == tuple(record["match_bytes"])
+        expected_match_text = record.get("match_text") or ""
+        assert mapping.record.match_text == expected_match_text
+
+        replacement_bytes = record.get("replacement_bytes")
+        if mapping.replacement is None:
+            assert replacement_bytes in (None, b"")
+        else:
+            assert isinstance(replacement_bytes, bytes)
+            assert bytes(mapping.replacement.payload) == replacement_bytes
+            snapshot = record.get("replacement_snapshot")
+            if isinstance(snapshot, Mapping):
+                _assert_lookup_run_matches_snapshot(mapping.replacement, snapshot)
+                assert tuple(mapping.replacement.payload) == tuple(
+                    snapshot["transcript_bytes"]
+                )
+            expected_text = record.get("replacement_text") or ""
+            assert mapping.replacement.text == expected_text
+
+        for page_field in ("page1", "page2"):
+            run = getattr(mapping, page_field)
+            payload_key = f"{page_field}_bytes"
+            snapshot_key = f"{page_field}_snapshot"
+            payload_bytes = record.get(payload_key)
+            snapshot = record.get(snapshot_key)
+            if run is None:
+                assert payload_bytes in (None, b"")
+                continue
+            assert isinstance(payload_bytes, bytes)
+            assert bytes(run.payload) == payload_bytes
+            if isinstance(snapshot, Mapping):
+                _assert_lookup_run_matches_snapshot(run, snapshot)
+                assert tuple(run.payload) == tuple(snapshot["transcript_bytes"])
+            expected_text = record.get(f"{page_field}_text") or ""
+            assert run.text == expected_text
+
+
+def test_overlay_flag_directory_lookup_aligns_with_artifacts(
+    flag_screen_captures: Dict[str, Any]
+) -> None:
+    console = Console()
+    lookup = console.overlay_glyph_lookup
+
+    tail = flag_screen_captures["directory_tail"]
+    tail_snapshot = tail.get("snapshot")
+    assert tuple(lookup.flag_directory_tail.payload) == tuple(tail["bytes"])
+    expected_tail_text = tail.get("text") or ""
+    assert lookup.flag_directory_tail.text == expected_tail_text
+    if isinstance(tail_snapshot, Mapping):
+        _assert_lookup_run_matches_snapshot(lookup.flag_directory_tail, tail_snapshot)
+        assert tuple(lookup.flag_directory_tail.payload) == tuple(
+            tail_snapshot["transcript_bytes"]
+        )
+
+    block = flag_screen_captures["directory_block"]
+    block_snapshot = block.get("snapshot")
+    assert tuple(lookup.flag_directory_block.payload) == tuple(block["bytes"])
+    if isinstance(block_snapshot, Mapping):
+        _assert_lookup_run_matches_snapshot(lookup.flag_directory_block, block_snapshot)
+        assert tuple(lookup.flag_directory_block.payload) == tuple(
+            block_snapshot["transcript_bytes"]
+        )
+
+
 def _resolve_vic_register_state(
     defaults: ml_extra_defaults.MLExtraDefaults,
 ) -> tuple[dict[int, int | None], tuple[VicRegisterTimelineEntry, ...]]:
@@ -827,8 +950,10 @@ def test_console_exposes_overlay_glyph_lookup() -> None:
     assert console.macro_glyphs is lookup.macros_by_slot
     assert console.macro_glyphs_by_text is lookup.macros_by_text
     assert console.flag_glyph_records == lookup.flag_records
-    assert console.flag_directory_glyphs == lookup.flag_directory
-    assert len(console.macro_glyphs) >= len(console.macros)
+    assert console.flag_directory_glyphs == lookup.flag_directory_tail
+    assert console.flag_directory_block_glyphs == lookup.flag_directory_block
+    assert len(console.macro_glyphs) == len(console.macros)
+    assert len(lookup.macros) == len(console.macros)
 
 
 def test_console_exposes_hardware_defaults(
