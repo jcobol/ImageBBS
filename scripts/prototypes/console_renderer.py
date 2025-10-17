@@ -44,19 +44,42 @@ _COLOR_CODES: dict[int, int] = {
 }
 
 
-def _resolve_vic_register_defaults(
+@dataclass(frozen=True)
+class VicRegisterTimelineEntry:
+    """Concrete register write emitted during the overlay bootstrap."""
+
+    store: int
+    address: int
+    value: int | None
+
+    def as_dict(self) -> dict[str, int | None]:
+        """Return a JSON-serialisable representation of the timeline entry."""
+
+        return {
+            "store": self.store,
+            "address": self.address,
+            "value": self.value,
+        }
+
+
+def _resolve_vic_register_state(
     entries: Sequence[ml_extra_defaults.HardwareRegisterWrite],
-) -> dict[int, int | None]:
-    """Return the final value written to each recovered VIC register."""
+) -> tuple[dict[int, int | None], tuple[VicRegisterTimelineEntry, ...]]:
+    """Return the resolved VIC register defaults and write timeline."""
 
     resolved: dict[int, int | None] = {}
+    timeline: list[VicRegisterTimelineEntry] = []
     for entry in entries:
         last_value: int | None = None
-        for _, value in entry.writes:
+        for store, value in entry.writes:
+            timeline.append(
+                VicRegisterTimelineEntry(store=int(store), address=entry.address, value=value)
+            )
             if value is not None:
                 last_value = value
         resolved[entry.address] = last_value
-    return dict(sorted(resolved.items()))
+    sorted_timeline = tuple(sorted(timeline, key=lambda item: item.store))
+    return dict(sorted(resolved.items())), sorted_timeline
 
 
 class PetsciiScreen:
@@ -78,9 +101,10 @@ class PetsciiScreen:
             raise ValueError("palette must contain four VIC-II colour entries")
         self._palette: list[int] = list(palette_values)
         hardware = self._defaults.hardware
-        self._vic_registers: dict[int, int | None] = _resolve_vic_register_defaults(
-            hardware.vic_registers
-        )
+        (
+            self._vic_registers,
+            self._vic_register_timeline,
+        ) = _resolve_vic_register_state(hardware.vic_registers)
 
         lightbar = self._defaults.lightbar
         self._lightbar_bitmaps: list[int] = [
@@ -98,17 +122,16 @@ class PetsciiScreen:
         background_colour = self._palette[2]
         border_colour = self._palette[3]
 
-        vic_screen = self._vic_registers.get(_VIC_REGISTER_SCREEN)
-        if vic_screen is not None:
-            screen_colour = vic_screen
-
-        vic_background = self._vic_registers.get(_VIC_REGISTER_BACKGROUND)
-        if vic_background is not None:
-            background_colour = vic_background
-
-        vic_border = self._vic_registers.get(_VIC_REGISTER_BORDER)
-        if vic_border is not None:
-            border_colour = vic_border
+        for entry in self._vic_register_timeline:
+            value = entry.value
+            if value is None:
+                continue
+            if entry.address == _VIC_REGISTER_SCREEN:
+                screen_colour = value
+            elif entry.address == _VIC_REGISTER_BACKGROUND:
+                background_colour = value
+            elif entry.address == _VIC_REGISTER_BORDER:
+                border_colour = value
 
         self._screen_colour: int = self._resolve_palette_colour(
             screen_colour, default_index=0
@@ -263,6 +286,12 @@ class PetsciiScreen:
         """Return the resolved VIC register defaults."""
 
         return dict(self._vic_registers)
+
+    @property
+    def vic_register_timeline(self) -> tuple[VicRegisterTimelineEntry, ...]:
+        """Return the timeline of VIC register writes recovered from the overlay."""
+
+        return self._vic_register_timeline
 
     @property
     def resolved_colour_matrix(self) -> tuple[tuple[tuple[int, int], ...], ...]:

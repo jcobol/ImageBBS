@@ -21,6 +21,7 @@ from .console_renderer import (
     GlyphRun,
     OverlayGlyphLookup,
     PetsciiScreen,
+    VicRegisterTimelineEntry,
     build_overlay_glyph_lookup,
 )
 from . import ml_extra_defaults
@@ -142,6 +143,10 @@ class Console(Device):
         self._transcript: bytearray = bytearray()
         self._sid_volume: int = self._defaults.hardware.sid_volume
         self._vic_registers: dict[int, int | None] = self._screen.vic_registers
+        self._vic_register_timeline: tuple[VicRegisterTimelineEntry, ...] = (
+            self._screen.vic_register_timeline
+        )
+        self._pointer_defaults = self._defaults.hardware.pointer
         self._glyph_lookup: OverlayGlyphLookup = build_overlay_glyph_lookup(
             self._defaults
         )
@@ -245,10 +250,22 @@ class Console(Device):
         return dict(self._vic_registers)
 
     @property
+    def vic_register_timeline(self) -> tuple[VicRegisterTimelineEntry, ...]:
+        """Return the recovered VIC register write order."""
+
+        return self._vic_register_timeline
+
+    @property
     def sid_volume(self) -> int:
         """Return the recovered SID volume default."""
 
         return self._sid_volume
+
+    @property
+    def pointer_defaults(self) -> ml_extra_defaults.BufferPointerDefaults:
+        """Return the recovered ``$42fe/$42ff`` pointer configuration."""
+
+        return self._pointer_defaults
 
     @property
     def transcript(self) -> str:
@@ -283,6 +300,17 @@ class Console(Device):
             "border_colour": self.border_colour,
             "hardware": {
                 "vic_registers": self.vic_registers,
+                "vic_register_timeline": tuple(
+                    entry.as_dict() for entry in self.vic_register_timeline
+                ),
+                "pointer": {
+                    "initial": {
+                        "low": self._pointer_defaults.initial[0],
+                        "high": self._pointer_defaults.initial[1],
+                    },
+                    "scan_limit": self._pointer_defaults.scan_limit,
+                    "reset_value": self._pointer_defaults.reset_value,
+                },
                 "sid_volume": self.sid_volume,
             },
         }
@@ -300,6 +328,30 @@ class ConsoleService:
         """Return the overlay defaults driving the console renderer."""
 
         return self.device.defaults
+
+    @property
+    def vic_registers(self) -> dict[int, int | None]:
+        """Expose the recovered VIC register defaults."""
+
+        return self.device.vic_registers
+
+    @property
+    def vic_register_timeline(self) -> tuple[VicRegisterTimelineEntry, ...]:
+        """Expose the VIC register write order recovered from the overlay."""
+
+        return self.device.vic_register_timeline
+
+    @property
+    def pointer_defaults(self) -> ml_extra_defaults.BufferPointerDefaults:
+        """Expose the recovered ``$42fe/$42ff`` pointer configuration."""
+
+        return self.device.pointer_defaults
+
+    @property
+    def sid_volume(self) -> int:
+        """Expose the recovered SID volume default."""
+
+        return self.device.sid_volume
 
     @property
     def screen(self) -> PetsciiScreen:

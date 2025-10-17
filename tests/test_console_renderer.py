@@ -13,6 +13,7 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 from scripts.prototypes import ml_extra_defaults, ml_extra_extract, petscii_glyphs
 from scripts.prototypes.console_renderer import (
     PetsciiScreen,
+    VicRegisterTimelineEntry,
     render_petscii_payload,
 )
 from scripts.prototypes.device_context import Console
@@ -68,11 +69,49 @@ def _normalise_snapshot(snapshot: Mapping[str, Any]) -> Dict[str, Any]:
                         vic_registers[register_key] = None
                     else:
                         vic_registers[register_key] = _parse_hex_value(register_value)
+            hardware_data: Dict[str, Any] = {"vic_registers": vic_registers}
+            raw_timeline = value.get("vic_register_timeline")
+            if isinstance(raw_timeline, Iterable):
+                timeline: list[VicRegisterTimelineEntry] = []
+                for entry in raw_timeline:
+                    if not isinstance(entry, Mapping):
+                        continue
+                    store = _parse_hex_value(entry.get("store"))
+                    address = _parse_hex_value(entry.get("address"))
+                    value_field = _parse_hex_value(entry.get("value"))
+                    if not isinstance(store, int) or not isinstance(address, int):
+                        continue
+                    timeline.append(
+                        VicRegisterTimelineEntry(
+                            store=store,
+                            address=address,
+                            value=value_field if isinstance(value_field, int) else None,
+                        )
+                    )
+                hardware_data["vic_register_timeline"] = tuple(
+                    sorted(timeline, key=lambda entry: entry.store)
+                )
+            pointer_data = value.get("pointer")
+            if isinstance(pointer_data, Mapping):
+                initial = pointer_data.get("initial")
+                if isinstance(initial, Mapping):
+                    hardware_data["pointer"] = {
+                        "initial": {
+                            "low": _parse_hex_value(initial.get("low")),
+                            "high": _parse_hex_value(initial.get("high")),
+                        },
+                        "scan_limit": _parse_hex_value(pointer_data.get("scan_limit")),
+                        "reset_value": _parse_hex_value(pointer_data.get("reset_value")),
+                    }
+                else:
+                    hardware_data["pointer"] = {
+                        "initial": None,
+                        "scan_limit": _parse_hex_value(pointer_data.get("scan_limit")),
+                        "reset_value": _parse_hex_value(pointer_data.get("reset_value")),
+                    }
             sid_volume = value.get("sid_volume")
-            normalised["hardware"] = {
-                "vic_registers": vic_registers,
-                "sid_volume": _parse_hex_value(sid_volume),
-            }
+            hardware_data["sid_volume"] = _parse_hex_value(sid_volume)
+            normalised["hardware"] = hardware_data
             continue
         if key == "characters" and isinstance(value, list):
             normalised[key] = tuple(value)
@@ -263,15 +302,34 @@ def _assert_console_snapshot_state(
     if expected_palette:
         assert expected_palette == editor_defaults.palette.colours
 
+    registers, timeline = _resolve_vic_register_state(editor_defaults)
+    expected_timeline = tuple(entry.as_dict() for entry in timeline)
+    pointer_defaults = editor_defaults.hardware.pointer
+    expected_pointer = {
+        "initial": {
+            "low": pointer_defaults.initial[0],
+            "high": pointer_defaults.initial[1],
+        },
+        "scan_limit": pointer_defaults.scan_limit,
+        "reset_value": pointer_defaults.reset_value,
+    }
+
+    actual_hardware = actual_snapshot["hardware"]
+    assert actual_hardware["vic_registers"] == registers
+    assert actual_hardware["vic_register_timeline"] == expected_timeline
+    assert actual_hardware["pointer"] == expected_pointer
+    assert actual_hardware["sid_volume"] == editor_defaults.hardware.sid_volume
+
     hardware = expected_snapshot.get("hardware")
     if isinstance(hardware, Mapping):
-        registers = _resolve_vic_registers(editor_defaults)
-        assert hardware["vic_registers"] == registers
-
-        actual_hardware = actual_snapshot["hardware"]
-        assert actual_hardware == hardware
-        assert actual_hardware["vic_registers"] == registers
-        assert actual_hardware["sid_volume"] == editor_defaults.hardware.sid_volume
+        if "vic_registers" in hardware:
+            assert hardware["vic_registers"] == registers
+        if "vic_register_timeline" in hardware:
+            assert hardware["vic_register_timeline"] == expected_timeline
+        if "pointer" in hardware:
+            assert hardware["pointer"] == expected_pointer
+        if "sid_volume" in hardware:
+            assert hardware["sid_volume"] == editor_defaults.hardware.sid_volume
 
     screen = console.screen
     glyph_bank = getattr(screen, "_glyph_bank")
@@ -559,17 +617,22 @@ def test_console_flag_directory_block_snapshot_matches_artifact(
     )
 
 
-def _resolve_vic_registers(
+def _resolve_vic_register_state(
     defaults: ml_extra_defaults.MLExtraDefaults,
-) -> dict[int, int | None]:
+) -> tuple[dict[int, int | None], tuple[VicRegisterTimelineEntry, ...]]:
     registers: dict[int, int | None] = {}
+    timeline: list[VicRegisterTimelineEntry] = []
     for entry in defaults.hardware.vic_registers:
         last_value: int | None = None
-        for _, value in entry.writes:
+        for store, value in entry.writes:
+            timeline.append(
+                VicRegisterTimelineEntry(store=store, address=entry.address, value=value)
+            )
             if value is not None:
                 last_value = value
         registers[entry.address] = last_value
-    return registers
+    ordered_timeline = tuple(sorted(timeline, key=lambda record: record.store))
+    return dict(sorted(registers.items())), ordered_timeline
 
 
 def test_screen_seeds_overlay_palette(editor_defaults: ml_extra_defaults.MLExtraDefaults) -> None:
@@ -584,9 +647,10 @@ def test_screen_replays_hardware_colour_defaults(
     editor_defaults: ml_extra_defaults.MLExtraDefaults,
 ) -> None:
     screen = PetsciiScreen()
-    registers = _resolve_vic_registers(editor_defaults)
+    registers, timeline = _resolve_vic_register_state(editor_defaults)
 
     assert screen.vic_registers == registers
+    assert screen.vic_register_timeline == timeline
 
     screen_register = registers.get(0xD405)
     if screen_register is not None:
@@ -665,8 +729,20 @@ def test_console_renders_startup_banner(editor_defaults: ml_extra_defaults.MLExt
     assert console.border_colour == editor_defaults.palette.colours[3]
     assert snapshot["border_colour"] == console.border_colour
     hardware = snapshot["hardware"]
-    registers = _resolve_vic_registers(editor_defaults)
+    registers, timeline = _resolve_vic_register_state(editor_defaults)
+    expected_timeline = tuple(entry.as_dict() for entry in timeline)
+    pointer_defaults = editor_defaults.hardware.pointer
+    expected_pointer = {
+        "initial": {
+            "low": pointer_defaults.initial[0],
+            "high": pointer_defaults.initial[1],
+        },
+        "scan_limit": pointer_defaults.scan_limit,
+        "reset_value": pointer_defaults.reset_value,
+    }
     assert hardware["vic_registers"] == registers
+    assert hardware["vic_register_timeline"] == expected_timeline
+    assert hardware["pointer"] == expected_pointer
     assert hardware["sid_volume"] == editor_defaults.hardware.sid_volume
 
     assert console.transcript_bytes == banner_sequence
@@ -759,10 +835,12 @@ def test_console_exposes_hardware_defaults(
     editor_defaults: ml_extra_defaults.MLExtraDefaults,
 ) -> None:
     console = Console()
-    registers = _resolve_vic_registers(editor_defaults)
+    registers, timeline = _resolve_vic_register_state(editor_defaults)
 
     assert console.vic_registers == registers
+    assert console.vic_register_timeline == timeline
     assert console.sid_volume == editor_defaults.hardware.sid_volume
+    assert console.pointer_defaults == editor_defaults.hardware.pointer
 
     background = registers.get(0xD403)
     if background is not None:
