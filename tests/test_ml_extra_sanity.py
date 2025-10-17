@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -10,6 +11,7 @@ import pytest
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from scripts.prototypes import ml_extra_defaults
+from scripts.prototypes import ml_extra_reporting
 from scripts.prototypes import ml_extra_sanity
 
 
@@ -21,6 +23,11 @@ def defaults() -> ml_extra_defaults.MLExtraDefaults:
 @pytest.fixture(scope="module")
 def sanity_report() -> dict[str, object]:
     return ml_extra_sanity.run_checks()
+
+
+@pytest.fixture(scope="module")
+def metadata_snapshot(defaults: ml_extra_defaults.MLExtraDefaults) -> dict[str, object]:
+    return ml_extra_reporting.collect_overlay_metadata(defaults)
 
 
 def test_run_checks_reports_payload_hashes(
@@ -66,3 +73,30 @@ def test_stub_static_tables_match(sanity_report: dict[str, object]) -> None:
 
 def test_stub_directory_counts(sanity_report: dict[str, object]) -> None:
     assert sanity_report["stub_only_macros"] == []
+
+
+def test_run_checks_metadata_snapshot_matches_helper(
+    sanity_report: dict[str, object],
+    metadata_snapshot: dict[str, object],
+) -> None:
+    assert "metadata_snapshot" in sanity_report
+    assert sanity_report["metadata_snapshot"] == metadata_snapshot
+
+
+def test_main_writes_metadata_json(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    metadata_snapshot: dict[str, object],
+) -> None:
+    destination = tmp_path / "overlay-metadata.json"
+    ml_extra_sanity.main(["--metadata-json", str(destination)])
+    capture = capsys.readouterr()
+    assert destination.exists(), "expected metadata JSON to be written"
+
+    written = json.loads(destination.read_text())
+    assert written == metadata_snapshot
+
+    # Ensure the text report is still rendered alongside the metadata export.
+    assert "Macro directory (runtime order):" in capture.out
+    assert "Macro payload hashes" in capture.out
+    assert "Slot diff (recovered vs. stub data):" in capture.out

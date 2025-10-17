@@ -13,6 +13,7 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 from scripts.prototypes import ml_extra_defaults
 from scripts.prototypes import ml_extra_disasm
 from scripts.prototypes import ml_extra_dump_macros
+from scripts.prototypes import ml_extra_reporting
 
 
 @pytest.fixture(scope="module")
@@ -25,16 +26,23 @@ def sample_slot(defaults: ml_extra_defaults.MLExtraDefaults) -> int:
     return defaults.macros[0].slot
 
 
+@pytest.fixture(scope="module")
+def metadata_snapshot(defaults: ml_extra_defaults.MLExtraDefaults) -> dict[str, object]:
+    return ml_extra_reporting.collect_overlay_metadata(defaults)
+
+
 def test_dump_macros_metadata_json(
     capsys: pytest.CaptureFixture[str],
     sample_slot: int,
     defaults: ml_extra_defaults.MLExtraDefaults,
+    metadata_snapshot: dict[str, object],
 ) -> None:
     ml_extra_dump_macros.main(["--json", "--metadata", "--slot", str(sample_slot)])
     output = capsys.readouterr().out
     payload = json.loads(output)
     assert "metadata" in payload
     metadata = payload["metadata"]
+    assert metadata == metadata_snapshot
     assert "lightbar" in metadata and "palette" in metadata and "hardware" in metadata
     assert "flag_dispatch" in metadata
     assert "flag_directory_tail" in metadata
@@ -61,10 +69,12 @@ def test_dump_macros_metadata_json_file(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
     defaults: ml_extra_defaults.MLExtraDefaults,
+    metadata_snapshot: dict[str, object],
 ) -> None:
     destination = tmp_path / "metadata.json"
     ml_extra_dump_macros.main(["--metadata-json", str(destination)])
     payload = json.loads(destination.read_text())
+    assert payload == metadata_snapshot
     assert payload["flag_record_count"] == len(defaults.flag_records)
     assert payload["macro_slots"] == [entry.slot for entry in defaults.macros]
     output = capsys.readouterr().out
