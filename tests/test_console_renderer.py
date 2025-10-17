@@ -10,7 +10,7 @@ import pytest
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from scripts.prototypes import ml_extra_defaults, petscii_glyphs
+from scripts.prototypes import ml_extra_defaults, ml_extra_extract, petscii_glyphs
 from scripts.prototypes.console_renderer import (
     PetsciiScreen,
     render_petscii_payload,
@@ -212,13 +212,17 @@ def _assert_snapshot_structure(snapshot: Mapping[str, Any]) -> None:
         for record in _MACRO_SCREEN_ARTIFACTS
     ],
 )
-def test_console_macro_screens_match_artifacts(record: Dict[str, Any]) -> None:
+def test_console_macro_screens_match_artifacts(
+    record: Dict[str, Any],
+    editor_defaults: ml_extra_defaults.MLExtraDefaults,
+) -> None:
     snapshot = record.get("snapshot")
     if not isinstance(snapshot, Mapping):
         pytest.skip("macro capture lacks snapshot data")
 
     console = Console()
-    console.write(bytes(record["payload"]))
+    payload = bytes(record["payload"])
+    console.write(payload)
 
     actual_snapshot = console.snapshot()
     for key in (
@@ -231,6 +235,57 @@ def test_console_macro_screens_match_artifacts(record: Dict[str, Any]) -> None:
         "resolved_colour_matrix",
     ):
         assert actual_snapshot[key] == snapshot[key]
+
+    assert console.transcript_bytes == payload
+    expected_text = record.get("text") or ""
+    assert console.transcript == payload.decode("latin-1", errors="replace")
+    assert ml_extra_extract.decode_petscii(console.transcript_bytes) == expected_text
+
+    palette = editor_defaults.palette.colours
+    assert snapshot["palette"] == palette
+    assert snapshot["screen_colour"] in palette
+    assert snapshot["background_colour"] == palette[2]
+    assert snapshot["border_colour"] == palette[3]
+
+    screen = console.screen
+    glyph_bank = getattr(screen, "_glyph_bank")
+    for y, (codes_row, index_row, glyph_row) in enumerate(
+        zip(
+            snapshot["code_matrix"],
+            snapshot["glyph_indices"],
+            snapshot["glyphs"],
+            strict=True,
+        )
+    ):
+        for x, (code, glyph_index, glyph_bitmap) in enumerate(
+            zip(codes_row, index_row, glyph_row, strict=True)
+        ):
+            lowercase = bool(glyph_bank[y][x])
+            expected_index = petscii_glyphs.get_glyph_index(
+                code,
+                lowercase=lowercase,
+            )
+            expected_glyph = petscii_glyphs.get_glyph(
+                code,
+                lowercase=lowercase,
+            )
+            assert glyph_index == expected_index
+            assert glyph_bitmap == expected_glyph
+
+            if lowercase:
+                assert glyph_index == petscii_glyphs.get_glyph_index(
+                    code, lowercase=True
+                )
+                assert glyph_bitmap == petscii_glyphs.get_glyph(
+                    code, lowercase=True
+                )
+            else:
+                assert glyph_index == petscii_glyphs.get_glyph_index(
+                    code, lowercase=False
+                )
+                assert glyph_bitmap == petscii_glyphs.get_glyph(
+                    code, lowercase=False
+                )
 
 
 def test_macro_screen_artifacts_are_normalised(
