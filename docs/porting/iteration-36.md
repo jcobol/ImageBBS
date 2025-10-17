@@ -10,6 +10,15 @@
 - [x] The port must render Commodore 64 glyphs so PETSCII art and layouts remain identical to the original release, preserving both glyph shapes and PETSCII behaviour.【F:docs/porting/design-decisions.md†L47-L49】
 - [x] Colour usage has to match the Commodore palette to keep interface elements visually consistent with the 1.2 experience.【F:docs/porting/design-decisions.md†L47-L49】
 
+### Refreshing console renderer capture artifacts
+Run `python -m scripts.prototypes.ml_extra_screen_dumps` from the repository root to regenerate `docs/porting/artifacts/ml-extra-macro-screens.json` and `docs/porting/artifacts/ml-extra-flag-screens.json`. The command replays the current overlay defaults through the console renderer so the JSON captures match the glyph, colour, and PETSCII behaviour encoded in `ml.extra`.
+
+After regenerating the files, use `git status` to confirm only the two artifacts changed and review the diff with `git diff docs/porting/artifacts/ml-extra-macro-screens.json docs/porting/artifacts/ml-extra-flag-screens.json`. Treat differences in `characters`, `glyphs`, `glyph_indices`, or `transcript_*` fields as regressions unless an intentional glyph-table change has been documented. PETSCII control handling regressions usually appear as missing control bytes, altered `reverse_matrix` flags, or diverging `match_bytes` payloads for flag entries. Palette regressions manifest as shifts in `screen_colour`, `background_colour`, `border_colour`, or in the resolved colour matrices.
+
+If the regenerated captures only adjust ordering metadata (for example, slot numbering annotations) while the rendered matrices stay identical, the update is safe to commit. Any structural change to the snapshot matrices, VIC register dumps, or SID volume should be accompanied by analysis explaining the new behaviour before merging.
+
+The console renderer regression tests in `tests/test_console_renderer.py` load these JSON captures via `_load_macro_screen_artifacts()` and `_load_flag_screen_artifacts()`. When the renderer logic or overlay metadata changes in ways that intentionally alter on-screen output, refresh the artifacts and extend the assertions that compare snapshot matrices, palette tuples, and transcript bytes so CI validates the new baseline.
+
 ### Palette & PETSCII Metadata Available from `ml_extra_defaults`
 - [x] `EditorPalette` exposes the four VIC-II colour IDs recovered from `ml.extra`, providing the raw palette tuple and helper serialization.【F:scripts/prototypes/ml_extra_defaults.py†L92-L103】
 - [x] `LightbarDefaults` captures the overlay’s underline character/colour plus both lightbar bitmap pairs, allowing the renderer to apply PETSCII highlight conventions.【F:scripts/prototypes/ml_extra_defaults.py†L62-L88】
