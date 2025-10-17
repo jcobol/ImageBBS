@@ -1,5 +1,6 @@
 """Prototype utilities supporting the ImageBBS porting effort."""
 
+from .ampersand_registry import AmpersandHandler, AmpersandRegistry, AmpersandResult
 from .device_context import (
     ChannelDescriptor,
     Console,
@@ -50,6 +51,9 @@ from .petscii_glyphs import (
 
 __all__ = [
     "ChannelDescriptor",
+    "AmpersandHandler",
+    "AmpersandRegistry",
+    "AmpersandResult",
     "Console",
     "BoardStatistics",
     "ChatModeMessages",

@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Dict, List, Optional
 
+from .ampersand_registry import AmpersandRegistry, AmpersandResult
+
 
 class EditorState(Enum):
     """High-level menus exposed by the message editor overlays."""
@@ -48,8 +50,15 @@ class TransitionError(RuntimeError):
 class MessageEditor:
     """Finite-state-machine approximation of the editor's dispatcher."""
 
-    def __init__(self) -> None:
+    INTRO_MACRO_INDEX = 0x04
+    MAIN_MENU_MACRO_INDEX = 0x09
+    READ_MESSAGE_MACRO_INDEX = 0x0D
+    POST_MESSAGE_MACRO_INDEX = 0x14
+    EDIT_DRAFT_MACRO_INDEX = 0x15
+
+    def __init__(self, registry: Optional[AmpersandRegistry] = None) -> None:
         self.state = EditorState.INTRO
+        self.ampersand_registry = registry or AmpersandRegistry()
         self.handlers = {
             EditorState.INTRO: self._handle_intro,
             EditorState.MAIN_MENU: self._handle_main_menu,
@@ -67,13 +76,23 @@ class MessageEditor:
 
     def _handle_intro(self, event: Event, ctx: SessionContext) -> EditorState:
         if event is Event.ENTER:
-            ctx.push_output("\r*** IMAGE MESSAGE EDITOR ***\r")
+            self._ampersand_dispatch(
+                self.INTRO_MACRO_INDEX,
+                ctx,
+                "\r*** IMAGE MESSAGE EDITOR ***\r",
+                event,
+            )
             return EditorState.MAIN_MENU
         raise TransitionError("Intro state only accepts ENTER")
 
     def _handle_main_menu(self, event: Event, ctx: SessionContext) -> EditorState:
         if event is Event.ENTER:
-            ctx.push_output("(R)ead, (P)ost, (E)dit Draft, (Q)uit? ")
+            self._ampersand_dispatch(
+                self.MAIN_MENU_MACRO_INDEX,
+                ctx,
+                "(R)ead, (P)ost, (E)dit Draft, (Q)uit? ",
+                event,
+            )
             return EditorState.MAIN_MENU
         if event is Event.COMMAND_SELECTED:
             selection = ctx.current_message or ""
@@ -92,7 +111,13 @@ class MessageEditor:
 
     def _handle_read_messages(self, event: Event, ctx: SessionContext) -> EditorState:
         if event is Event.MESSAGE_SELECTED:
-            ctx.push_output(f"\r#{ctx.current_message}: ...\r")
+            fallback = f"\r#{ctx.current_message}: ...\r"
+            self._ampersand_dispatch(
+                self.READ_MESSAGE_MACRO_INDEX,
+                ctx,
+                fallback,
+                event,
+            )
             return EditorState.READ_MESSAGES
         if event is Event.ABORT:
             return EditorState.MAIN_MENU
@@ -100,19 +125,39 @@ class MessageEditor:
 
     def _handle_post_message(self, event: Event, ctx: SessionContext) -> EditorState:
         if event is Event.ENTER:
-            ctx.push_output("POSTING...\r")
+            self._ampersand_dispatch(
+                self.POST_MESSAGE_MACRO_INDEX,
+                ctx,
+                "POSTING...\r",
+                event,
+            )
             return EditorState.POST_MESSAGE
         if event is Event.DRAFT_SUBMITTED:
-            ctx.push_output("MESSAGE SAVED\r")
+            self._ampersand_dispatch(
+                self.POST_MESSAGE_MACRO_INDEX,
+                ctx,
+                "MESSAGE SAVED\r",
+                event,
+            )
             return EditorState.MAIN_MENU
         if event is Event.ABORT:
-            ctx.push_output("CANCELLED\r")
+            self._ampersand_dispatch(
+                self.POST_MESSAGE_MACRO_INDEX,
+                ctx,
+                "CANCELLED\r",
+                event,
+            )
             return EditorState.MAIN_MENU
         raise TransitionError("Post message requires ENTER, DRAFT_SUBMITTED, or ABORT")
 
     def _handle_edit_draft(self, event: Event, ctx: SessionContext) -> EditorState:
         if event is Event.ENTER:
-            ctx.push_output("EDIT DRAFT MODE\r")
+            self._ampersand_dispatch(
+                self.EDIT_DRAFT_MACRO_INDEX,
+                ctx,
+                "EDIT DRAFT MODE\r",
+                event,
+            )
             return EditorState.EDIT_DRAFT
         if event is Event.DRAFT_SUBMITTED:
             ctx.drafts[ctx.current_message or "new"] = "submitted"
@@ -120,6 +165,24 @@ class MessageEditor:
         if event is Event.ABORT:
             return EditorState.MAIN_MENU
         raise TransitionError("Edit draft requires ENTER, DRAFT_SUBMITTED, or ABORT")
+
+    def _ampersand_dispatch(
+        self,
+        flag_index: int,
+        session: SessionContext,
+        fallback_text: Optional[str],
+        event: Event,
+    ) -> AmpersandResult:
+        """Dispatch a registry handler and honour overrides."""
+
+        context = {"session": session, "event": event}
+        result = self.ampersand_registry.dispatch(flag_index, context)
+        rendered = result.rendered_text
+        if rendered is not None:
+            session.push_output(rendered)
+        elif fallback_text is not None:
+            session.push_output(fallback_text)
+        return result
 
 
 __all__ = [
