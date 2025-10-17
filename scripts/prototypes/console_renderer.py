@@ -12,11 +12,10 @@ _HEIGHT = 25
 
 
 @lru_cache()
-def _load_default_palette() -> tuple[int, int, int, int]:
-    """Return the editor palette recovered from ``ml.extra``."""
+def _load_editor_defaults() -> ml_extra_defaults.MLExtraDefaults:
+    """Return the cached ``ml.extra`` defaults for the console renderer."""
 
-    defaults = ml_extra_defaults.MLExtraDefaults.from_overlay()
-    return defaults.palette.colours
+    return ml_extra_defaults.MLExtraDefaults.from_overlay()
 
 
 _COLOR_CODES: dict[int, int] = {
@@ -45,8 +44,15 @@ class PetsciiScreen:
     width: int = _WIDTH
     height: int = _HEIGHT
 
-    def __init__(self, palette: Sequence[int] | None = None) -> None:
-        palette_values = tuple(palette) if palette is not None else _load_default_palette()
+    def __init__(
+        self,
+        palette: Sequence[int] | None = None,
+        defaults: ml_extra_defaults.MLExtraDefaults | None = None,
+    ) -> None:
+        self._defaults = defaults or _load_editor_defaults()
+        palette_values = (
+            tuple(palette) if palette is not None else self._defaults.palette.colours
+        )
         if len(palette_values) != 4:
             raise ValueError("palette must contain four VIC-II colour entries")
         self._palette: list[int] = list(palette_values)
@@ -66,6 +72,12 @@ class PetsciiScreen:
         self._reverse_flags: list[list[bool]] = [
             [False for _ in range(self.width)] for _ in range(self.height)
         ]
+
+    @property
+    def defaults(self) -> ml_extra_defaults.MLExtraDefaults:
+        """Expose the cached overlay defaults backing the renderer."""
+
+        return self._defaults
 
     @property
     def palette(self) -> tuple[int, int, int, int]:
