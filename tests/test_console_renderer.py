@@ -33,8 +33,11 @@ def _load_artifact_json(name: str) -> Any:
 
 
 def _parse_hex_value(value: Any) -> Any:
-    if isinstance(value, str) and value.startswith("$"):
-        return int(value[1:], 16)
+    if isinstance(value, str):
+        if value.startswith("$"):
+            return int(value[1:], 16)
+        if value.isdigit():
+            return int(value, 10)
     return value
 
 
@@ -115,16 +118,30 @@ def _load_flag_screen_artifacts() -> Dict[str, Any]:
                 _parse_hex_sequence(entry.get("replacement_bytes", []))
             )
             record["replacement_text"] = entry.get("replacement_text")
+        if "replacement_snapshot" in entry:
+            replacement_snapshot = entry.get("replacement_snapshot")
+            if isinstance(replacement_snapshot, Mapping):
+                record["replacement_snapshot"] = _normalise_snapshot(
+                    replacement_snapshot
+                )
         if "page1_bytes" in entry:
             record["page1_bytes"] = bytes(
                 _parse_hex_sequence(entry.get("page1_bytes", []))
             )
             record["page1_text"] = entry.get("page1_text")
+        if "page1_snapshot" in entry:
+            page1_snapshot = entry.get("page1_snapshot")
+            if isinstance(page1_snapshot, Mapping):
+                record["page1_snapshot"] = _normalise_snapshot(page1_snapshot)
         if "page2_bytes" in entry:
             record["page2_bytes"] = bytes(
                 _parse_hex_sequence(entry.get("page2_bytes", []))
             )
             record["page2_text"] = entry.get("page2_text")
+        if "page2_snapshot" in entry:
+            page2_snapshot = entry.get("page2_snapshot")
+            if isinstance(page2_snapshot, Mapping):
+                record["page2_snapshot"] = _normalise_snapshot(page2_snapshot)
         snapshot_data = entry.get("snapshot")
         if isinstance(snapshot_data, Mapping):
             record["snapshot"] = _normalise_snapshot(snapshot_data)
@@ -150,6 +167,20 @@ def _load_flag_screen_artifacts() -> Dict[str, Any]:
 
 
 _MACRO_SCREEN_ARTIFACTS = _load_macro_screen_artifacts()
+_FLAG_SCREEN_ARTIFACTS = _load_flag_screen_artifacts()
+
+_FLAG_REPLACEMENT_RECORDS = [
+    record
+    for record in _FLAG_SCREEN_ARTIFACTS["records"]
+    if "replacement_bytes" in record and "replacement_snapshot" in record
+]
+
+_FLAG_PAGE_PAYLOADS: list[tuple[Dict[str, Any], str]] = [
+    (record, field)
+    for record in _FLAG_SCREEN_ARTIFACTS["records"]
+    for field in ("page1", "page2")
+    if f"{field}_bytes" in record and f"{field}_snapshot" in record
+]
 
 
 @pytest.fixture(scope="module")
@@ -159,7 +190,7 @@ def macro_screen_captures() -> list[Dict[str, Any]]:
 
 @pytest.fixture(scope="module")
 def flag_screen_captures() -> Dict[str, Any]:
-    return _load_flag_screen_artifacts()
+    return _FLAG_SCREEN_ARTIFACTS
 
 
 _SNAPSHOT_MATRIX_KEYS = (
@@ -200,6 +231,105 @@ def _assert_snapshot_structure(snapshot: Mapping[str, Any]) -> None:
                     assert all(isinstance(component, int) for component in cell)
             else:
                 assert all(isinstance(cell, int) for cell in row)
+
+
+def _assert_console_snapshot_state(
+    console: Console,
+    expected_snapshot: Mapping[str, Any],
+    *,
+    editor_defaults: ml_extra_defaults.MLExtraDefaults,
+) -> None:
+    actual_snapshot = console.snapshot()
+
+    for key in (
+        "characters",
+        "code_matrix",
+        "colour_matrix",
+        "glyph_indices",
+        "glyphs",
+        "reverse_matrix",
+        "resolved_colour_matrix",
+        "underline_matrix",
+        "lightbar_bitmaps",
+    ):
+        if key in expected_snapshot:
+            assert actual_snapshot[key] == expected_snapshot[key]
+
+    assert actual_snapshot["screen_colour"] == expected_snapshot["screen_colour"]
+    assert actual_snapshot["background_colour"] == expected_snapshot["background_colour"]
+    assert actual_snapshot["border_colour"] == expected_snapshot["border_colour"]
+
+    expected_palette = tuple(expected_snapshot.get("palette", ()))
+    if expected_palette:
+        assert expected_palette == editor_defaults.palette.colours
+
+    hardware = expected_snapshot.get("hardware")
+    if isinstance(hardware, Mapping):
+        registers = _resolve_vic_registers(editor_defaults)
+        assert hardware["vic_registers"] == registers
+
+        actual_hardware = actual_snapshot["hardware"]
+        assert actual_hardware == hardware
+        assert actual_hardware["vic_registers"] == registers
+        assert actual_hardware["sid_volume"] == editor_defaults.hardware.sid_volume
+
+    screen = console.screen
+    glyph_bank = getattr(screen, "_glyph_bank")
+    for y, (codes_row, index_row, glyph_row) in enumerate(
+        zip(
+            expected_snapshot["code_matrix"],
+            expected_snapshot["glyph_indices"],
+            expected_snapshot["glyphs"],
+            strict=True,
+        )
+    ):
+        for x, (code, glyph_index, glyph_bitmap) in enumerate(
+            zip(codes_row, index_row, glyph_row, strict=True)
+        ):
+            lowercase = bool(glyph_bank[y][x])
+            expected_index = petscii_glyphs.get_glyph_index(
+                code,
+                lowercase=lowercase,
+            )
+            expected_glyph = petscii_glyphs.get_glyph(
+                code,
+                lowercase=lowercase,
+            )
+            assert glyph_index == expected_index
+            assert glyph_bitmap == expected_glyph
+
+
+def _assert_payload_snapshot(
+    payload: bytes,
+    snapshot: Mapping[str, Any],
+    *,
+    editor_defaults: ml_extra_defaults.MLExtraDefaults,
+    expected_text: str | None = None,
+) -> None:
+    console = Console()
+    if payload:
+        console.write(payload)
+
+    _assert_console_snapshot_state(console, snapshot, editor_defaults=editor_defaults)
+
+    expected_bytes = snapshot.get("transcript_bytes")
+    transcript_bytes = tuple(console.transcript_bytes)
+    if expected_bytes is not None:
+        assert transcript_bytes == tuple(expected_bytes)
+    else:
+        assert transcript_bytes == tuple(payload)
+
+    raw_transcript = console.transcript
+    expected_raw = payload.decode("latin-1", errors="replace")
+    assert raw_transcript == expected_raw
+
+    transcript_text = snapshot.get("transcript_text")
+    if transcript_text is not None:
+        assert transcript_text == expected_raw
+
+    if expected_text is not None:
+        decoded = ml_extra_extract.decode_petscii(console.transcript_bytes)
+        assert decoded == expected_text
 
 
 @pytest.mark.parametrize(
@@ -331,6 +461,102 @@ def test_flag_screen_artifacts_are_normalised(
     assert isinstance(block["bytes"], bytes)
     if isinstance(block.get("snapshot"), Mapping):
         _assert_snapshot_structure(block["snapshot"])
+
+
+@pytest.mark.parametrize(
+    "record",
+    [
+        pytest.param(
+            record,
+            id=f"flag-{record['index']}",
+        )
+        for record in _FLAG_REPLACEMENT_RECORDS
+    ],
+)
+def test_console_flag_replacement_snapshots_match_artifacts(
+    record: Dict[str, Any],
+    editor_defaults: ml_extra_defaults.MLExtraDefaults,
+) -> None:
+    snapshot = record.get("replacement_snapshot")
+    if not isinstance(snapshot, Mapping):
+        pytest.skip("flag replacement capture lacks snapshot data")
+
+    payload = record["replacement_bytes"]
+    expected_text = record.get("replacement_text")
+    _assert_payload_snapshot(
+        payload,
+        snapshot,
+        editor_defaults=editor_defaults,
+        expected_text=expected_text,
+    )
+
+
+@pytest.mark.parametrize(
+    ("record", "page_field"),
+    [
+        pytest.param(
+            record,
+            field,
+            id=f"flag-{record['index']}-{field}",
+        )
+        for record, field in _FLAG_PAGE_PAYLOADS
+    ],
+)
+def test_console_flag_page_snapshots_match_artifacts(
+    record: Dict[str, Any],
+    page_field: str,
+    editor_defaults: ml_extra_defaults.MLExtraDefaults,
+) -> None:
+    key_bytes = f"{page_field}_bytes"
+    key_snapshot = f"{page_field}_snapshot"
+    snapshot = record.get(key_snapshot)
+    if not isinstance(snapshot, Mapping):
+        pytest.skip(f"flag {page_field} capture lacks snapshot data")
+
+    payload = record[key_bytes]
+    expected_text = record.get(f"{page_field}_text")
+    _assert_payload_snapshot(
+        payload,
+        snapshot,
+        editor_defaults=editor_defaults,
+        expected_text=expected_text,
+    )
+
+
+def test_console_flag_directory_tail_snapshot_matches_artifact(
+    flag_screen_captures: Dict[str, Any],
+    editor_defaults: ml_extra_defaults.MLExtraDefaults,
+) -> None:
+    tail = flag_screen_captures["directory_tail"]
+    snapshot = tail.get("snapshot")
+    if not isinstance(snapshot, Mapping):
+        pytest.skip("flag directory tail lacks snapshot data")
+
+    payload = tail["bytes"]
+    expected_text = tail.get("text")
+    _assert_payload_snapshot(
+        payload,
+        snapshot,
+        editor_defaults=editor_defaults,
+        expected_text=expected_text,
+    )
+
+
+def test_console_flag_directory_block_snapshot_matches_artifact(
+    flag_screen_captures: Dict[str, Any],
+    editor_defaults: ml_extra_defaults.MLExtraDefaults,
+) -> None:
+    block = flag_screen_captures["directory_block"]
+    snapshot = block.get("snapshot")
+    if not isinstance(snapshot, Mapping):
+        pytest.skip("flag directory block lacks snapshot data")
+
+    payload = block["bytes"]
+    _assert_payload_snapshot(
+        payload,
+        snapshot,
+        editor_defaults=editor_defaults,
+    )
 
 
 def _resolve_vic_registers(
