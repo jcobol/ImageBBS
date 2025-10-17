@@ -1,0 +1,5 @@
+# Image BBS Configuration Editor Screenshot Description
+
+The screenshot depicts the Image BBS V2.0 Configuration Editor rendered on a Commodore 64-style display with a bright blue background and darker blue border. Two bordered panels dominate the screen. The left panel lists editor modules labeled A through G: "Macros Editor," "Command Set," "Payroll Editor," "Logon Editor," "Access Groups," "File Lists," and "Function Keys." The right panel continues the alphabetical menu from H through N with options such as "Lightbar/Alarm," "Misc. Features," "Modem Config," "Set Time," "System Drives," "Netmail Config," and "Quit."
+
+Each menu item is displayed in capital letters with its shortcut letter highlighted, while the currently selected entry, "Macros Editor," is inverted to white text on a dark blue background to indicate focus. A status bar along the bottom shows the current date and time "Sat Sep 12, 2020 6:36:27 PM" aligned to the center, with the value "-332" at the right edge, consistent with the interface's coordinate readout.
