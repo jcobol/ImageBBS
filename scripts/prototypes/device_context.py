@@ -184,6 +184,8 @@ class Console(Device):
             "code_matrix": screen.code_matrix,
             "glyph_indices": screen.glyph_index_matrix,
             "glyphs": screen.glyph_matrix,
+            "reverse_matrix": screen.reverse_matrix,
+            "resolved_colour_matrix": screen.resolved_colour_matrix,
             "screen_colour": self.screen_colour,
             "background_colour": self.background_colour,
             "border_colour": self.border_colour,

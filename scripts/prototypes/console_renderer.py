@@ -56,12 +56,16 @@ class PetsciiScreen:
         self._cursor_x: int = 0
         self._cursor_y: int = 0
         self._lowercase_mode = False
+        self._reverse_mode = False
         self._chars: list[list[str]] = [[" " for _ in range(self.width)] for _ in range(self.height)]
         self._colours: list[list[int]] = [
             [self._screen_colour for _ in range(self.width)] for _ in range(self.height)
         ]
         self._codes: list[list[int]] = [[0x20 for _ in range(self.width)] for _ in range(self.height)]
         self._glyph_bank: list[list[int]] = [[0 for _ in range(self.width)] for _ in range(self.height)]
+        self._reverse_flags: list[list[bool]] = [
+            [False for _ in range(self.width)] for _ in range(self.height)
+        ]
 
     @property
     def palette(self) -> tuple[int, int, int, int]:
@@ -129,6 +133,28 @@ class PetsciiScreen:
             for y, row in enumerate(self._codes)
         )
 
+    @property
+    def reverse_matrix(self) -> tuple[tuple[bool, ...], ...]:
+        """Expose the per-cell reverse attribute state."""
+
+        return tuple(tuple(row) for row in self._reverse_flags)
+
+    @property
+    def resolved_colour_matrix(self) -> tuple[tuple[tuple[int, int], ...], ...]:
+        """Return the foreground/background colour pairs for each cell."""
+
+        background = self._background_colour
+        return tuple(
+            tuple(
+                (
+                    background if reverse else colour,
+                    colour if reverse else background,
+                )
+                for colour, reverse in zip(colour_row, reverse_row)
+            )
+            for colour_row, reverse_row in zip(self._colours, self._reverse_flags)
+        )
+
     def clear(self) -> None:
         """Clear the screen and home the cursor."""
 
@@ -138,6 +164,7 @@ class PetsciiScreen:
                 self._colours[y][x] = self._screen_colour
                 self._codes[y][x] = 0x20
                 self._glyph_bank[y][x] = 0
+                self._reverse_flags[y][x] = False
         self._cursor_x = 0
         self._cursor_y = 0
 
@@ -195,11 +222,13 @@ class PetsciiScreen:
         if byte == 0x14:  # delete/backspace
             if self._cursor_x > 0:
                 self._cursor_x -= 1
-            self._put_character(0x20, " ", glyph_bank=0)
+            self._put_character(0x20, " ", glyph_bank=0, reverse=False)
             return True
         if byte == 0x12:  # reverse on
+            self._reverse_mode = True
             return True
         if byte == 0x92:  # reverse off
+            self._reverse_mode = False
             return True
         if byte == 0x0E:  # switch to lowercase/uppercase
             self._lowercase_mode = True
@@ -225,13 +254,22 @@ class PetsciiScreen:
             self._cursor_y += 1
             self._clamp_cursor()
 
-    def _put_character(self, byte: int, char: str, *, glyph_bank: int | None = None) -> None:
+    def _put_character(
+        self,
+        byte: int,
+        char: str,
+        *,
+        glyph_bank: int | None = None,
+        reverse: bool | None = None,
+    ) -> None:
         if 0 <= self._cursor_y < self.height and 0 <= self._cursor_x < self.width:
             bank = glyph_bank if glyph_bank is not None else (1 if self._lowercase_mode else 0)
+            reverse_flag = self._reverse_mode if reverse is None else reverse
             self._chars[self._cursor_y][self._cursor_x] = char
             self._colours[self._cursor_y][self._cursor_x] = self._screen_colour
             self._codes[self._cursor_y][self._cursor_x] = byte & 0xFF
             self._glyph_bank[self._cursor_y][self._cursor_x] = bank
+            self._reverse_flags[self._cursor_y][self._cursor_x] = reverse_flag
 
     def _clamp_cursor(self) -> None:
         if self._cursor_y < self.height:
@@ -243,10 +281,12 @@ class PetsciiScreen:
         self._colours.pop(0)
         self._codes.pop(0)
         self._glyph_bank.pop(0)
+        self._reverse_flags.pop(0)
         self._chars.append([" " for _ in range(self.width)])
         self._colours.append([self._screen_colour for _ in range(self.width)])
         self._codes.append([0x20 for _ in range(self.width)])
         self._glyph_bank.append([0 for _ in range(self.width)])
+        self._reverse_flags.append([False for _ in range(self.width)])
         self._cursor_y = self.height - 1
 
     def _translate_character(self, byte: int) -> str:
