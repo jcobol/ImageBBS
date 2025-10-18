@@ -9,6 +9,7 @@ from ..ampersand_registry import AmpersandRegistry
 from ..device_context import ConsoleService
 from ..message_editor import MessageEditor
 from .file_transfers import FileTransfersModule
+from .sysop_options import SysopOptionsModule
 from ..session_kernel import SessionKernel, SessionModule, SessionState
 
 
@@ -44,6 +45,7 @@ class MainMenuModule:
     registry: Optional[AmpersandRegistry] = None
     message_editor_factory: type[SessionModule] = MessageEditor
     file_transfers_factory: type[SessionModule] = FileTransfersModule
+    sysop_options_factory: type[SessionModule] = SysopOptionsModule
     state: MenuState = field(init=False, default=MenuState.INTRO)
     rendered_slots: list[int] = field(init=False, default_factory=list)
     _console: ConsoleService | None = field(init=False, default=None)
@@ -99,6 +101,10 @@ class MainMenuModule:
         if self.file_transfers_factory is not None:
             kernel.register_module(
                 SessionState.FILE_TRANSFERS, self.file_transfers_factory()
+            )
+        if self.sysop_options_factory is not None:
+            kernel.register_module(
+                SessionState.SYSOP_OPTIONS, self.sysop_options_factory()
             )
         self.state = MenuState.INTRO
         self._render_intro()
