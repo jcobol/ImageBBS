@@ -473,6 +473,53 @@ class ConsoleRegionBuffer:
         return bool(self.screen_length or self.colour_length)
 
 
+@dataclass(frozen=True)
+class MaskedPaneBlinkState:
+    """State snapshot produced each time the blink counter advances."""
+
+    countdown: int
+    reverse: bool
+
+
+@dataclass(frozen=True)
+class MaskedPaneGlyphPayload:
+    """Character and colour bytes staged for the masked sysop pane."""
+
+    glyph: int
+    colour: int
+    reverse: bool
+    countdown: int
+
+
+class MaskedPaneBlinkScheduler:
+    """Model the five-phase blink cadence driven by ``lbl_adca``."""
+
+    def __init__(self, reset_value: int = 4) -> None:
+        if reset_value < 0:
+            raise ValueError("reset_value must be non-negative")
+        self._reset_value = reset_value
+        self._countdown = reset_value
+
+    def advance(self) -> MaskedPaneBlinkState:
+        """Decrement the countdown and return the active blink state."""
+
+        next_value = self._countdown - 1
+        if next_value < 0:
+            next_value = self._reset_value
+        self._countdown = next_value
+        return MaskedPaneBlinkState(next_value, bool(next_value & 0x02))
+
+    def peek(self) -> MaskedPaneBlinkState:
+        """Return the current countdown without mutating it."""
+
+        return MaskedPaneBlinkState(self._countdown, bool(self._countdown & 0x02))
+
+    def reset(self) -> None:
+        """Restore the countdown to its reset value."""
+
+        self._countdown = self._reset_value
+
+
 @dataclass
 class ConsoleService:
     """Service wrapper that exposes console metadata and helpers."""
@@ -487,11 +534,17 @@ class ConsoleService:
     _SPINNER_SCREEN_ADDRESS = 0x049C
     _CARRIER_LEADING_SCREEN_ADDRESS = 0x0400
     _CARRIER_INDICATOR_SCREEN_ADDRESS = 0x0427
+    _MASKED_PANE_SCREEN_BASE = 0x0518
+    _MASKED_PANE_COLOUR_BASE = 0xD918
+    _MASKED_PANE_WIDTH = 40
     _IDLE_TIMER_SCREEN_ADDRESSES = (
         0x04DE,
         0x04E0,
         0x04E1,
     )
+
+    def __post_init__(self) -> None:
+        self._masked_pane_blink = MaskedPaneBlinkScheduler()
 
     @property
     def defaults(self) -> ml_extra_defaults.MLExtraDefaults:
@@ -558,6 +611,48 @@ class ConsoleService:
         """Return rendered glyph metadata keyed by macro slot."""
 
         return self.device.macro_glyphs
+
+    def advance_masked_pane_blink(self) -> MaskedPaneBlinkState:
+        """Simulate ``lbl_adca`` and return the active blink state."""
+
+        return self._masked_pane_blink.advance()
+
+    def reset_masked_pane_blink(self) -> None:
+        """Restore the blink countdown to its reset value."""
+
+        self._masked_pane_blink.reset()
+
+    def masked_pane_next_payload(
+        self, glyph: int, colour: int
+    ) -> MaskedPaneGlyphPayload:
+        """Return glyph/colour bytes with blink modulation applied."""
+
+        state = self.advance_masked_pane_blink()
+        glyph_byte = int(glyph) & 0xFF
+        if state.reverse:
+            glyph_byte ^= 0x80
+        colour_byte = int(colour) & 0xFF
+        return MaskedPaneGlyphPayload(
+            glyph=glyph_byte,
+            colour=colour_byte,
+            reverse=state.reverse,
+            countdown=state.countdown,
+        )
+
+    def write_masked_pane_cell(
+        self, offset: int, glyph: int, colour: int
+    ) -> MaskedPaneGlyphPayload:
+        """Commit a glyph to ``$0518/$D918`` using the blink scheduler."""
+
+        if not 0 <= offset < self._MASKED_PANE_WIDTH:
+            raise ValueError("offset must reference a masked pane cell")
+
+        payload = self.masked_pane_next_payload(glyph, colour)
+        screen_address = self._MASKED_PANE_SCREEN_BASE + offset
+        colour_address = self._MASKED_PANE_COLOUR_BASE + offset
+        self.poke_screen_byte(screen_address, payload.glyph)
+        self.poke_colour_byte(colour_address, payload.colour)
+        return payload
 
     def capture_region(
         self,
