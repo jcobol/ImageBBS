@@ -493,39 +493,63 @@ class MaskedPaneGlyphPayload:
 
 @dataclass
 class MaskedPaneBuffers:
-    """Host-side model of ``tempbott``/``$4050`` staging buffers."""
+    """Host-side model of ``tempbott``/``$4050`` rotation buffers."""
 
     width: int = 40
-    live_screen: bytearray = field(init=False)
-    live_colour: bytearray = field(init=False)
-    staged_screen: bytearray = field(init=False)
-    staged_colour: bytearray = field(init=False)
+    tempbott: bytearray = field(init=False, repr=False)
+    tempbott_next: bytearray = field(init=False, repr=False)
+    colour_4050: bytearray = field(init=False, repr=False)
+    colour_var_4078: bytearray = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         if self.width <= 0:
             raise ValueError("width must be positive")
-        self.live_screen = bytearray(self.width)
-        self.live_colour = bytearray(self.width)
-        self.staged_screen = bytearray(self.width)
-        self.staged_colour = bytearray(self.width)
+        self.tempbott = bytearray(self.width)
+        self.tempbott_next = bytearray(self.width)
+        self.colour_4050 = bytearray(self.width)
+        self.colour_var_4078 = bytearray(self.width)
         self.clear_live()
         self.clear_staging()
 
+    @property
+    def live_screen(self) -> bytearray:
+        """Return the preserved overlay glyphs mirrored from ``tempbott``."""
+
+        return self.tempbott
+
+    @property
+    def live_colour(self) -> bytearray:
+        """Return the preserved overlay colours mirrored from ``$4050``."""
+
+        return self.colour_4050
+
+    @property
+    def staged_screen(self) -> bytearray:
+        """Return the next overlay glyphs staged in ``tempbott+40``."""
+
+        return self.tempbott_next
+
+    @property
+    def staged_colour(self) -> bytearray:
+        """Return the next overlay colours staged in ``var_4078``."""
+
+        return self.colour_var_4078
+
     def clear_live(self, glyph: int = 0x20, colour: int = 0x00) -> None:
-        """Reset the preserved ""live"" overlay payload to ``glyph``/``colour``."""
+        """Reset ``tempbott``/``$4050`` to the provided ``glyph``/``colour``."""
 
         glyph_byte = int(glyph) & 0xFF
         colour_byte = int(colour) & 0xFF
-        self.live_screen[:] = bytes((glyph_byte,) * self.width)
-        self.live_colour[:] = bytes((colour_byte,) * self.width)
+        self.tempbott[:] = bytes((glyph_byte,) * self.width)
+        self.colour_4050[:] = bytes((colour_byte,) * self.width)
 
     def clear_staging(self, glyph: int = 0x20, colour: int = 0x00) -> None:
-        """Reset the staged overlay payload to ``glyph``/``colour``."""
+        """Reset ``tempbott+40``/``var_4078`` to the provided ``glyph``/``colour``."""
 
         glyph_byte = int(glyph) & 0xFF
         colour_byte = int(colour) & 0xFF
-        self.staged_screen[:] = bytes((glyph_byte,) * self.width)
-        self.staged_colour[:] = bytes((colour_byte,) * self.width)
+        self.tempbott_next[:] = bytes((glyph_byte,) * self.width)
+        self.colour_var_4078[:] = bytes((colour_byte,) * self.width)
 
 
 class MaskedPaneBlinkScheduler:
