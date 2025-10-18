@@ -194,30 +194,45 @@ class Console(Device):
         *,
         screen_address: int | None = None,
         screen_bytes: Sequence[int] | Iterable[int] | bytes | bytearray | None = None,
+        screen_length: int | None = None,
         colour_address: int | None = None,
         colour_bytes: Sequence[int] | Iterable[int] | bytes | bytearray | None = None,
+        colour_length: int | None = None,
     ) -> None:
         """Apply a block transfer against screen and/or colour RAM.
 
         The arguments mirror the overlay's expectations when streaming blocks into
         ``$0400`` and ``$d800``.  ``screen_bytes`` and ``colour_bytes`` accept any
         iterable returning integers in ``0-255`` or raw ``bytes``/``bytearray``
-        payloads.  At least one of the payload arguments must be provided.
+        payloads.  ``screen_length`` and ``colour_length`` limit the number of
+        bytes written from each payload; the default writes the entire sequence.
+        At least one of the payload arguments must be provided.
         """
 
         if screen_bytes is None and colour_bytes is None:
             raise ValueError("poke_block requires screen_bytes and/or colour_bytes")
 
+        if screen_length is not None and screen_length < 0:
+            raise ValueError("screen_length must be non-negative")
+        if colour_length is not None and colour_length < 0:
+            raise ValueError("colour_length must be non-negative")
+
         if screen_bytes is not None:
             if screen_address is None:
                 raise ValueError("screen_address must be provided with screen_bytes")
-            for offset, byte in enumerate(bytes(screen_bytes)):
+            payload = bytes(screen_bytes)
+            if screen_length is not None:
+                payload = payload[:screen_length]
+            for offset, byte in enumerate(payload):
                 self._screen.poke_screen_address(screen_address + offset, byte)
 
         if colour_bytes is not None:
             if colour_address is None:
                 raise ValueError("colour_address must be provided with colour_bytes")
-            for offset, byte in enumerate(bytes(colour_bytes)):
+            payload = bytes(colour_bytes)
+            if colour_length is not None:
+                payload = payload[:colour_length]
+            for offset, byte in enumerate(payload):
                 self._screen.poke_colour_address(colour_address + offset, byte)
 
     @property
@@ -524,32 +539,38 @@ class ConsoleService:
         screen_address: int | None = None,
         colour_address: int | None = None,
     ) -> None:
-        """Replay ``buffer`` contents back into screen and/or colour RAM."""
+        """Replay ``buffer`` contents back into screen and/or colour RAM.
+
+        The ``ConsoleRegionBuffer`` span lengths determine how many screen and
+        colour bytes are written back to the renderer.
+        """
 
         if not buffer:
             raise ValueError("buffer does not contain screen or colour spans")
 
-        screen_payload: bytes | None = None
-        colour_payload: bytes | None = None
+        screen_payload: bytearray | None = None
+        colour_payload: bytearray | None = None
 
         if buffer.screen_length:
             if screen_address is None:
                 raise ValueError(
                     "screen_address must be provided to restore a screen span"
                 )
-            screen_payload = bytes(buffer.screen_bytes)
+            screen_payload = buffer.screen_bytes
         if buffer.colour_length:
             if colour_address is None:
                 raise ValueError(
                     "colour_address must be provided to restore a colour span"
                 )
-            colour_payload = bytes(buffer.colour_bytes)
+            colour_payload = buffer.colour_bytes
 
         self.poke_block(
             screen_address=screen_address if screen_payload is not None else None,
             screen_bytes=screen_payload,
+            screen_length=buffer.screen_length if screen_payload is not None else None,
             colour_address=colour_address if colour_payload is not None else None,
             colour_bytes=colour_payload,
+            colour_length=buffer.colour_length if colour_payload is not None else None,
         )
 
     def swap_region(
@@ -559,7 +580,11 @@ class ConsoleService:
         screen_address: int | None = None,
         colour_address: int | None = None,
     ) -> None:
-        """Swap ``buffer`` payloads with screen/colour RAM spans atomically."""
+        """Swap ``buffer`` payloads with screen/colour RAM spans atomically.
+
+        The exchanged spans honour ``buffer.screen_length`` and
+        ``buffer.colour_length`` when writing into screen and colour RAM.
+        """
 
         if not buffer:
             raise ValueError("buffer does not contain screen or colour spans")
@@ -590,8 +615,10 @@ class ConsoleService:
         self.poke_block(
             screen_address=screen_address if buffer.screen_length else None,
             screen_bytes=buffer.screen_bytes if buffer.screen_length else None,
+            screen_length=buffer.screen_length if buffer.screen_length else None,
             colour_address=colour_address if buffer.colour_length else None,
             colour_bytes=buffer.colour_bytes if buffer.colour_length else None,
+            colour_length=buffer.colour_length if buffer.colour_length else None,
         )
 
         if screen_snapshot is not None:
@@ -629,16 +656,25 @@ class ConsoleService:
         *,
         screen_address: int | None = None,
         screen_bytes: Sequence[int] | Iterable[int] | bytes | bytearray | None = None,
+        screen_length: int | None = None,
         colour_address: int | None = None,
         colour_bytes: Sequence[int] | Iterable[int] | bytes | bytearray | None = None,
+        colour_length: int | None = None,
     ) -> None:
-        """Apply a block transfer to screen and/or colour RAM."""
+        """Apply a block transfer to screen and/or colour RAM.
+
+        ``screen_length`` and ``colour_length`` limit how many bytes from each
+        payload are written; passing ``None`` mirrors the full-span behaviour
+        expected by existing overlay helpers.
+        """
 
         self.device.poke_block(
             screen_address=screen_address,
             screen_bytes=screen_bytes,
+            screen_length=screen_length,
             colour_address=colour_address,
             colour_bytes=colour_bytes,
+            colour_length=colour_length,
         )
 
     @staticmethod
