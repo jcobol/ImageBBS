@@ -89,6 +89,11 @@ class PetsciiScreen:
     width: int = _WIDTH
     height: int = _HEIGHT
 
+    _SCREEN_BASE = 0x0400
+    _SCREEN_END = 0x07E7
+    _COLOUR_BASE = 0xD800
+    _COLOUR_END = 0xDBFF
+
     def __init__(
         self,
         palette: Sequence[int] | None = None,
@@ -147,6 +152,24 @@ class PetsciiScreen:
         self._underline_flags: list[list[bool]] = [
             [False for _ in range(self.width)] for _ in range(self.height)
         ]
+
+    def _clamp_coordinates(self, x: int, y: int) -> tuple[int, int]:
+        clamped_x = max(0, min(int(x), self.width - 1))
+        clamped_y = max(0, min(int(y), self.height - 1))
+        return clamped_x, clamped_y
+
+    def _address_to_coordinates(
+        self, address: int, *, colour_ram: bool = False
+    ) -> tuple[int, int]:
+        base = self._COLOUR_BASE if colour_ram else self._SCREEN_BASE
+        end = self._COLOUR_END if colour_ram else self._SCREEN_END
+        clamped = max(base, min(int(address), end)) - base
+        cells = self.width * self.height
+        if clamped >= cells:
+            clamped = cells - 1
+        x = clamped % self.width
+        y = clamped // self.width
+        return x, y
 
     @property
     def defaults(self) -> ml_extra_defaults.MLExtraDefaults:
@@ -247,6 +270,91 @@ class PetsciiScreen:
         """Update the current border colour using palette-aware clamping."""
 
         self._border_colour = self._resolve_palette_colour(value, default_index=3)
+
+    def peek_screen(self, x: int, y: int) -> int:
+        """Return the PETSCII code stored at ``(x, y)``."""
+
+        clamped_x, clamped_y = self._clamp_coordinates(x, y)
+        return self._codes[clamped_y][clamped_x]
+
+    def poke_screen(self, x: int, y: int, value: int) -> None:
+        """Stage ``value`` at ``(x, y)`` without moving the cursor."""
+
+        clamped_x, clamped_y = self._clamp_coordinates(x, y)
+        raw_code = int(value) & 0xFF
+        char = self._translate_character(raw_code)
+        glyph_bank = self._resolve_glyph_bank(None)
+        underline_flag = raw_code == self._underline_char
+        previous_reverse = self._reverse_flags[clamped_y][clamped_x]
+        if raw_code >= 0xC0:
+            reverse_flag = True
+        elif raw_code < 0x80 or raw_code == 0xA0:
+            reverse_flag = False
+        else:
+            reverse_flag = previous_reverse
+        active_colour = (
+            self._underline_colour
+            if underline_flag
+            else self._colours[clamped_y][clamped_x]
+        )
+        self._write_cell(
+            clamped_x,
+            clamped_y,
+            code=raw_code,
+            char=char,
+            glyph_bank=glyph_bank,
+            colour=active_colour,
+            reverse=reverse_flag,
+            underline=underline_flag,
+        )
+
+    def peek_colour(self, x: int, y: int) -> int:
+        """Return the VIC-II colour index stored at ``(x, y)``."""
+
+        clamped_x, clamped_y = self._clamp_coordinates(x, y)
+        return self._colours[clamped_y][clamped_x]
+
+    def poke_colour(self, x: int, y: int, value: int) -> None:
+        """Update the colour RAM entry at ``(x, y)``."""
+
+        clamped_x, clamped_y = self._clamp_coordinates(x, y)
+        resolved_colour = self._resolve_palette_colour(value, default_index=0)
+        underline_flag = self._underline_flags[clamped_y][clamped_x]
+        active_colour = self._underline_colour if underline_flag else resolved_colour
+        self._write_cell(
+            clamped_x,
+            clamped_y,
+            code=self._codes[clamped_y][clamped_x],
+            char=self._chars[clamped_y][clamped_x],
+            glyph_bank=self._glyph_bank[clamped_y][clamped_x],
+            colour=active_colour,
+            reverse=self._reverse_flags[clamped_y][clamped_x],
+            underline=underline_flag,
+        )
+
+    def peek_screen_address(self, address: int) -> int:
+        """Return the PETSCII code stored at ``address`` in screen RAM."""
+
+        x, y = self._address_to_coordinates(address, colour_ram=False)
+        return self.peek_screen(x, y)
+
+    def poke_screen_address(self, address: int, value: int) -> None:
+        """Write ``value`` to ``address`` in screen RAM."""
+
+        x, y = self._address_to_coordinates(address, colour_ram=False)
+        self.poke_screen(x, y, value)
+
+    def peek_colour_address(self, address: int) -> int:
+        """Return the colour RAM value stored at ``address``."""
+
+        x, y = self._address_to_coordinates(address, colour_ram=True)
+        return self.peek_colour(x, y)
+
+    def poke_colour_address(self, address: int, value: int) -> None:
+        """Write ``value`` to ``address`` in colour RAM."""
+
+        x, y = self._address_to_coordinates(address, colour_ram=True)
+        self.poke_colour(x, y, value)
 
     def apply_vic_register_write(self, address: int, value: int | None) -> None:
         """Apply a VIC register update to the palette state."""
