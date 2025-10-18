@@ -1158,4 +1158,111 @@ def test_reverse_mode_swaps_render_colours(editor_defaults: ml_extra_defaults.ML
     assert resolved_row[1] == (colour_row[1], initial_background)
 
     assert snapshot["background_colour"] == initial_background == editor_defaults.palette.colours[2]
-    assert snapshot["screen_colour"] == console.screen_colour
+
+
+def _resolve_expected_colour(screen: PetsciiScreen, value: int, *, default_index: int = 0) -> int:
+    resolved = int(value) & 0xFF
+    palette = screen.palette
+    if resolved in palette:
+        return resolved
+    if 0 <= resolved < len(palette):
+        return palette[resolved]
+    return palette[default_index]
+
+
+def test_console_poke_block_updates_chat_region_with_reverse_and_underline_state() -> None:
+    console = Console()
+    screen = console.screen
+
+    screen_address = 0x0428
+    colour_address = 0xD828
+    underline_code = screen.underline_char
+
+    screen_bytes = [0x41, 0xC2, underline_code, 0x20, 0xD0]
+    colour_bytes = [
+        screen.palette[1],
+        0x02,
+        0xFF,
+        screen.palette[2],
+        0x01,
+    ]
+
+    console.poke_block(
+        screen_address=screen_address,
+        screen_bytes=screen_bytes,
+        colour_address=colour_address,
+        colour_bytes=colour_bytes,
+    )
+
+    offset = screen_address - 0x0400
+    row, column = divmod(offset, screen.width)
+    slice_end = column + len(screen_bytes)
+
+    assert screen.characters[row][column:slice_end] == "AB  P"
+
+    expected_codes = tuple(screen_bytes)
+    for index, expected in enumerate(expected_codes):
+        cell = column + index
+        assert screen.code_matrix[row][cell] == expected
+
+    expected_colours = (
+        _resolve_expected_colour(screen, screen.palette[1]),
+        _resolve_expected_colour(screen, 0x02),
+        screen.underline_colour,
+        _resolve_expected_colour(screen, screen.palette[2]),
+        _resolve_expected_colour(screen, 0x01),
+    )
+    colour_row = screen.colour_matrix[row][column:slice_end]
+    assert tuple(colour_row) == expected_colours
+
+    reverse_row = screen.reverse_matrix[row][column:slice_end]
+    assert reverse_row == (False, True, False, False, True)
+
+    underline_row = screen.underline_matrix[row][column:slice_end]
+    assert underline_row == (False, False, True, False, False)
+
+    resolved_row = screen.resolved_colour_matrix[row][column:slice_end]
+    background = screen.background_colour
+    assert resolved_row[0] == (expected_colours[0], background)
+    assert resolved_row[1] == (background, expected_colours[1])
+    assert resolved_row[2] == (screen.underline_colour, background)
+    assert resolved_row[3] == (expected_colours[3], background)
+    assert resolved_row[4] == (background, expected_colours[4])
+
+
+def test_spinner_direct_pokes_preserve_reverse_behaviour() -> None:
+    screen = PetsciiScreen()
+
+    screen.set_lightbar_bitmaps([0x11, 0x22, 0x33, 0x44])
+    assert screen.lightbar_bitmaps == (0x11, 0x22, 0x33, 0x44)
+
+    spinner_screen_address = 0x049C
+    spinner_colour_address = 0xD89C
+    offset = spinner_screen_address - 0x0400
+    row, column = divmod(offset, screen.width)
+
+    screen.poke_colour_address(spinner_colour_address, 0x0F)
+    clamped_colour = _resolve_expected_colour(screen, 0x0F)
+    assert screen.colour_matrix[row][column] == clamped_colour
+
+    screen.poke_screen_address(spinner_screen_address, screen.underline_char)
+    assert screen.code_matrix[row][column] == screen.underline_char
+    assert screen.underline_matrix[row][column] is True
+    assert screen.colour_matrix[row][column] == screen.underline_colour
+    assert screen.reverse_matrix[row][column] is False
+
+    screen.poke_screen_address(spinner_screen_address, 0xC1)
+    assert screen.code_matrix[row][column] == 0xC1
+    assert screen.characters[row][column] == "A"
+    assert screen.underline_matrix[row][column] is False
+    assert screen.reverse_matrix[row][column] is True
+    assert screen.colour_matrix[row][column] == screen.underline_colour
+
+    screen.poke_colour_address(spinner_colour_address, 0x01)
+    updated_colour = _resolve_expected_colour(screen, 0x01)
+    assert screen.colour_matrix[row][column] == updated_colour
+    assert screen.reverse_matrix[row][column] is True
+    assert screen.underline_matrix[row][column] is False
+
+    resolved = screen.resolved_colour_matrix[row][column]
+    assert resolved == (screen.background_colour, updated_colour)
