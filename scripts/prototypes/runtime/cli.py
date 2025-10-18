@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
+import contextlib
 import sys
 from dataclasses import replace
 from pathlib import Path
-from typing import IO, Sequence
+from typing import IO, Sequence, Tuple
 
 from ..message_editor import SessionContext
 from ..session_kernel import SessionState
@@ -14,6 +16,16 @@ from ..setup_config import load_drive_config
 from ..setup_defaults import SetupDefaults
 from .main_menu import MainMenuModule
 from .session_runner import SessionRunner
+from .transports import TelnetModemTransport
+
+
+def _parse_host_port(value: str) -> Tuple[str, int]:
+    try:
+        host, port_text = value.rsplit(":", 1)
+        port = int(port_text)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("expected HOST:PORT") from exc
+    return host, port
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -37,6 +49,18 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=Path,
         default=None,
         help="Optional path to persist message store state to",
+    )
+    parser.add_argument(
+        "--listen",
+        type=_parse_host_port,
+        default=None,
+        help="Listen on HOST:PORT and bridge sessions over TCP",
+    )
+    parser.add_argument(
+        "--connect",
+        type=_parse_host_port,
+        default=None,
+        help="Dial HOST:PORT and bridge the session over TCP",
     )
     return parser.parse_args(argv)
 
@@ -92,6 +116,64 @@ def create_runner(args: argparse.Namespace) -> SessionRunner:
     )
 
 
+async def run_stream_session(
+    args: argparse.Namespace,
+    reader: asyncio.StreamReader,
+    writer: asyncio.StreamWriter,
+) -> None:
+    """Create a runner and bridge it to ``reader``/``writer``."""
+
+    runner = create_runner(args)
+    transport = TelnetModemTransport(runner, reader, writer)
+    context = runner.kernel.context
+    context.register_modem_device(transport=transport)
+    transport.open()
+    try:
+        await transport.wait_closed()
+    finally:
+        transport.close()
+        try:
+            writer.close()
+            await writer.wait_closed()
+        except ConnectionError:
+            pass
+
+
+async def start_session_server(
+    args: argparse.Namespace, host: str, port: int
+) -> asyncio.AbstractServer:
+    """Start a TCP server that spawns sessions per connection."""
+
+    async def _client_handler(
+        reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+    ) -> None:
+        try:
+            await run_stream_session(args, reader, writer)
+        except Exception:
+            if not writer.is_closing():
+                writer.close()
+                with contextlib.suppress(Exception):
+                    await writer.wait_closed()
+            raise
+
+    return await asyncio.start_server(_client_handler, host, port)
+
+
+async def run_listen(args: argparse.Namespace, host: str, port: int) -> None:
+    """Serve incoming TCP sessions until cancelled."""
+
+    server = await start_session_server(args, host, port)
+    async with server:
+        await server.serve_forever()
+
+
+async def run_connect(args: argparse.Namespace, host: str, port: int) -> None:
+    """Connect to a remote TCP endpoint and bridge the session."""
+
+    reader, writer = await asyncio.open_connection(host, port)
+    await run_stream_session(args, reader, writer)
+
+
 def run_session(
     runner: SessionRunner,
     *,
@@ -126,6 +208,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Entry point for the runtime CLI."""
 
     args = parse_args(argv)
+    if args.listen and args.connect:
+        raise SystemExit("--listen and --connect are mutually exclusive")
+    if args.listen is not None:
+        host, port = args.listen
+        asyncio.run(run_listen(args, host, port))
+        return 0
+    if args.connect is not None:
+        host, port = args.connect
+        asyncio.run(run_connect(args, host, port))
+        return 0
     runner = create_runner(args)
     run_session(runner)
     return 0
@@ -139,5 +231,9 @@ __all__ = [
     "create_runner",
     "main",
     "parse_args",
+    "run_connect",
+    "run_listen",
     "run_session",
+    "run_stream_session",
+    "start_session_server",
 ]
