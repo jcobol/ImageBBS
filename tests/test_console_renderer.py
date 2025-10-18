@@ -300,9 +300,27 @@ def _assert_console_snapshot_state(
     assert actual_snapshot["background_colour"] == expected_snapshot["background_colour"]
     assert actual_snapshot["border_colour"] == expected_snapshot["border_colour"]
 
+    screen = console.screen
+    assert actual_snapshot["palette"] == screen.palette
     expected_palette = tuple(expected_snapshot.get("palette", ()))
     if expected_palette:
         assert expected_palette == editor_defaults.palette.colours
+        assert actual_snapshot["palette"] == expected_palette
+
+    expected_resolved_palette = {
+        "entries": screen.palette,
+        "screen": console.screen_colour,
+        "background": console.background_colour,
+        "border": console.border_colour,
+        "underline": screen.underline_colour,
+        "reverse": {
+            "foreground": console.background_colour,
+            "background": console.screen_colour,
+        },
+    }
+    assert actual_snapshot["resolved_palette"] == expected_resolved_palette
+    if "resolved_palette" in expected_snapshot:
+        assert expected_snapshot["resolved_palette"] == expected_resolved_palette
 
     registers, timeline = _resolve_vic_register_state(editor_defaults)
     expected_timeline = tuple(entry.as_dict() for entry in timeline)
@@ -333,7 +351,6 @@ def _assert_console_snapshot_state(
         if "sid_volume" in hardware:
             assert hardware["sid_volume"] == editor_defaults.hardware.sid_volume
 
-    screen = console.screen
     glyph_bank = getattr(screen, "_glyph_bank")
     for y, (codes_row, index_row, glyph_row) in enumerate(
         zip(
@@ -851,6 +868,17 @@ def test_console_renders_startup_banner(editor_defaults: ml_extra_defaults.MLExt
     assert snapshot["background_colour"] == console.background_colour
     assert console.border_colour == editor_defaults.palette.colours[3]
     assert snapshot["border_colour"] == console.border_colour
+    assert snapshot["palette"] == screen.palette
+    resolved_palette = snapshot["resolved_palette"]
+    assert resolved_palette["entries"] == screen.palette
+    assert resolved_palette["screen"] == console.screen_colour
+    assert resolved_palette["background"] == console.background_colour
+    assert resolved_palette["border"] == console.border_colour
+    assert resolved_palette["underline"] == screen.underline_colour
+    assert resolved_palette["reverse"] == {
+        "foreground": console.background_colour,
+        "background": console.screen_colour,
+    }
     hardware = snapshot["hardware"]
     registers, timeline = _resolve_vic_register_state(editor_defaults)
     expected_timeline = tuple(entry.as_dict() for entry in timeline)
@@ -941,6 +969,67 @@ def test_reverse_video_respects_palette_mapping() -> None:
     screen.write("B")
     reverse_pair = screen.resolved_colour_matrix[0][1]
     assert reverse_pair == (screen.background_colour, screen.screen_colour)
+
+
+def test_palette_updates_apply_to_reverse_and_underline_cells() -> None:
+    screen = PetsciiScreen()
+    palette = screen.palette
+    initial_screen_colour = screen.screen_colour
+    underline_code = screen.underline_char
+    screen.write(
+        bytes([
+            0x12,
+            ord("A"),
+            0x92,
+            ord("B"),
+            underline_code,
+        ])
+    )
+
+    colour_row = screen.colour_matrix[0]
+    assert colour_row[0] == initial_screen_colour
+    assert colour_row[1] == initial_screen_colour
+    assert colour_row[2] == screen.underline_colour
+    reverse_row = screen.reverse_matrix[0]
+    assert reverse_row[:3] == (True, False, False)
+    underline_row = screen.underline_matrix[0]
+    assert underline_row[2] is True
+
+    screen.apply_vic_register_write(0xD405, palette[0])
+    screen.apply_vic_register_write(0xD403, palette[3])
+
+    updated_screen_colour = screen.screen_colour
+    updated_background_colour = screen.background_colour
+
+    screen.write(bytes([0x12, ord("C"), 0x92, ord("D")]))
+
+    colour_row = screen.colour_matrix[0]
+    assert colour_row[0] == initial_screen_colour
+    assert colour_row[1] == initial_screen_colour
+    assert colour_row[2] == screen.underline_colour
+    assert colour_row[3] == updated_screen_colour
+    assert colour_row[4] == updated_screen_colour
+
+    reverse_row = screen.reverse_matrix[0]
+    assert reverse_row[:5] == (True, False, False, True, False)
+    underline_row = screen.underline_matrix[0]
+    assert underline_row[2] is True
+    assert underline_row[3] is False
+    assert underline_row[4] is False
+
+    resolved_row = screen.resolved_colour_matrix[0]
+    assert resolved_row[0] == (updated_background_colour, colour_row[0])
+    assert resolved_row[1] == (colour_row[1], updated_background_colour)
+    assert resolved_row[2] == (screen.underline_colour, updated_background_colour)
+    assert resolved_row[3] == (updated_background_colour, colour_row[3])
+    assert resolved_row[4] == (colour_row[4], updated_background_colour)
+
+    assert updated_screen_colour == screen.screen_colour
+    assert updated_background_colour == screen.background_colour
+    assert screen.resolved_palette_state["reverse"] == {
+        "foreground": updated_background_colour,
+        "background": updated_screen_colour,
+    }
 
 
 def test_console_exposes_overlay_glyph_lookup() -> None:
