@@ -16,6 +16,10 @@
       *(Iteration 04 characterises the `$cb00` ring buffer.)*
 - [x] Document how `sub_c2d4`/`gotocd4f` seed BASIC variables during bootstrap.
       *(Iteration 04 details the lookup-and-table workflow.)*
+- [ ] Evaluate whether the Python console layer needs to support direct writes to
+      the emulated video RAM (e.g., exposing a $0400-style screen buffer or an
+      equivalent API) to match Commodore 64 behaviour observed in the original
+      machine-language overlays.
 - [x] Recover the missing overlay PRGs (`setup`, `ml.extra`, etc.) so the remaining `lbl_c2e5` variables (`D5`, `AK`, `MW`, `C1`–`C3`, `KP`) can be traced and documented. The sysop manual confirms `setup` runs immediately after `im` to DIM variables and load configuration records, so sourcing the original boot disks is prerequisite to finishing the table audit.【F:v1.2/docs/image-1_2b-sysop-manual.adoc†L6864-L6883】 *(Raised in iteration 05 follow-ups.)*
       - Iteration 10 added a D64 extraction helper so recovered disk images can be parsed directly within the repository tooling.
       - Iteration 11 provides placeholder stubs for `setup` and `ml.extra` so host prototypes have deterministic defaults while the authentic PRGs remained missing.【F:v1.2/core/setup.stub.txt†L1-L63】
