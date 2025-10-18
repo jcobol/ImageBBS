@@ -491,6 +491,43 @@ class MaskedPaneGlyphPayload:
     countdown: int
 
 
+@dataclass
+class MaskedPaneBuffers:
+    """Host-side model of ``tempbott``/``$4050`` staging buffers."""
+
+    width: int = 40
+    live_screen: bytearray = field(init=False)
+    live_colour: bytearray = field(init=False)
+    staged_screen: bytearray = field(init=False)
+    staged_colour: bytearray = field(init=False)
+
+    def __post_init__(self) -> None:
+        if self.width <= 0:
+            raise ValueError("width must be positive")
+        self.live_screen = bytearray(self.width)
+        self.live_colour = bytearray(self.width)
+        self.staged_screen = bytearray(self.width)
+        self.staged_colour = bytearray(self.width)
+        self.clear_live()
+        self.clear_staging()
+
+    def clear_live(self, glyph: int = 0x20, colour: int = 0x00) -> None:
+        """Reset the preserved ""live"" overlay payload to ``glyph``/``colour``."""
+
+        glyph_byte = int(glyph) & 0xFF
+        colour_byte = int(colour) & 0xFF
+        self.live_screen[:] = bytes((glyph_byte,) * self.width)
+        self.live_colour[:] = bytes((colour_byte,) * self.width)
+
+    def clear_staging(self, glyph: int = 0x20, colour: int = 0x00) -> None:
+        """Reset the staged overlay payload to ``glyph``/``colour``."""
+
+        glyph_byte = int(glyph) & 0xFF
+        colour_byte = int(colour) & 0xFF
+        self.staged_screen[:] = bytes((glyph_byte,) * self.width)
+        self.staged_colour[:] = bytes((colour_byte,) * self.width)
+
+
 class MaskedPaneBlinkScheduler:
     """Model the five-phase blink cadence driven by ``lbl_adca``."""
 
@@ -537,6 +574,9 @@ class ConsoleService:
     _MASKED_PANE_SCREEN_BASE = 0x0518
     _MASKED_PANE_COLOUR_BASE = 0xD918
     _MASKED_PANE_WIDTH = 40
+    _MASKED_OVERLAY_SCREEN_BASE = 0x0770
+    _MASKED_OVERLAY_COLOUR_BASE = 0xDB70
+    _MASKED_OVERLAY_WIDTH = 40
     _IDLE_TIMER_SCREEN_ADDRESSES = (
         0x04DE,
         0x04E0,
@@ -587,6 +627,12 @@ class ConsoleService:
         """Return the recovered VIC-II palette tuple."""
 
         return self.screen.palette
+
+    @property
+    def screen_colour(self) -> int:
+        """Return the active foreground colour from the renderer."""
+
+        return self.device.screen_colour
 
     @property
     def cursor_position(self) -> tuple[int, int]:
@@ -653,6 +699,61 @@ class ConsoleService:
         self.poke_screen_byte(screen_address, payload.glyph)
         self.poke_colour_byte(colour_address, payload.colour)
         return payload
+
+    def capture_masked_pane_buffers(self, buffers: MaskedPaneBuffers) -> None:
+        """Copy the live bottom overlay into ``buffers.live_*`` spans."""
+
+        if buffers.width != self._MASKED_OVERLAY_WIDTH:
+            raise ValueError("masked pane buffers must span 40 bytes")
+
+        screen_bytes, colour_bytes = self.peek_block(
+            screen_address=self._MASKED_OVERLAY_SCREEN_BASE,
+            screen_length=buffers.width,
+            colour_address=self._MASKED_OVERLAY_COLOUR_BASE,
+            colour_length=buffers.width,
+        )
+
+        if screen_bytes is None or colour_bytes is None:
+            raise ValueError("masked pane capture requires screen and colour spans")
+
+        buffers.live_screen[:] = screen_bytes
+        buffers.live_colour[:] = colour_bytes
+
+    def clear_masked_pane_staging(
+        self, buffers: MaskedPaneBuffers, *, glyph: int = 0x20, colour: int | None = None
+    ) -> None:
+        """Reset staged overlay spans mirroring ``var_4078`` and ``tempbott+40``."""
+
+        colour_value = self.screen_colour if colour is None else int(colour) & 0xFF
+        buffers.clear_staging(glyph=glyph, colour=colour_value)
+
+    def rotate_masked_pane_buffers(
+        self,
+        buffers: MaskedPaneBuffers,
+        *,
+        fill_glyph: int = 0x20,
+        fill_colour: int | None = None,
+    ) -> None:
+        """Simulate ``loopb94e`` and rotate masked-pane staging buffers."""
+
+        if buffers.width != self._MASKED_OVERLAY_WIDTH:
+            raise ValueError("masked pane buffers must span 40 bytes")
+
+        self.poke_block(
+            screen_address=self._MASKED_OVERLAY_SCREEN_BASE,
+            screen_bytes=buffers.live_screen,
+            screen_length=buffers.width,
+            colour_address=self._MASKED_OVERLAY_COLOUR_BASE,
+            colour_bytes=buffers.live_colour,
+            colour_length=buffers.width,
+        )
+
+        next_screen = bytes(buffers.staged_screen)
+        next_colour = bytes(buffers.staged_colour)
+        buffers.live_screen[:] = next_screen
+        buffers.live_colour[:] = next_colour
+
+        self.clear_masked_pane_staging(buffers, glyph=fill_glyph, colour=fill_colour)
 
     def capture_region(
         self,
@@ -1176,12 +1277,16 @@ __all__ = [
     "ChannelDescriptor",
     "Console",
     "ConsoleService",
+    "ConsoleRegionBuffer",
     "DeviceContext",
     "DeviceError",
     "DiskDrive",
     "bootstrap_device_context",
     "LogicalChannel",
     "LoopbackModemTransport",
+    "MaskedPaneBlinkState",
+    "MaskedPaneBuffers",
+    "MaskedPaneGlyphPayload",
     "Modem",
     "ModemChannel",
     "ModemTransport",
