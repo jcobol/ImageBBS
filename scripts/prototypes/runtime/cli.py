@@ -14,6 +14,7 @@ from ..message_editor import MessageEditor, SessionContext
 from ..session_kernel import SessionState
 from ..setup_config import load_drive_config
 from ..setup_defaults import SetupDefaults
+from .console_ui import SysopConsoleApp
 from .main_menu import MainMenuModule
 from .message_store import MessageStore
 from .message_store_repository import load_message_store, save_message_store
@@ -57,6 +58,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=_parse_host_port,
         default=None,
         help="Dial HOST:PORT and bridge the session over TCP",
+    )
+    parser.add_argument(
+        "--curses-ui",
+        action="store_true",
+        help="Render the session using the curses sysop console",
     )
     return parser.parse_args(argv)
 
@@ -233,7 +239,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         asyncio.run(run_connect(args, host, port))
         return 0
     runner = create_runner(args)
-    run_session(runner)
+    if args.curses_ui:
+        app = SysopConsoleApp(runner.console, runner=runner)
+        app.run()
+    else:
+        run_session(runner)
     _persist_messages(args, runner)
     return 0
 
