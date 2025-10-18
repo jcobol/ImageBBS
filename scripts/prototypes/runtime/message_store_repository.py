@@ -56,6 +56,9 @@ def load_message_store(path: Path) -> MessageStore:
     if not path.exists():
         return MessageStore()
 
+    # Modem bytes are first decoded with a Latin-1 mapping into Python str, so
+    # persisting with UTF-8 intentionally keeps that 8-bit traffic lossless and
+    # discoverable in review.
     text = path.read_text(encoding="utf-8")
     if not text.strip():
         return MessageStore()
@@ -77,6 +80,9 @@ def save_message_store(store: MessageStore, path: Path) -> None:
 
     payload = {"version": 1, "records": dump_records(store)}
     path.parent.mkdir(parents=True, exist_ok=True)
+    # See note above: this repository intentionally sticks with UTF-8 because
+    # Latin-1 decoded traffic round-trips safely even though the BBS channel is
+    # raw 8-bit.
     with path.open("w", encoding="utf-8") as stream:
         json.dump(payload, stream, indent=2, sort_keys=True)
         stream.write("\n")
