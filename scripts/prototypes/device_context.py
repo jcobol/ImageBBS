@@ -13,7 +13,11 @@ from collections import defaultdict, deque
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import Deque, Dict, Iterable, Iterator, Mapping, Optional, Tuple
+from typing import TYPE_CHECKING, Deque, Dict, Iterable, Iterator, Mapping, Optional, Tuple
+
+if TYPE_CHECKING:
+    from .ampersand_dispatcher import AmpersandDispatcher
+    from .ampersand_registry import AmpersandRegistry
 
 from .setup_defaults import DriveAssignment, FilesystemDriveLocator
 from .console_renderer import (
@@ -559,6 +563,43 @@ class DeviceContext:
 
         self.services[name] = service
 
+    def register_console_device(self, console: Console | None = None) -> ConsoleService:
+        """Register a console device and expose the service wrapper."""
+
+        device = console or Console()
+        self.register(device.name, device)
+        service = ConsoleService(device)
+        self.register_service(service.name, service)
+        return service
+
+    def register_modem_device(self, modem: Modem | None = None) -> Modem:
+        """Register a modem device and expose it as a service."""
+
+        device = modem or Modem()
+        self.register(device.name, device)
+        self.register_service(device.name, device)
+        return device
+
+    def register_ampersand_dispatcher(
+        self,
+        *,
+        registry: "AmpersandRegistry" | None = None,
+        override_imports: Mapping[int, str] | None = None,
+    ) -> "AmpersandDispatcher":
+        """Wire an :class:`AmpersandDispatcher` into the service map."""
+
+        if registry is None:
+            from .ampersand_registry import AmpersandRegistry
+
+            registry = AmpersandRegistry(
+                services=self.services, override_imports=override_imports
+            )
+        from .ampersand_dispatcher import AmpersandDispatcher
+
+        dispatcher = AmpersandDispatcher(registry=registry)
+        self.register_service(dispatcher.name, dispatcher)
+        return dispatcher
+
     def open(self, device_name: str, logical_number: int, secondary_address: int) -> LogicalChannel:
         if device_name not in self.devices:
             raise DeviceError(f"no such device '{device_name}'")
@@ -612,14 +653,17 @@ class DeviceContext:
         return self._service_view
 
 
-def bootstrap_device_context(assignments: Iterable[DriveAssignment]) -> DeviceContext:
+def bootstrap_device_context(
+    assignments: Iterable[DriveAssignment],
+    *,
+    ampersand_overrides: Mapping[int, str] | None = None,
+) -> DeviceContext:
     """Instantiate a device context with modern drive mappings."""
 
     context = DeviceContext()
-    console = Console()
-    context.register("console", console)
-    context.register_service("console", ConsoleService(console))
-    context.register("modem", Modem())
+    context.register_console_device()
+    context.register_modem_device()
+    context.register_ampersand_dispatcher(override_imports=ampersand_overrides)
     for assignment in assignments:
         locator = assignment.locator
         if isinstance(locator, FilesystemDriveLocator):
