@@ -80,23 +80,30 @@ def handle_read0(context: AmpersandDispatchContext) -> AmpersandResult:
 
 # Internal helpers -------------------------------------------------------------
 
-def _require_registry(context: AmpersandDispatchContext) -> AmpersandRegistry:
-    payload = context.payload
+_EMPTY_MAPPING: Mapping[str, object] = MappingProxyType({})
+
+
+def _payload_mapping(payload: object) -> Mapping[str, object]:
     if isinstance(payload, Mapping):
-        registry = payload.get("registry")
-        if isinstance(registry, AmpersandRegistry):
-            return registry
+        return payload
+    return _EMPTY_MAPPING
+
+
+def _require_registry(context: AmpersandDispatchContext) -> AmpersandRegistry:
+    payload = _payload_mapping(context.payload)
+    registry = payload.get("registry")
+    if isinstance(registry, AmpersandRegistry):
+        return registry
     raise RuntimeError("ampersand override requires the registry in the payload")
 
 
 def _resolve_services(
     context: AmpersandDispatchContext, registry: AmpersandRegistry
 ) -> Mapping[str, object]:
-    payload = context.payload
-    if isinstance(payload, Mapping):
-        services = payload.get("services")
-        if isinstance(services, Mapping):
-            return services
+    payload = _payload_mapping(context.payload)
+    services = payload.get("services")
+    if isinstance(services, Mapping):
+        return services
     return registry.services
 
 
@@ -122,10 +129,10 @@ def _update_indicator(
 
 
 def _extract_fallback_text(payload: object) -> str | None:
-    if isinstance(payload, Mapping):
-        fallback = payload.get("fallback_text")
-        if fallback is not None:
-            return str(fallback)
+    payload_mapping = _payload_mapping(payload)
+    fallback = payload_mapping.get("fallback_text")
+    if fallback is not None:
+        return str(fallback)
     return None
 
 
@@ -135,18 +142,18 @@ def _resolve_message_store(
     service = services.get("message_store")
     if isinstance(service, MessageStore):
         return service
-    if isinstance(payload, Mapping):
-        candidate = payload.get("message_store")
-        if isinstance(candidate, MessageStore):
-            return candidate
+    payload_mapping = _payload_mapping(payload)
+    candidate = payload_mapping.get("message_store")
+    if isinstance(candidate, MessageStore):
+        return candidate
     return None
 
 
 def _resolve_session(payload: object) -> "SessionContext" | None:
-    if isinstance(payload, Mapping):
-        session = payload.get("session")
-        if session is not None and _is_session_like(session):
-            return cast("SessionContext", session)
+    payload_mapping = _payload_mapping(payload)
+    session = payload_mapping.get("session")
+    if session is not None and _is_session_like(session):
+        return cast("SessionContext", session)
     return None
 
 
