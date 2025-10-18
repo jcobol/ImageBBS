@@ -10,11 +10,13 @@ from dataclasses import replace
 from pathlib import Path
 from typing import IO, Sequence, Tuple
 
-from ..message_editor import SessionContext
+from ..message_editor import MessageEditor, SessionContext
 from ..session_kernel import SessionState
 from ..setup_config import load_drive_config
 from ..setup_defaults import SetupDefaults
 from .main_menu import MainMenuModule
+from .message_store import MessageStore
+from .message_store_repository import load_message_store, save_message_store
 from .session_runner import SessionRunner
 from .transports import TelnetModemTransport
 
@@ -39,16 +41,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Path to a TOML file describing drive assignments",
     )
     parser.add_argument(
-        "--message-store-load",
+        "--messages-path",
         type=Path,
         default=None,
-        help="Optional path to load message store state from",
-    )
-    parser.add_argument(
-        "--message-store-save",
-        type=Path,
-        default=None,
-        help="Optional path to persist message store state to",
+        help="Optional path backing the persisted message store",
     )
     parser.add_argument(
         "--listen",
@@ -81,25 +77,27 @@ def _build_defaults(args: argparse.Namespace) -> SetupDefaults:
     return defaults
 
 
+def _build_message_store(args: argparse.Namespace) -> MessageStore:
+    messages_path: Path | None = args.messages_path
+    if messages_path is None:
+        return MessageStore()
+    return load_message_store(messages_path)
+
+
 def _build_session_context(
-    defaults: SetupDefaults, args: argparse.Namespace
-) -> SessionContext | None:
-    options: dict[str, Path] = {}
-    if args.message_store_load is not None:
-        options["load_path"] = args.message_store_load
-    if args.message_store_save is not None:
-        options["save_path"] = args.message_store_save
-
-    if not options:
-        return None
-
+    defaults: SetupDefaults,
+    *,
+    store: MessageStore,
+    messages_path: Path | None,
+) -> SessionContext:
     board_id = getattr(defaults, "board_identifier", None) or "main"
     sysop = getattr(defaults, "sysop", None)
     user_id = getattr(sysop, "login_id", None) or "sysop"
 
-    context = SessionContext(board_id=board_id, user_id=user_id)
+    context = SessionContext(board_id=board_id, user_id=user_id, store=store)
     services = dict(context.services or {})
-    services["message_store_persistence"] = options
+    if messages_path is not None:
+        services["message_store_persistence"] = {"path": messages_path}
     context.services = services
     return context
 
@@ -108,12 +106,27 @@ def create_runner(args: argparse.Namespace) -> SessionRunner:
     """Instantiate :class:`SessionRunner` according to ``args``."""
 
     defaults = _build_defaults(args)
-    session_context = _build_session_context(defaults, args)
+    store = _build_message_store(args)
+    messages_path: Path | None = args.messages_path
+    session_context = _build_session_context(
+        defaults, store=store, messages_path=messages_path
+    )
     return SessionRunner(
         defaults=defaults,
-        main_menu_module=MainMenuModule(),
+        main_menu_module=MainMenuModule(
+            message_editor_factory=lambda: MessageEditor(store=store)
+        ),
         session_context=session_context,
+        message_store=store,
+        message_store_path=messages_path,
     )
+
+
+def _persist_messages(args: argparse.Namespace, runner: SessionRunner) -> None:
+    path: Path | None = args.messages_path
+    if path is None:
+        return
+    save_message_store(runner.message_store, path)
 
 
 async def run_stream_session(
@@ -137,6 +150,7 @@ async def run_stream_session(
             await writer.wait_closed()
         except ConnectionError:
             pass
+        _persist_messages(args, runner)
 
 
 async def start_session_server(
@@ -220,6 +234,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     runner = create_runner(args)
     run_session(runner)
+    _persist_messages(args, runner)
     return 0
 
 
