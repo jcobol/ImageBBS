@@ -73,7 +73,9 @@ class AmpersandRegistry:
         """Register an override handler for ``flag_index``."""
 
         if flag_index not in self._default_handlers:
-            raise KeyError(f"unknown ampersand flag index: {flag_index:#x}")
+            self._default_handlers[flag_index] = self._make_default_handler(
+                flag_index, 0x00, 0x0000
+            )
         self._overrides[flag_index] = handler
 
     def register_service(self, name: str, service: object) -> None:
