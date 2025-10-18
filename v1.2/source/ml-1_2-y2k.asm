@@ -3192,13 +3192,16 @@ b2fd:12ff	4c b5 b2		jmp loopb2b5
 b300:1302	3d 0a b1 sub_b300 and $b10a,x
 b303:1305	f0 04		beq skipb309
 b305:1307	a9 fa		lda #$fa
+                ; draw the active glyph (spinner/checkmark) when the bit is set
 b307:1309	d0 02		bne skipb30b
 b309:130b	a9 20	skipb309 lda #$20
 b30b:130d	09 80	skipb30b ora #$80
 b30d:130f	99 f0 04		sta light,y
+                ; default to the dimmed colour ($fe) for inactive cells
 b310:1312	a9 fe		lda #$fe
 b312:1314	ec 99 b3		cpx lbl_b399
 b315:1317	d0 02		bne skipb319
+                ; highlight the cell we were asked to touch (spinner/carrier)
 b317:1319	a9 f3		lda #$f3
 b319:131b	99 f0 d8 skipb319 sta $d8f0,y
 b31c:131e	c8		iny
@@ -3214,6 +3217,20 @@ chkflags:		; &,52,chknum,op
 	pha             ; b328:132a	48
 lbl_b329:
 	stx lbl_b399   ; b329:132b	8e 99 b3
+	                ; keep a copy of the requested flag index.  The caller
+	                ; encodes several pieces of state in .X:
+	                ;   bit 0  -> selects which byte in the flag table pair we
+	                ;             touch. 0 picks the "left" byte (chk_left / bar –
+	                ;             spinner glyph cell), 1 picks the companion byte
+	                ;             (chk_right / tsr2 – carrier colour cell).
+	                ;   bits1-3-> choose the bit mask within that byte.
+	                ;   bits4-7-> choose the byte pair itself:
+	                ;             $0x  = chk_left  (left-hand checkmarks)
+	                ;             $0x|1= chk_right (right-hand checkmarks)
+	                ;             $1x  = bar       (spinner glyph state)
+	                ;             $1x|1= tsr2      (carrier indicator colour).
+	                ; In practice &,52,$10,$y manipulates the spinner glyph and
+	                ; &,52,$11,$y adjusts the carrier cell beside it.
 	txa             ; b32c:132e	8a
 	lsr a           ; b32d:132f	4a
 	pha             ; b32e:1330	48
