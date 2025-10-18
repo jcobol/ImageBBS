@@ -4,13 +4,20 @@ from pathlib import Path
 
 import sys
 
+import pytest
+
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from scripts.prototypes.ampersand_dispatcher import (
     AmpersandDispatchContext,
     AmpersandDispatcher,
 )
-from scripts.prototypes.device_context import ConsoleService, bootstrap_device_context
+from scripts.prototypes.device_context import (
+    ConsoleService,
+    DriveAssignment,
+    FilesystemDriveLocator,
+    bootstrap_device_context,
+)
 from scripts.prototypes.message_editor import SessionContext
 from scripts.prototypes.runtime.ampersand_overrides import BUILTIN_AMPERSAND_OVERRIDES
 from scripts.prototypes.runtime.message_store import MessageStore
@@ -19,6 +26,25 @@ from scripts.prototypes.runtime.message_store import MessageStore
 def _build_dispatcher() -> AmpersandDispatcher:
     context = bootstrap_device_context(
         assignments=(), ampersand_overrides=BUILTIN_AMPERSAND_OVERRIDES
+    )
+    dispatcher = context.get_service("ampersand")
+    assert isinstance(dispatcher, AmpersandDispatcher)
+    return dispatcher
+
+
+@pytest.fixture()
+def dispatcher_with_temp_drive(tmp_path: Path) -> AmpersandDispatcher:
+    drive_root = tmp_path / "drive8"
+    drive_root.mkdir()
+    (drive_root / "FIRST.SEQ").write_text("hello", encoding="latin-1")
+    (drive_root / "SECOND.SEQ").write_text("world", encoding="latin-1")
+
+    assignment = DriveAssignment(
+        slot=8, locator=FilesystemDriveLocator(path=drive_root)
+    )
+    context = bootstrap_device_context(
+        assignments=(assignment,),
+        ampersand_overrides=BUILTIN_AMPERSAND_OVERRIDES,
     )
     dispatcher = context.get_service("ampersand")
     assert isinstance(dispatcher, AmpersandDispatcher)
@@ -74,6 +100,16 @@ def test_dskdir_uses_payload_fallback_text() -> None:
     result = dispatcher.dispatch("&,8", payload={"fallback_text": fallback})
 
     assert result.rendered_text == fallback
+
+
+def test_dskdir_renders_drive_listing_when_no_fallback(
+    dispatcher_with_temp_drive: AmpersandDispatcher,
+) -> None:
+    result = dispatcher_with_temp_drive.dispatch("&,8")
+
+    assert result.rendered_text is not None
+    assert "FIRST.SEQ" in result.rendered_text
+    assert "SECOND.SEQ" in result.rendered_text
 
 
 def test_dispatcher_injects_registry_and_services_into_payload() -> None:

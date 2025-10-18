@@ -7,7 +7,7 @@ from typing import Mapping, MutableMapping, Sequence, TYPE_CHECKING, cast
 
 from ..ampersand_dispatcher import AmpersandDispatchContext
 from ..ampersand_registry import AmpersandRegistry, AmpersandResult
-from ..device_context import ConsoleService
+from ..device_context import ConsoleService, DeviceContext, DeviceError
 from .message_store import MessageRecord, MessageStore
 
 if TYPE_CHECKING:  # pragma: no cover - imported for type checking only
@@ -49,11 +49,35 @@ def handle_dskdir(context: AmpersandDispatchContext) -> AmpersandResult:
     """Emulate ``dskdir`` (``&,8``) while honouring fallback text payloads."""
 
     registry = _require_registry(context)
+    services = _resolve_services(context, registry)
     result = registry.dispatch(context.invocation.routine, context, use_default=True)
     fallback_text = _extract_fallback_text(context.payload)
     if fallback_text is not None:
-        result = replace(result, rendered_text=fallback_text)
-    return result
+        return replace(result, rendered_text=fallback_text)
+
+    device_context = _resolve_device_context(services, context.payload)
+    if device_context is None:
+        return result
+
+    slot = context.invocation.argument_x or 8
+    try:
+        directory_lines = device_context.drive_directory_lines(slot, refresh=True)
+    except DeviceError:
+        return result
+
+    listing_text = "\r".join(directory_lines)
+    if not listing_text:
+        return result
+
+    macro_text = result.rendered_text or ""
+    if macro_text:
+        if macro_text.endswith("\r"):
+            combined = f"{macro_text}{listing_text}"
+        else:
+            combined = f"{macro_text}\r{listing_text}"
+    else:
+        combined = listing_text
+    return replace(result, rendered_text=combined)
 
 
 def handle_read0(context: AmpersandDispatchContext) -> AmpersandResult:
@@ -113,6 +137,19 @@ def _resolve_console_service(
     service = services.get("console")
     if isinstance(service, ConsoleService):
         return service
+    return None
+
+
+def _resolve_device_context(
+    services: Mapping[str, object], payload: object
+) -> DeviceContext | None:
+    service = services.get("device_context")
+    if isinstance(service, DeviceContext):
+        return service
+    payload_mapping = _payload_mapping(payload)
+    candidate = payload_mapping.get("device_context")
+    if isinstance(candidate, DeviceContext):
+        return candidate
     return None
 
 
