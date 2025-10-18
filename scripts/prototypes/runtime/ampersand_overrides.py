@@ -26,6 +26,13 @@ BUILTIN_AMPERSAND_OVERRIDES: Mapping[int, str] = MappingProxyType(
 _SPACE_GLYPH = 0x20
 _PAUSE_GLYPH = 0xD0  # "P"
 _ABORT_GLYPH = 0xC1  # "A"
+_SPINNER_ACTIVE_GLYPH = 0xB0
+_CARRIER_LEADING_ACTIVE_GLYPH = 0xA0
+_CARRIER_INDICATOR_ACTIVE_GLYPH = 0xFA
+
+_SPINNER_SCREEN_ADDRESS = 0x049C
+_CARRIER_LEADING_SCREEN_ADDRESS = 0x0400
+_CARRIER_INDICATOR_SCREEN_ADDRESS = 0x0427
 
 
 def handle_chkflags(context: AmpersandDispatchContext) -> AmpersandResult:
@@ -156,6 +163,13 @@ def _resolve_device_context(
 def _update_indicator(
     console: ConsoleService, flag_index: int, operation: int
 ) -> None:
+    if flag_index == 0x02:  # spinner indicator bit
+        _update_spinner(console, operation)
+        return
+    if flag_index == 0x04:  # carrier indicator bit
+        _update_carrier(console, operation)
+        return
+
     enabled = bool(operation)
     if flag_index == 0x10:  # pause indicator
         glyph = _PAUSE_GLYPH if enabled else _SPACE_GLYPH
@@ -163,6 +177,48 @@ def _update_indicator(
     elif flag_index == 0x11:  # abort indicator
         glyph = _ABORT_GLYPH if enabled else _SPACE_GLYPH
         console.set_abort_indicator(glyph, colour=0x02)
+
+
+def _update_spinner(console: ConsoleService, operation: int) -> None:
+    if operation not in (0, 1, 2):
+        return
+
+    current = console.screen.peek_screen_address(_SPINNER_SCREEN_ADDRESS)
+    if operation == 0:  # clear
+        glyph = _SPACE_GLYPH
+    elif operation == 1:  # set
+        glyph = _SPINNER_ACTIVE_GLYPH
+    else:  # toggle
+        glyph = _SPINNER_ACTIVE_GLYPH if current == _SPACE_GLYPH else _SPACE_GLYPH
+
+    console.set_spinner_glyph(glyph)
+
+
+def _update_carrier(console: ConsoleService, operation: int) -> None:
+    if operation not in (0, 1, 2):
+        return
+
+    leading = console.screen.peek_screen_address(_CARRIER_LEADING_SCREEN_ADDRESS)
+    indicator = console.screen.peek_screen_address(_CARRIER_INDICATOR_SCREEN_ADDRESS)
+
+    if operation == 0:  # clear
+        leading_glyph = _SPACE_GLYPH
+        indicator_glyph = _SPACE_GLYPH
+    elif operation == 1:  # set
+        leading_glyph = _CARRIER_LEADING_ACTIVE_GLYPH
+        indicator_glyph = _CARRIER_INDICATOR_ACTIVE_GLYPH
+    else:  # toggle
+        is_active = (leading != _SPACE_GLYPH) or (indicator != _SPACE_GLYPH)
+        if is_active:
+            leading_glyph = _SPACE_GLYPH
+            indicator_glyph = _SPACE_GLYPH
+        else:
+            leading_glyph = _CARRIER_LEADING_ACTIVE_GLYPH
+            indicator_glyph = _CARRIER_INDICATOR_ACTIVE_GLYPH
+
+    console.set_carrier_indicator(
+        leading_cell=leading_glyph, indicator_cell=indicator_glyph
+    )
 
 
 def _extract_fallback_text(payload: object) -> str | None:

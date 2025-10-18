@@ -71,6 +71,58 @@ def test_chkflags_updates_pause_indicator() -> None:
     assert colour != before_colour
 
 
+@pytest.mark.parametrize(
+    "operation,prepare_spinner,prepare_carrier",
+    [
+        (
+            0,
+            lambda console: console.set_spinner_glyph(0xB0),
+            lambda console: console.set_carrier_indicator(
+                leading_cell=0xA0, indicator_cell=0xFA
+            ),
+        ),
+        (
+            1,
+            lambda console: console.set_spinner_glyph(0x20),
+            lambda console: console.set_carrier_indicator(
+                leading_cell=0x20, indicator_cell=0x20
+            ),
+        ),
+        (
+            2,
+            lambda console: console.set_spinner_glyph(0x20),
+            lambda console: console.set_carrier_indicator(
+                leading_cell=0x20, indicator_cell=0x20
+            ),
+        ),
+    ],
+)
+def test_chkflags_updates_spinner_and_carrier(
+    operation: int,
+    prepare_spinner,
+    prepare_carrier,
+) -> None:
+    dispatcher = _build_dispatcher()
+    registry = dispatcher.registry
+    console_service = registry.services["console"]
+    assert isinstance(console_service, ConsoleService)
+
+    prepare_spinner(console_service)
+    spinner_before = console_service.device.screen.peek_screen_address(0x049C)
+    dispatcher.dispatch(f"&,52,2,{operation}")
+    spinner_after = console_service.device.screen.peek_screen_address(0x049C)
+    assert spinner_after != spinner_before
+
+    prepare_carrier(console_service)
+    leading_before = console_service.device.screen.peek_screen_address(0x0400)
+    indicator_before = console_service.device.screen.peek_screen_address(0x0427)
+    dispatcher.dispatch(f"&,52,4,{operation}")
+    leading_after = console_service.device.screen.peek_screen_address(0x0400)
+    indicator_after = console_service.device.screen.peek_screen_address(0x0427)
+    assert leading_after != leading_before
+    assert indicator_after != indicator_before
+
+
 def test_read0_appends_session_message() -> None:
     dispatcher = _build_dispatcher()
     registry = dispatcher.registry
