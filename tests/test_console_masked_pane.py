@@ -35,6 +35,25 @@ def _read_colour(service: ConsoleService, address: int, length: int) -> bytes:
     )
 
 
+def test_masked_pane_buffers_expose_staging_views() -> None:
+    buffers = MaskedPaneBuffers()
+
+    assert buffers.live_screen is buffers.tempbott
+    assert buffers.live_colour is buffers.colour_4050
+    assert buffers.staged_screen is buffers.tempbott_next
+    assert buffers.staged_colour is buffers.colour_var_4078
+
+    buffers.live_screen[:] = bytes((0x41,) * buffers.width)
+    buffers.live_colour[:] = bytes((0x02,) * buffers.width)
+    buffers.staged_screen[:] = bytes((0x51,) * buffers.width)
+    buffers.staged_colour[:] = bytes((0x07,) * buffers.width)
+
+    assert bytes(buffers.tempbott) == bytes((0x41,) * buffers.width)
+    assert bytes(buffers.colour_4050) == bytes((0x02,) * buffers.width)
+    assert bytes(buffers.tempbott_next) == bytes((0x51,) * buffers.width)
+    assert bytes(buffers.colour_var_4078) == bytes((0x07,) * buffers.width)
+
+
 def test_masked_pane_blink_scheduler_cycles() -> None:
     console = Console()
     service = ConsoleService(console)
@@ -100,6 +119,8 @@ def test_capture_masked_pane_buffers_reads_live_overlay() -> None:
 
     assert bytes(buffers.live_screen) == screen_payload
     assert bytes(buffers.live_colour) == expected_colour
+    assert bytes(buffers.tempbott) == screen_payload
+    assert bytes(buffers.colour_4050) == expected_colour
     assert console.transcript_bytes == b""
 
 
@@ -117,6 +138,8 @@ def test_clear_masked_pane_staging_defaults_to_screen_colour() -> None:
 
     assert bytes(buffers.staged_screen) == bytes((0x20,) * buffers.width)
     assert bytes(buffers.staged_colour) == bytes((expected_colour,) * buffers.width)
+    assert bytes(buffers.tempbott_next) == bytes((0x20,) * buffers.width)
+    assert bytes(buffers.colour_var_4078) == bytes((expected_colour,) * buffers.width)
 
 
 def test_masked_pane_buffer_rotation_matches_loopb94e() -> None:
@@ -151,6 +174,10 @@ def test_masked_pane_buffer_rotation_matches_loopb94e() -> None:
 
     assert bytes(buffers.live_screen) == staged_screen
     assert bytes(buffers.live_colour) == staged_colour
+    assert bytes(buffers.tempbott) == staged_screen
+    assert bytes(buffers.colour_4050) == staged_colour
     assert bytes(buffers.staged_screen) == bytes((fill_glyph,) * buffers.width)
     assert bytes(buffers.staged_colour) == bytes((fill_colour,) * buffers.width)
+    assert bytes(buffers.tempbott_next) == bytes((fill_glyph,) * buffers.width)
+    assert bytes(buffers.colour_var_4078) == bytes((fill_colour,) * buffers.width)
     assert console.transcript_bytes == b""
