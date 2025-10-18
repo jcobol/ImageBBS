@@ -386,6 +386,19 @@ class ConsoleService:
     device: Console
     name: str = "console"
 
+    _SCREEN_BASE = 0x0400
+    _COLOUR_BASE = 0xD800
+    _PAUSE_SCREEN_ADDRESS = 0x041E
+    _ABORT_SCREEN_ADDRESS = 0x041F
+    _SPINNER_SCREEN_ADDRESS = 0x049C
+    _CARRIER_LEADING_SCREEN_ADDRESS = 0x0400
+    _CARRIER_INDICATOR_SCREEN_ADDRESS = 0x0427
+    _IDLE_TIMER_SCREEN_ADDRESSES = (
+        0x04DE,
+        0x04E0,
+        0x04E1,
+    )
+
     @property
     def defaults(self) -> ml_extra_defaults.MLExtraDefaults:
         """Return the overlay defaults driving the console renderer."""
@@ -493,6 +506,96 @@ class ConsoleService:
             colour_address=colour_address,
             colour_bytes=colour_bytes,
         )
+
+    @staticmethod
+    def _colour_address_for(screen_address: int) -> int:
+        """Return the colour RAM address corresponding to ``screen_address``."""
+
+        offset = screen_address - ConsoleService._SCREEN_BASE
+        if offset < 0:
+            raise ValueError(
+                f"screen address ${screen_address:04x} precedes screen base"
+            )
+        return ConsoleService._COLOUR_BASE + offset
+
+    def set_pause_indicator(self, value: int, *, colour: int | None = None) -> None:
+        """Update the sysop pause indicator cell at ``$041e``."""
+
+        self.poke_screen_byte(self._PAUSE_SCREEN_ADDRESS, value)
+        if colour is not None:
+            self.poke_colour_byte(
+                self._colour_address_for(self._PAUSE_SCREEN_ADDRESS), colour
+            )
+
+    def set_abort_indicator(self, value: int, *, colour: int | None = None) -> None:
+        """Update the sysop abort indicator cell at ``$041f``."""
+
+        self.poke_screen_byte(self._ABORT_SCREEN_ADDRESS, value)
+        if colour is not None:
+            self.poke_colour_byte(
+                self._colour_address_for(self._ABORT_SCREEN_ADDRESS), colour
+            )
+
+    def update_idle_timer_digits(
+        self,
+        digits: Sequence[int],
+        *,
+        colours: Sequence[int] | None = None,
+    ) -> None:
+        """Write idle timer digits into ``$04de/$04e0/$04e1`` in order."""
+
+        addresses = self._IDLE_TIMER_SCREEN_ADDRESSES
+        if len(digits) != len(addresses):
+            raise ValueError(
+                "idle timer requires three digits for minutes/seconds"
+            )
+        if colours is not None and len(colours) != len(addresses):
+            raise ValueError("colours span must match idle timer digit count")
+
+        for address, value in zip(addresses, digits):
+            self.poke_screen_byte(address, value)
+
+        if colours is not None:
+            for address, colour in zip(addresses, colours):
+                self.poke_colour_byte(self._colour_address_for(address), colour)
+
+    def set_spinner_glyph(self, value: int, *, colour: int | None = None) -> None:
+        """Update the activity spinner glyph at ``$049c``."""
+
+        self.poke_screen_byte(self._SPINNER_SCREEN_ADDRESS, value)
+        if colour is not None:
+            self.poke_colour_byte(
+                self._colour_address_for(self._SPINNER_SCREEN_ADDRESS), colour
+            )
+
+    def set_carrier_indicator(
+        self,
+        *,
+        leading_cell: int | None = None,
+        indicator_cell: int | None = None,
+        leading_colour: int | None = None,
+        indicator_colour: int | None = None,
+    ) -> None:
+        """Update the carrier status cells at ``$0400`` and ``$0427``."""
+
+        if leading_cell is not None:
+            self.poke_screen_byte(self._CARRIER_LEADING_SCREEN_ADDRESS, leading_cell)
+        if indicator_cell is not None:
+            self.poke_screen_byte(
+                self._CARRIER_INDICATOR_SCREEN_ADDRESS, indicator_cell
+            )
+
+        if leading_colour is not None:
+            self.poke_colour_byte(
+                self._colour_address_for(self._CARRIER_LEADING_SCREEN_ADDRESS),
+                leading_colour,
+            )
+
+        if indicator_colour is not None:
+            self.poke_colour_byte(
+                self._colour_address_for(self._CARRIER_INDICATOR_SCREEN_ADDRESS),
+                indicator_colour,
+            )
 
     def push_macro_slot(self, slot: int) -> GlyphRun | None:
         """Render a macro by slot identifier and mirror it to the console."""
