@@ -37,6 +37,24 @@ def _read_colour(service: ConsoleService, address: int, length: int) -> bytes:
     )
 
 
+def test_fill_colour_span_writes_resolved_palette_without_transcript() -> None:
+    console = Console()
+    service = ConsoleService(console)
+
+    colour_address = 0xDBCC
+    span_length = 0x10
+    colour_value = 0x0E
+
+    service.fill_colour(colour_address, colour_value, span_length)
+
+    palette = service.screen.palette
+    expected_colour = _resolve_palette_colour(colour_value, palette)
+    resolved_span = _read_colour(service, colour_address, span_length)
+
+    assert resolved_span == bytes((expected_colour,) * span_length)
+    assert service.device.transcript_bytes == b""
+
+
 def test_peek_block_snapshots_masked_pane_span() -> None:
     console = Console()
     service = ConsoleService(console)

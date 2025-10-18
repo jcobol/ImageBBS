@@ -189,6 +189,14 @@ class Console(Device):
 
         self._screen.poke_colour_address(address, value)
 
+    def fill_colour(self, address: int, value: int, length: int) -> None:
+        """Write ``value`` across ``length`` bytes in colour RAM starting at ``address``."""
+
+        if length < 0:
+            raise ValueError("length must be non-negative")
+        for offset in range(length):
+            self._screen.poke_colour_address(address + offset, value)
+
     def poke_block(
         self,
         *,
@@ -675,6 +683,11 @@ class ConsoleService:
         """Write a colour attribute to ``address`` in colour RAM."""
 
         self.device.poke_colour_byte(address, value)
+
+    def fill_colour(self, address: int, value: int, length: int) -> None:
+        """Write ``value`` across ``length`` bytes in colour RAM starting at ``address``."""
+
+        self.device.fill_colour(address, value, length)
 
     def poke_block(
         self,
