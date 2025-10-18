@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Dict, Mapping, Protocol, Sequence, Set
+from typing import Dict, Mapping, MutableMapping, Protocol, Sequence, Set
 
 from .ampersand_dispatcher import AmpersandDispatcher
 from .device_context import DeviceContext, bootstrap_device_context
@@ -42,6 +42,7 @@ class SessionKernel:
     defaults: SetupDefaults = field(default_factory=SetupDefaults.stub)
     context: DeviceContext = field(init=False)
     dispatcher: AmpersandDispatcher = field(init=False)
+    service_map: MutableMapping[str, object] = field(init=False)
     services: Mapping[str, object] = field(init=False)
     state: SessionState = field(init=False, default=SessionState.BOOTSTRAP)
     _modules: Dict[SessionState, SessionModule] = field(init=False, default_factory=dict)
@@ -55,6 +56,7 @@ class SessionKernel:
         if not isinstance(dispatcher, AmpersandDispatcher):
             raise TypeError("ampersand service missing from device context")
         self.dispatcher = dispatcher
+        self.service_map = self.context.services
         self.services = dispatcher.services
         self._modules = {}
         self._started_modules = set()

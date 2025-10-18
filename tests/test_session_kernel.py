@@ -63,10 +63,13 @@ def test_kernel_service_wiring_shared_mapping() -> None:
     dispatcher = kernel.dispatcher
     assert dispatcher is kernel.context.get_service("ampersand")
     assert kernel.services["ampersand"] is dispatcher
+    assert kernel.services is dispatcher.services
+    assert kernel.service_map is kernel.context.services
 
     console_service = kernel.context.get_service("console")
     assert isinstance(console_service, ConsoleService)
     assert kernel.services["console"] is console_service
+    assert kernel.service_map["console"] is console_service
 
 
 def test_kernel_step_routes_events_and_updates_state() -> None:
