@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable
 
 import sys
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from scripts.prototypes.ampersand_dispatcher import AmpersandDispatcher
+from scripts.prototypes.ampersand_dispatcher import (
+    AmpersandDispatchContext,
+    AmpersandDispatcher,
+)
 from scripts.prototypes.device_context import ConsoleService, bootstrap_device_context
 from scripts.prototypes.message_editor import SessionContext
 from scripts.prototypes.runtime.ampersand_overrides import BUILTIN_AMPERSAND_OVERRIDES
@@ -34,9 +36,7 @@ def test_chkflags_updates_pause_indicator() -> None:
     before = console_service.device.screen.peek_screen_address(pause_address)
     before_colour = console_service.device.screen.peek_colour_address(colour_address)
 
-    dispatcher.dispatch(
-        "&,52,16,1", payload={"registry": registry, "services": registry.services}
-    )
+    dispatcher.dispatch("&,52,16,1")
 
     after = console_service.device.screen.peek_screen_address(pause_address)
     colour = console_service.device.screen.peek_colour_address(colour_address)
@@ -55,14 +55,7 @@ def test_read0_appends_session_message() -> None:
     session.draft_buffer = ["Line one", "Line two"]
     session.command_buffer = "Greetings"
 
-    result = dispatcher.dispatch(
-        "&,3",
-        payload={
-            "registry": registry,
-            "services": registry.services,
-            "session": session,
-        },
-    )
+    result = dispatcher.dispatch("&,3", payload={"session": session})
 
     summaries = store.list("board")
     assert len(summaries) == 1
@@ -78,13 +71,49 @@ def test_dskdir_uses_payload_fallback_text() -> None:
     registry = dispatcher.registry
 
     fallback = "DIRECTORY\r"
-    result = dispatcher.dispatch(
-        "&,8",
-        payload={
-            "registry": registry,
-            "services": registry.services,
-            "fallback_text": fallback,
-        },
-    )
+    result = dispatcher.dispatch("&,8", payload={"fallback_text": fallback})
 
     assert result.rendered_text == fallback
+
+
+def test_dispatcher_injects_registry_and_services_into_payload() -> None:
+    dispatcher = _build_dispatcher()
+    registry = dispatcher.registry
+    console_service = registry.services["console"]
+    assert isinstance(console_service, ConsoleService)
+
+    pause_address = 0x041E
+    colour_address = 0xD81E
+    before = console_service.device.screen.peek_screen_address(pause_address)
+    before_colour = console_service.device.screen.peek_colour_address(colour_address)
+
+    dispatcher.dispatch("&,52,16,1")
+
+    after = console_service.device.screen.peek_screen_address(pause_address)
+    colour = console_service.device.screen.peek_colour_address(colour_address)
+    assert after != before
+    assert colour != before_colour
+
+    store = MessageStore()
+    registry.register_service("message_store", store)
+
+    session = SessionContext(board_id="board", user_id="bob")
+    session.draft_buffer = ["Payload"]
+    session.command_buffer = "Injected"
+
+    dispatcher.dispatch("&,3", payload={"session": session})
+
+    summaries = store.list("board")
+    assert len(summaries) == 1
+    record = store.fetch("board", summaries[0].message_id)
+    assert record.subject == "Injected"
+    assert session.selected_message_id == record.message_id
+
+    result = dispatcher.dispatch("&,8")
+
+    assert isinstance(result.context, AmpersandDispatchContext)
+    payload = result.context.payload
+    assert isinstance(payload, dict)
+    assert payload["registry"] is registry
+    assert payload["services"] is registry.services
+    assert result.services["console"] is console_service

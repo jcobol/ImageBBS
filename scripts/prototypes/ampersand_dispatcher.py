@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import MutableMapping, Optional, Tuple
+from typing import Mapping, MutableMapping, Optional, Tuple
 
 from .ampersand_registry import AmpersandRegistry, AmpersandResult
 
@@ -73,8 +73,26 @@ class AmpersandDispatcher:
         invocation, remainder = self.parse_invocation(text)
         self._last_invocation = invocation
         self._last_remainder = remainder
-        context = AmpersandDispatchContext(invocation=invocation, payload=payload)
+        merged_payload = self._build_dispatch_payload(payload)
+        context = AmpersandDispatchContext(
+            invocation=invocation, payload=merged_payload
+        )
         return self._registry.dispatch(invocation.routine, context)
+
+    def _build_dispatch_payload(self, payload: object | None) -> object:
+        base_payload: dict[str, object] = {
+            "registry": self.registry,
+            "services": self.services,
+        }
+        if payload is None:
+            return base_payload
+        if isinstance(payload, Mapping):
+            merged_payload = dict(base_payload)
+            merged_payload.update(payload)
+            return merged_payload
+        merged_payload = dict(base_payload)
+        merged_payload["payload"] = payload
+        return merged_payload
 
     def parse_invocation(self, text: str) -> Tuple[AmpersandInvocation, str]:
         """Return the parsed invocation and the unconsumed suffix."""
