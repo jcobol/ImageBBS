@@ -142,3 +142,63 @@ def test_capture_and_restore_roundtrip() -> None:
     assert bytes(buffer.screen_bytes) == original_screen
     assert bytes(buffer.colour_bytes) == expected_original_colour
     assert service.device.transcript_bytes == b""
+
+
+def test_partial_restore_honours_requested_lengths() -> None:
+    console = Console()
+    service = ConsoleService(console)
+
+    screen_address = 0x0580
+    colour_address = service._colour_address_for(screen_address)
+
+    full_screen_length = 0x20
+    full_colour_length = 0x20
+
+    base_screen = bytes((0x30 + i) % 256 for i in range(full_screen_length))
+    base_colour = bytes((0x02 for _ in range(full_colour_length)))
+
+    palette = service.screen.palette
+    expected_base_colour = bytes(
+        _resolve_palette_colour(value, palette) for value in base_colour
+    )
+
+    service.poke_block(
+        screen_address=screen_address,
+        screen_bytes=base_screen,
+        colour_address=colour_address,
+        colour_bytes=base_colour,
+    )
+
+    overlay_screen = bytes((0x70 + i) % 256 for i in range(full_screen_length))
+    overlay_colour = bytes((0x0A for _ in range(full_colour_length)))
+
+    partial_screen_length = 0x0C
+    partial_colour_length = 0x08
+
+    expected_overlay_colour = bytes(
+        _resolve_palette_colour(value, palette)
+        for value in overlay_colour[:partial_colour_length]
+    )
+
+    service.poke_block(
+        screen_address=screen_address,
+        screen_bytes=overlay_screen,
+        screen_length=partial_screen_length,
+        colour_address=colour_address,
+        colour_bytes=overlay_colour,
+        colour_length=partial_colour_length,
+    )
+
+    resulting_screen = _read_screen(service, screen_address, full_screen_length)
+    resulting_colour = _read_colour(service, colour_address, full_colour_length)
+
+    assert resulting_screen[:partial_screen_length] == overlay_screen[:partial_screen_length]
+    assert resulting_screen[partial_screen_length:] == base_screen[partial_screen_length:]
+
+    assert resulting_colour[:partial_colour_length] == expected_overlay_colour
+    assert (
+        resulting_colour[partial_colour_length:]
+        == expected_base_colour[partial_colour_length:]
+    )
+
+    assert service.device.transcript_bytes == b""
