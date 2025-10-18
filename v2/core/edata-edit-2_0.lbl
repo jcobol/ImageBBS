@@ -1,5 +1,5 @@
-' TODO: Use Input Any to get disk data
-' TODO: Use Sliding Input to edit string data in-place
+' Use Input Any to get disk data
+' Use Sliding Input to edit string data in-place
 {alpha:alt}
 {number:0}
 {step:1}
@@ -13,17 +13,14 @@
 {:5}
 	x=rn:gosub {:1}:ed$=""
 {:sub.get_data} ' returns ed$
-	get#2,b$:b$=chr$(asc(b$+n$)):if b$<>r$ then ed$=ed$+b$:goto {:sub.get_data}
+	&,2,2:ed$=a$
 	return
 {number:10}
 {:sub.print_string}
 	for i=1 to len(ed$):z$=mid$(ed$,i,1):a=asc(z$+n$)
+	if z$>="{f1}"then if z$<="{f8}"then print mid$(ft$,a-132,1);:goto {:15}
 	if (a>32 and a<128) or a>159 then print z$;:goto {:15}
 	if a<>34 then print"{rvrs on}"chr$(a+64)"{rvrs off}";:goto {:15}
-' TODO: add f-key translation?
-'	for x=1 to len(an$):a$=mid$(an$,x,1)
-'	if a$>="{f1}"then if a$<="{f8}"then a$=mid$(",:{f5}*?={f6}{f8}",asc(a$)-132,1)
-'	an$=left$(an$,x-1)+a$+mid$(an$,x+1):next:return
 ' quote mark:
 	print z$ chr$(20)z$;
 {number:15}
@@ -40,28 +37,11 @@
 ' exit with:
 ' - tz=1 if b$ differs from ed$
 ' - b$=new string
-{step:2}
-{:112}
-	if len(b$)=32 then gosub {:124}:print "(String at 32 characters.)":return
-{:114}
-	print"{rvrs on} {rvrs off}{left}";:wait 198,1:get a$:a=asc(a$+n$):on -(a=34) goto {:122}:if a=13 then {:124}
-' on -(a=34) goto {:122}:if a=13 then {:124} ' 22 bytes
-' on -(a=34)-2*(a=13) goto {:122}. {:124} ' 24 bytes
-	if (a>32 and a<128) or a>159 then b$=b$+a$:print a$;:goto {:112}
-' 20=delete, 148=insert
-' peek(653)=4: holding ctrl key
-	if (a<>20 and a<>148) or peek(653)=4 then b$=b$+chr$(a):print"{rvrs on}"chr$(a+64)"{rvrs off}";:goto {:112}
-' delete:
-	on len(b$)+1 goto {:114}:b$=left$(b$,len(b$)-1):print a$;:goto {:112}
-{:122}
-' quote:
-	print a$ chr$(20)a$;:b$=b$+a$:goto {:112}
-{:124}
-' erase cursor. tz: flag if data changed, 0=no
-	print " ":tz=-(len(b$)=. or b$<>ed$):if tz=. then b$=ed$:print "(Unchanged.)"
-' otherwise return b$:
-	return
-
+	od$=ed$:pl=.:p$="{rvrs on} {rvrs off}{left}":w$=od$:&,1,32
+	if tr%<1 then b$=od$:ed$=od$:tz=.:return
+	b$=an$:tz=-(b$<>od$)
+	if tz=. then b$=od$:ed$=od$:print "(Unchanged.)":return
+	ed$=b$:return
 {nice:10}
 {:sub.record_info}
 ' display record #, meaningful string about record's purpose [tt$()]
@@ -109,7 +89,7 @@
 	a$=chr$(asc(left$(an$,1)) and 127):on -(a$="q")-2*(a$="l") goto {:1811},{:350}
 	rn=abs(int(val(left$(an$,2)))):if rn<1 or rn>mx then rn=1:goto {:104}
 '	gosub {:5}:b$="":print mid$(str$(rn),2)", "tt$(rn)":":gosub {:sub.print_string}
-	gosub {:sub.record_info}:gosub {:5}:b$="":gosub {:sub.print_string}
+	gosub {:sub.record_info}:gosub {:5}:gosub {:sub.get_data}:b$=ed$:gosub {:sub.print_string}
 	print"{down}Type Changes.  Return When Finished."
 	gosub {:sub.edit_string}:if rn<52 or rn>57 then {:126}
 	x$="Drive":h=254:if lk% then x$="LU":h=10
@@ -135,7 +115,7 @@
 {:350}
 	print "Any key aborts."
 '	for rn=1 to mx:print mid$(str$(rn),2)", "tt$(rn)":":gosub {:5}:gosub {:sub.print_string}
-	for rn=1 to mx:gosub {:sub.record_info}:gosub {:5}:gosub {:sub.print_string}
+	for rn=1 to mx:gosub {:sub.record_info}:gosub {:5}:gosub {:sub.get_data}:gosub {:sub.print_string}
 ' special case for 2nd field, drive #, records 52-57:
 	if x>51 and x<58 then ed$="":gosub {:sub.get_data}:print "Drive: ";:gosub {:sub.print_string}
 	rn=rn+peek(198)*mx:next:rn=1:goto {:104}
