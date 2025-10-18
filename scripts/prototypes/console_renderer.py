@@ -119,30 +119,18 @@ class PetsciiScreen:
             lightbar.underline_color, default_index=0
         )
 
-        screen_colour = self._palette[0]
-        background_colour = self._palette[2]
-        border_colour = self._palette[3]
-
-        for entry in self._vic_register_timeline:
-            value = entry.value
-            if value is None:
-                continue
-            if entry.address == _VIC_REGISTER_SCREEN:
-                screen_colour = value
-            elif entry.address == _VIC_REGISTER_BACKGROUND:
-                background_colour = value
-            elif entry.address == _VIC_REGISTER_BORDER:
-                border_colour = value
-
         self._screen_colour: int = self._resolve_palette_colour(
-            screen_colour, default_index=0
+            self._palette[0], default_index=0
         )
         self._background_colour: int = self._resolve_palette_colour(
-            background_colour, default_index=2
+            self._palette[2], default_index=2
         )
         self._border_colour: int = self._resolve_palette_colour(
-            border_colour, default_index=3
+            self._palette[3], default_index=3
         )
+
+        for entry in self._vic_register_timeline:
+            self._apply_vic_register_default(entry.address, entry.value)
         self._cursor_x: int = 0
         self._cursor_y: int = 0
         self._lowercase_mode = False
@@ -191,6 +179,23 @@ class PetsciiScreen:
         return tuple(self._palette)
 
     @property
+    def resolved_palette_state(self) -> dict[str, object]:
+        """Return the active palette state with resolved hardware colours."""
+
+        reverse_state = {
+            "foreground": self._background_colour,
+            "background": self._screen_colour,
+        }
+        return {
+            "entries": self.palette,
+            "screen": self._screen_colour,
+            "background": self._background_colour,
+            "border": self._border_colour,
+            "underline": self._underline_colour,
+            "reverse": reverse_state,
+        }
+
+    @property
     def cursor_position(self) -> tuple[int, int]:
         """Return the current cursor position as ``(x, y)`` coordinates."""
 
@@ -227,6 +232,33 @@ class PetsciiScreen:
         """Return the border colour."""
 
         return self._border_colour
+
+    def set_screen_colour(self, value: int) -> None:
+        """Update the current screen colour using palette-aware clamping."""
+
+        self._screen_colour = self._resolve_palette_colour(value, default_index=0)
+
+    def set_background_colour(self, value: int) -> None:
+        """Update the current background colour using palette-aware clamping."""
+
+        self._background_colour = self._resolve_palette_colour(value, default_index=2)
+
+    def set_border_colour(self, value: int) -> None:
+        """Update the current border colour using palette-aware clamping."""
+
+        self._border_colour = self._resolve_palette_colour(value, default_index=3)
+
+    def apply_vic_register_write(self, address: int, value: int | None) -> None:
+        """Apply a VIC register update to the palette state."""
+
+        if value is None:
+            return
+        if address == _VIC_REGISTER_SCREEN:
+            self.set_screen_colour(value)
+        elif address == _VIC_REGISTER_BACKGROUND:
+            self.set_background_colour(value)
+        elif address == _VIC_REGISTER_BORDER:
+            self.set_border_colour(value)
 
     @property
     def characters(self) -> tuple[str, ...]:
@@ -343,12 +375,16 @@ class PetsciiScreen:
 
         for y in range(self.height):
             for x in range(self.width):
-                self._chars[y][x] = " "
-                self._colours[y][x] = self._screen_colour
-                self._codes[y][x] = 0x20
-                self._glyph_bank[y][x] = 0
-                self._reverse_flags[y][x] = False
-                self._underline_flags[y][x] = False
+                self._write_cell(
+                    x,
+                    y,
+                    code=0x20,
+                    char=" ",
+                    glyph_bank=0,
+                    colour=self._screen_colour,
+                    reverse=False,
+                    underline=False,
+                )
         self._cursor_x = 0
         self._cursor_y = 0
 
@@ -448,7 +484,7 @@ class PetsciiScreen:
         underline: bool | None = None,
     ) -> None:
         if 0 <= self._cursor_y < self.height and 0 <= self._cursor_x < self.width:
-            bank = glyph_bank if glyph_bank is not None else (1 if self._lowercase_mode else 0)
+            bank = self._resolve_glyph_bank(glyph_bank)
             reverse_flag = self._reverse_mode if reverse is None else reverse
             raw_code = byte & 0xFF
             underline_flag = (
@@ -456,15 +492,19 @@ class PetsciiScreen:
                 if underline is not None
                 else raw_code == self._underline_char
             )
-            colour = (
+            active_colour = (
                 self._underline_colour if underline_flag else self._screen_colour
             )
-            self._chars[self._cursor_y][self._cursor_x] = char
-            self._colours[self._cursor_y][self._cursor_x] = colour
-            self._codes[self._cursor_y][self._cursor_x] = raw_code
-            self._glyph_bank[self._cursor_y][self._cursor_x] = bank
-            self._reverse_flags[self._cursor_y][self._cursor_x] = reverse_flag
-            self._underline_flags[self._cursor_y][self._cursor_x] = underline_flag
+            self._write_cell(
+                self._cursor_x,
+                self._cursor_y,
+                code=raw_code,
+                char=char,
+                glyph_bank=bank,
+                colour=active_colour,
+                reverse=reverse_flag,
+                underline=underline_flag,
+            )
 
     def _clamp_cursor(self) -> None:
         if self._cursor_y < self.height:
@@ -478,12 +518,18 @@ class PetsciiScreen:
         self._glyph_bank.pop(0)
         self._reverse_flags.pop(0)
         self._underline_flags.pop(0)
-        self._chars.append([" " for _ in range(self.width)])
-        self._colours.append([self._screen_colour for _ in range(self.width)])
-        self._codes.append([0x20 for _ in range(self.width)])
-        self._glyph_bank.append([0 for _ in range(self.width)])
-        self._reverse_flags.append([False for _ in range(self.width)])
-        self._underline_flags.append([False for _ in range(self.width)])
+        blank_chars = [" " for _ in range(self.width)]
+        blank_colours = [self._screen_colour for _ in range(self.width)]
+        blank_codes = [0x20 for _ in range(self.width)]
+        blank_bank = [0 for _ in range(self.width)]
+        blank_reverse = [False for _ in range(self.width)]
+        blank_underline = [False for _ in range(self.width)]
+        self._chars.append(blank_chars)
+        self._colours.append(blank_colours)
+        self._codes.append(blank_codes)
+        self._glyph_bank.append(blank_bank)
+        self._reverse_flags.append(blank_reverse)
+        self._underline_flags.append(blank_underline)
         self._cursor_y = self.height - 1
 
     def _translate_character(self, byte: int) -> str:
@@ -514,6 +560,43 @@ class PetsciiScreen:
         if not 0 <= default_index < len(self._palette):
             raise ValueError("default_index must reference a palette entry")
         return self._palette[default_index]
+
+    def _write_cell(
+        self,
+        x: int,
+        y: int,
+        *,
+        code: int,
+        char: str,
+        glyph_bank: int,
+        colour: int,
+        reverse: bool,
+        underline: bool,
+    ) -> None:
+        if not (0 <= x < self.width and 0 <= y < self.height):
+            return
+        resolved_colour = self._resolve_palette_colour(colour, default_index=0)
+        self._chars[y][x] = char
+        self._colours[y][x] = resolved_colour
+        self._codes[y][x] = code & 0xFF
+        self._glyph_bank[y][x] = glyph_bank & 0x01
+        self._reverse_flags[y][x] = bool(reverse)
+        self._underline_flags[y][x] = bool(underline)
+
+    def _resolve_glyph_bank(self, glyph_bank: int | None) -> int:
+        if glyph_bank is not None:
+            return int(glyph_bank) & 0x01
+        return 1 if self._lowercase_mode else 0
+
+    def _apply_vic_register_default(self, address: int, value: int | None) -> None:
+        if value is None:
+            return
+        if address == _VIC_REGISTER_SCREEN:
+            self.set_screen_colour(value)
+        elif address == _VIC_REGISTER_BACKGROUND:
+            self.set_background_colour(value)
+        elif address == _VIC_REGISTER_BORDER:
+            self.set_border_colour(value)
 
 
 class _TracingPetsciiScreen(PetsciiScreen):

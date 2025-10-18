@@ -298,6 +298,8 @@ class Console(Device):
             "reverse_matrix": screen.reverse_matrix,
             "resolved_colour_matrix": screen.resolved_colour_matrix,
             "underline_matrix": screen.underline_matrix,
+            "palette": screen.palette,
+            "resolved_palette": screen.resolved_palette_state,
             "lightbar_bitmaps": screen.lightbar_bitmaps,
             "underline_char": screen.underline_char,
             "underline_colour": screen.underline_colour,
