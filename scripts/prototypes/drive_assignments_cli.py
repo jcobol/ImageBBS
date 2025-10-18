@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import Iterable, List
+from typing import Iterable, List, Mapping
 
 from .device_context import DiskDrive, bootstrap_device_context
 from .setup_config import SetupConfig, load_drive_config
@@ -23,10 +23,16 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def render_assignments(assignments: Iterable[DriveAssignment]) -> list[str]:
+def render_assignments(
+    assignments: Iterable[DriveAssignment],
+    *,
+    ampersand_overrides: Mapping[int, str] | None = None,
+) -> list[str]:
     """Return formatted mapping lines for ``assignments``."""
 
-    context = bootstrap_device_context(assignments)
+    context = bootstrap_device_context(
+        assignments, ampersand_overrides=ampersand_overrides
+    )
     lines: list[str] = ["Configured drive slots:"]
     for assignment in assignments:
         locator = assignment.locator
@@ -51,6 +57,11 @@ def render_assignments(assignments: Iterable[DriveAssignment]) -> list[str]:
             details = describe() if callable(describe) else str(locator)
             mount = f"slot {slot}: {locator.scheme} -> {details}"
         lines.append(mount)
+    if ampersand_overrides:
+        lines.append("")
+        lines.append("Ampersand overrides:")
+        for flag_index, import_path in sorted(ampersand_overrides.items()):
+            lines.append(f"flag {flag_index:#04x} -> {import_path}")
     return lines
 
 
@@ -63,7 +74,9 @@ def main(argv: List[str] | None = None) -> int:
         raise SystemExit(f"configuration file not found: {config_path}")
 
     config: SetupConfig = load_drive_config(config_path)
-    lines = render_assignments(config.drives)
+    lines = render_assignments(
+        config.drives, ampersand_overrides=config.ampersand_overrides
+    )
     print("\n".join(lines))
     return 0
 

@@ -24,7 +24,11 @@ def sample_config(tmp_path: Path) -> Path:
     config_path.write_text(
         "[slots]\n"
         "5 = \"relative_drive\"\n"
-        f"6 = \"{absolute_drive}\"\n",
+        f"6 = \"{absolute_drive}\"\n"
+        "\n"
+        "[ampersand_overrides]\n"
+        "0x04 = \"math:sin\"\n"
+        "21 = \"math:cos\"\n",
         encoding="utf-8",
     )
     return config_path
@@ -62,3 +66,22 @@ def test_cli_rejects_missing_config(tmp_path: Path) -> None:
     missing = tmp_path / "missing.toml"
     with pytest.raises(SystemExit, match="configuration file not found"):
         drive_assignments_cli.main([str(missing)])
+
+
+def test_cli_reports_ampersand_overrides(
+    capsys: pytest.CaptureFixture[str], sample_config: Path
+) -> None:
+    exit_code = drive_assignments_cli.main([str(sample_config)])
+    assert exit_code == 0
+
+    output = capsys.readouterr().out.splitlines()
+    assert "Ampersand overrides:" in output
+
+    section_index = output.index("Ampersand overrides:")
+    override_lines = [
+        line for line in output[section_index + 1 :] if line.strip()
+    ]
+    assert override_lines == [
+        "flag 0x04 -> math:sin",
+        "flag 0x15 -> math:cos",
+    ]
