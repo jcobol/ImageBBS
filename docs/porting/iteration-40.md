@@ -61,6 +61,8 @@ chat buffer swap
 ### Implementation
 - Added address-aware wrappers on `ConsoleService` for pause/abort toggles, idle timer digits, the activity spinner, and the carrier indicator, all routing through the existing `poke_*` entrypoints so host code can mutate the renderer without touching the transcript buffer.【F:scripts/prototypes/device_context.py†L372-L466】
 - Extended `tests/test_console_address_helpers.py` with pytest coverage that exercises the helpers, checks that the transcript bytes remain unchanged, and verifies the expected PETSCII/colour values via `peek_screen_address`/`peek_colour_address`.【F:tests/test_console_address_helpers.py†L1-L102】
+- Introduced `ConsoleRegionBuffer` alongside `capture_region`/`restore_region`/`swap_region` helpers so host integrations can mirror the `tempbott`/`tempcol` swap loops without bespoke copy code, keeping block writes funneled through `Console.poke_block`.【F:scripts/prototypes/device_context.py†L360-L470】
+- Added regression tests that stage representative 240-byte screen spans and 80-byte colour spans, invoke the new swapper, and assert both the buffer and live screen RAM reflect the exchanged payloads while the transcript stays untouched.【F:tests/test_console_span_buffer.py†L1-L86】
 
 ### Usage rationale
 | Helper | Screen RAM touch points | Colour RAM support | Expected usage |

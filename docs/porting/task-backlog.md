@@ -61,3 +61,8 @@
 - [ ] Route the host idle timer refresh through `update_idle_timer_digits` when session scheduling lands, ensuring the colon at `$04df` remains untouched as noted in iteration 40's rationale.【F:docs/porting/iteration-40.md†L66-L72】
 - [ ] Trace which routine fills `tempbott+40` and `var_4078` between buffer swaps so the host can request the same payloads before rotating overlays.【F:docs/porting/iteration-40.md†L48-L49】
 - [ ] Decide whether the host UI should mirror the five-phase `lbl_adca` blink cadence or substitute a standard timer before finalising the masked-pane API.【F:docs/porting/iteration-40.md†L49-L50】
+- [x] Replace the manual chat/sysop block swap loops with a `ConsoleRegionBuffer`
+      helper so 240-byte screen spans and 80-byte colour spans travel through
+      `ConsoleService.swap_region`, keeping transcript handling centralised.【F:docs/porting/iteration-40.md†L8-L16】【F:scripts/prototypes/device_context.py†L360-L470】
+- [ ] Wire the `ConsoleService` indicator helpers (`set_pause_indicator`, `set_abort_indicator`, `set_spinner_glyph`, `set_carrier_indicator`) into the modern runtime once the host UI event loop is available so status toggles reuse the documented API.【F:docs/porting/iteration-40.md†L5-L30】
+- [ ] Route the host idle timer refresh through `update_idle_timer_digits` when session scheduling lands, ensuring the colon at `$04df` remains untouched as noted in iteration 40's rationale.【F:docs/porting/iteration-40.md†L11-L29】
