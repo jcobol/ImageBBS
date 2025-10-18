@@ -55,3 +55,7 @@
 - [x] Extend the sanity CLI to accept a baseline snapshot path and highlight changes relative to the canonical artefact produced during iteration 31.【F:docs/porting/iteration-32.md†L9-L17】
 - [x] Wire `ml_extra_snapshot_guard` into the overlay refresh automation so rescans fail fast when the committed baseline diverges from freshly decoded metadata.【F:scripts/prototypes/ml_extra_refresh_pipeline.py†L1-L77】【F:tests/test_ml_extra_cli.py†L139-L194】
 - [x] Add an opt-in JSON mode or baseline-refresh flag to the snapshot guard so CI jobs can capture machine-readable diffs or bless intentional overlay updates without manual edits.【F:scripts/prototypes/ml_extra_snapshot_guard.py†L24-L105】【F:tests/test_ml_extra_cli.py†L206-L267】
+
+## Host Integration Follow-ups
+- [ ] Wire the `ConsoleService` indicator helpers (`set_pause_indicator`, `set_abort_indicator`, `set_spinner_glyph`, `set_carrier_indicator`) into the modern runtime once the host UI event loop is available so status toggles reuse the documented API.【F:docs/porting/iteration-40.md†L5-L30】
+- [ ] Route the host idle timer refresh through `update_idle_timer_digits` when session scheduling lands, ensuring the colon at `$04df` remains untouched as noted in iteration 40's rationale.【F:docs/porting/iteration-40.md†L11-L29】
