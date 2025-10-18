@@ -1251,14 +1251,35 @@ class DeviceContext:
         channel.write(response + "\r")
         return response
 
-    def read_directory(self, device_name: str, refresh: bool = False) -> Tuple[str, ...]:
+    @staticmethod
+    def drive_device_name(slot: int) -> str:
+        return f"drive{slot}"
+
+    def drive_directory_lines(self, slot: int, *, refresh: bool = False) -> Tuple[str, ...]:
+        device_name = self.drive_device_name(slot)
+        if device_name not in self.devices:
+            raise DeviceError(f"drive slot {slot}: no disk drive registered")
         if refresh or not self.directory_cache[device_name]:
-            response = self.issue_command(15, "$")
-            # Response is "status, listing"; we only care about listing portion.
+            response = self.issue_command(slot, "$")
             parts = response.split(",", maxsplit=3)
-            listing = tuple(parts[1].split("\r")) if len(parts) > 1 else tuple()
+            listing: Tuple[str, ...]
+            if len(parts) > 1 and parts[1]:
+                listing = tuple(parts[1].split("\r"))
+            else:
+                listing = tuple()
             self.directory_cache[device_name] = listing
         return self.directory_cache[device_name]
+
+    def read_directory(self, device_name: str, refresh: bool = False) -> Tuple[str, ...]:
+        if not device_name.startswith("drive"):
+            raise DeviceError(
+                "read_directory expects a Commodore-style drive name; use drive_directory_lines for slots"
+            )
+        try:
+            slot = int(device_name[5:])
+        except ValueError as exc:
+            raise DeviceError(f"{device_name!r} is not a numeric drive slot") from exc
+        return self.drive_directory_lines(slot, refresh=refresh)
 
     def iter_open_channels(self) -> Iterator[ChannelDescriptor]:
         for channel in self.channels.values():
@@ -1290,10 +1311,13 @@ def bootstrap_device_context(
     context.register_console_device()
     context.register_modem_device()
     context.register_ampersand_dispatcher(override_imports=ampersand_overrides)
+    context.register_service("device_context", context)
     for assignment in assignments:
         locator = assignment.locator
         if isinstance(locator, FilesystemDriveLocator):
-            context.register(f"drive{assignment.slot}", DiskDrive(locator.path))
+            device_name = context.drive_device_name(assignment.slot)
+            context.register(device_name, DiskDrive(locator.path))
+            context.open(device_name, assignment.slot, 15)
     return context
 
 
