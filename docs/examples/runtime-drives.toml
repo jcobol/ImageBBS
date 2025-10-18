@@ -1,0 +1,12 @@
+# Example drive configuration for the runtime session CLI.
+# Update the slot paths to point at directories containing ImageBBS assets on your system.
+# Each key under [slots] corresponds to a numeric drive slot that the runtime recognises.
+# Paths may be absolute or relative to where you launch the CLI.
+[slots]
+1 = "./drives/main"
+2 = "./drives/upload"
+
+# Optional ampersand overrides allow you to point a slot at a Python callable
+# that intercepts ampersand commands. Remove this table if you do not need overrides.
+[ampersand_overrides]
+1 = "scripts.prototypes.runtime.ampersand_overrides:handle_chkflags"
