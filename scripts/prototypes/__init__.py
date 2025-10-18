@@ -29,6 +29,7 @@ from .message_editor import (
 )
 from .runtime.main_menu import MainMenuEvent, MainMenuModule, MenuCommand, MenuState
 from .runtime.message_store import MessageRecord, MessageStore, MessageSummary
+from .runtime.session_runner import SessionRunner
 from .session_kernel import SessionKernel, SessionModule, SessionState
 from .setup_defaults import (
     BoardStatistics,
@@ -100,6 +101,7 @@ __all__ = [
     "MessageRecord",
     "MessageStore",
     "MessageSummary",
+    "SessionRunner",
     "Modem",
     "LoopbackModemTransport",
     "ModemTransport",
