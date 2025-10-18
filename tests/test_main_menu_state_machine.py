@@ -8,6 +8,7 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 from scripts.prototypes import MessageEditor, SessionKernel, SessionState
 from scripts.prototypes.device_context import ConsoleService
 from scripts.prototypes.runtime.main_menu import MainMenuEvent, MainMenuModule
+from scripts.prototypes.runtime.sysop_options import SysopOptionsModule
 
 
 def _bootstrap_kernel() -> tuple[SessionKernel, MainMenuModule]:
@@ -73,6 +74,7 @@ def test_main_menu_routes_to_sysop_options() -> None:
     state = kernel.step(MainMenuEvent.SELECTION, "SY")
 
     assert state is SessionState.SYSOP_OPTIONS
+    assert isinstance(kernel.module, SysopOptionsModule)
     console_service = kernel.services["console"]
     assert isinstance(console_service, ConsoleService)
     assert module.MENU_HEADER_SLOT in console_service.macro_glyphs
