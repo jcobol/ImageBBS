@@ -27,7 +27,8 @@ from .message_editor import (
     SessionContext,
     TransitionError,
 )
-from .runtime import MainMenuEvent, MainMenuModule, MenuCommand, MenuState
+from .runtime.main_menu import MainMenuEvent, MainMenuModule, MenuCommand, MenuState
+from .runtime.message_store import MessageRecord, MessageStore, MessageSummary
 from .session_kernel import SessionKernel, SessionModule, SessionState
 from .setup_defaults import (
     BoardStatistics,
@@ -96,6 +97,9 @@ __all__ = [
     "MenuCommand",
     "MenuState",
     "MessageEditor",
+    "MessageRecord",
+    "MessageStore",
+    "MessageSummary",
     "Modem",
     "LoopbackModemTransport",
     "ModemTransport",

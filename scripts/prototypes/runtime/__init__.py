@@ -1,10 +1,9 @@
 """Runtime modules that reproduce ImageBBS session dispatchers."""
 
-from .main_menu import MainMenuEvent, MainMenuModule, MenuCommand, MenuState
+from .message_store import MessageRecord, MessageStore, MessageSummary
 
 __all__ = [
-    "MainMenuEvent",
-    "MainMenuModule",
-    "MenuCommand",
-    "MenuState",
+    "MessageRecord",
+    "MessageStore",
+    "MessageSummary",
 ]
