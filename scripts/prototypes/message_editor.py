@@ -3,9 +3,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, TYPE_CHECKING
 
 from .ampersand_registry import AmpersandRegistry, AmpersandResult
+
+from .session_kernel import SessionState
+
+if TYPE_CHECKING:
+    from .session_kernel import SessionKernel
 
 
 class EditorState(Enum):
@@ -183,6 +188,28 @@ class MessageEditor:
         elif fallback_text is not None:
             session.push_output(fallback_text)
         return result
+
+    # SessionModule protocol -------------------------------------------------
+
+    def start(self, kernel: "SessionKernel") -> SessionState:
+        """Bind the editor to the kernel's ampersand registry."""
+
+        self.ampersand_registry = kernel.dispatcher.registry
+        self.state = EditorState.INTRO
+        return SessionState.ACTIVE
+
+    def handle_event(
+        self,
+        kernel: "SessionKernel",
+        event: Event,
+        session: SessionContext,
+    ) -> SessionState:
+        """Route ``event`` through :meth:`dispatch` and translate kernel state."""
+
+        next_state = self.dispatch(event, session)
+        if next_state is EditorState.EXIT:
+            return SessionState.COMPLETED
+        return SessionState.ACTIVE
 
 
 __all__ = [

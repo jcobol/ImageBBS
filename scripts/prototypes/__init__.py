@@ -27,6 +27,7 @@ from .message_editor import (
     SessionContext,
     TransitionError,
 )
+from .session_kernel import SessionKernel, SessionModule, SessionState
 from .setup_defaults import (
     BoardStatistics,
     ChatModeMessages,
@@ -99,6 +100,9 @@ __all__ = [
     "GlyphMatrix",
     "PrimeTimeWindow",
     "SessionContext",
+    "SessionKernel",
+    "SessionModule",
+    "SessionState",
     "SetupDefaults",
     "SysopProfile",
     "derive_drive_inventory",
