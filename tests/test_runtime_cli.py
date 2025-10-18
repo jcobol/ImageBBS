@@ -47,17 +47,14 @@ def test_create_runner_applies_configuration_and_persistence(tmp_path: Path) -> 
         )
     )
 
-    load_path = tmp_path / "messages.json"
-    save_path = tmp_path / "messages.out.json"
+    messages_path = tmp_path / "messages.json"
 
     args = parse_args(
         [
             "--drive-config",
             str(config_path),
-            "--message-store-load",
-            str(load_path),
-            "--message-store-save",
-            str(save_path),
+            "--messages-path",
+            str(messages_path),
         ]
     )
 
@@ -74,9 +71,11 @@ def test_create_runner_applies_configuration_and_persistence(tmp_path: Path) -> 
     services = runner.editor_context.services
     assert services is not None
     options = services.get("message_store_persistence")
-    assert options == {"load_path": load_path, "save_path": save_path}
+    assert options == {"path": messages_path}
     assert runner.editor_context.board_id
     assert runner.editor_context.user_id
+    assert runner.message_store_path == messages_path
+    assert runner.editor_context.store is runner.message_store
 
 
 def test_listen_session_serves_banner_and_exits_cleanly() -> None:

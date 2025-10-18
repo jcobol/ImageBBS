@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Mapping
 
 from ..device_context import ConsoleService
@@ -12,6 +13,7 @@ from ..session_kernel import SessionKernel, SessionState
 from ..setup_defaults import SetupDefaults
 from .file_transfers import FileTransferEvent
 from .main_menu import MainMenuModule, MainMenuEvent
+from .message_store import MessageStore
 from .sysop_options import SysopOptionsEvent
 
 
@@ -24,6 +26,8 @@ class SessionRunner:
     board_id: str = "main"
     user_id: str = "sysop"
     session_context: SessionContext | None = None
+    message_store: MessageStore = field(default_factory=MessageStore)
+    message_store_path: Path | None = None
 
     kernel: SessionKernel = field(init=False)
     console: ConsoleService = field(init=False)
@@ -49,6 +53,13 @@ class SessionRunner:
     )
 
     def __post_init__(self) -> None:
+        if (
+            getattr(self.main_menu_module, "message_editor_factory", None)
+            is MessageEditor
+        ):
+            self.main_menu_module.message_editor_factory = (
+                lambda store=self.message_store: MessageEditor(store=store)
+            )
         self.kernel = SessionKernel(module=self.main_menu_module, defaults=self.defaults)
         console = self.kernel.services.get("console")
         if not isinstance(console, ConsoleService):
@@ -59,6 +70,7 @@ class SessionRunner:
             if isinstance(self.session_context, SessionContext)
             else SessionContext(board_id=self.board_id, user_id=self.user_id)
         )
+        self._editor_context.store = self.message_store
         self._enter_state(self.kernel.state)
 
     # Public API ---------------------------------------------------------

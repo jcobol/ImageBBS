@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from typing import Dict, Iterable, List, MutableMapping, Optional, Tuple
+from typing import Dict, Iterable, Iterator, List, MutableMapping, Optional, Tuple
 
 
 @dataclass(frozen=True)
@@ -138,6 +138,14 @@ class MessageStore:
         )
         self._messages[board_id][message_id] = updated
         return updated
+
+    def iter_records(self) -> Iterator[MessageRecord]:
+        """Yield all records in board/message order."""
+
+        for board_id in sorted(self._messages):
+            board_messages = self._messages[board_id]
+            for message_id in sorted(board_messages):
+                yield board_messages[message_id]
 
     # Internal helpers -------------------------------------------------
 
