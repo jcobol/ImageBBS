@@ -13,7 +13,17 @@ from collections import defaultdict, deque
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Deque, Dict, Iterable, Iterator, Mapping, Optional, Tuple
+from typing import (
+    TYPE_CHECKING,
+    Deque,
+    Dict,
+    Iterable,
+    Iterator,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+)
 
 if TYPE_CHECKING:
     from .ampersand_dispatcher import AmpersandDispatcher
@@ -168,6 +178,47 @@ class Console(Device):
         self.output.append(text)
         self._transcript.extend(payload)
         self._screen.write(payload)
+
+    def poke_screen_byte(self, address: int, value: int) -> None:
+        """Write ``value`` to the PETSCII screen byte stored at ``address``."""
+
+        self._screen.poke_screen_address(address, value)
+
+    def poke_colour_byte(self, address: int, value: int) -> None:
+        """Write ``value`` to the colour RAM byte stored at ``address``."""
+
+        self._screen.poke_colour_address(address, value)
+
+    def poke_block(
+        self,
+        *,
+        screen_address: int | None = None,
+        screen_bytes: Sequence[int] | Iterable[int] | bytes | bytearray | None = None,
+        colour_address: int | None = None,
+        colour_bytes: Sequence[int] | Iterable[int] | bytes | bytearray | None = None,
+    ) -> None:
+        """Apply a block transfer against screen and/or colour RAM.
+
+        The arguments mirror the overlay's expectations when streaming blocks into
+        ``$0400`` and ``$d800``.  ``screen_bytes`` and ``colour_bytes`` accept any
+        iterable returning integers in ``0-255`` or raw ``bytes``/``bytearray``
+        payloads.  At least one of the payload arguments must be provided.
+        """
+
+        if screen_bytes is None and colour_bytes is None:
+            raise ValueError("poke_block requires screen_bytes and/or colour_bytes")
+
+        if screen_bytes is not None:
+            if screen_address is None:
+                raise ValueError("screen_address must be provided with screen_bytes")
+            for offset, byte in enumerate(bytes(screen_bytes)):
+                self._screen.poke_screen_address(screen_address + offset, byte)
+
+        if colour_bytes is not None:
+            if colour_address is None:
+                raise ValueError("colour_address must be provided with colour_bytes")
+            for offset, byte in enumerate(bytes(colour_bytes)):
+                self._screen.poke_colour_address(colour_address + offset, byte)
 
     @property
     def screen(self) -> PetsciiScreen:
@@ -415,6 +466,33 @@ class ConsoleService:
         """Proxy writes through to the underlying console device."""
 
         self.device.write(data)
+
+    def poke_screen_byte(self, address: int, value: int) -> None:
+        """Write a raw PETSCII code to ``address`` in screen RAM."""
+
+        self.device.poke_screen_byte(address, value)
+
+    def poke_colour_byte(self, address: int, value: int) -> None:
+        """Write a colour attribute to ``address`` in colour RAM."""
+
+        self.device.poke_colour_byte(address, value)
+
+    def poke_block(
+        self,
+        *,
+        screen_address: int | None = None,
+        screen_bytes: Sequence[int] | Iterable[int] | bytes | bytearray | None = None,
+        colour_address: int | None = None,
+        colour_bytes: Sequence[int] | Iterable[int] | bytes | bytearray | None = None,
+    ) -> None:
+        """Apply a block transfer to screen and/or colour RAM."""
+
+        self.device.poke_block(
+            screen_address=screen_address,
+            screen_bytes=screen_bytes,
+            colour_address=colour_address,
+            colour_bytes=colour_bytes,
+        )
 
     def push_macro_slot(self, slot: int) -> GlyphRun | None:
         """Render a macro by slot identifier and mirror it to the console."""
