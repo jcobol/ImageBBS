@@ -8,6 +8,7 @@ from typing import Dict, Mapping, MutableMapping, Protocol, Sequence, Set
 
 from .ampersand_dispatcher import AmpersandDispatcher
 from .device_context import DeviceContext, bootstrap_device_context
+from .runtime.ampersand_overrides import BUILTIN_AMPERSAND_OVERRIDES
 from .setup_defaults import DriveAssignment, SetupDefaults
 
 
@@ -51,7 +52,13 @@ class SessionKernel:
 
     def __post_init__(self) -> None:
         assignments: Sequence[DriveAssignment] = self.defaults.active_drives
-        self.context = bootstrap_device_context(assignments)
+        runtime_overrides = dict(BUILTIN_AMPERSAND_OVERRIDES)
+        configured_overrides = getattr(self.defaults, "ampersand_overrides", None)
+        if isinstance(configured_overrides, Mapping):
+            runtime_overrides.update(configured_overrides)
+        self.context = bootstrap_device_context(
+            assignments, ampersand_overrides=runtime_overrides
+        )
         dispatcher = self.context.get_service("ampersand")
         if not isinstance(dispatcher, AmpersandDispatcher):
             raise TypeError("ampersand service missing from device context")
