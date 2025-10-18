@@ -1198,10 +1198,27 @@ class DeviceContext:
         self.register_service(service.name, service)
         return service
 
-    def register_modem_device(self, modem: Modem | None = None) -> Modem:
+    def register_modem_device(
+        self,
+        modem: Modem | None = None,
+        *,
+        transport: ModemTransport | None = None,
+    ) -> Modem:
         """Register a modem device and expose it as a service."""
 
-        device = modem or Modem()
+        if modem is not None and transport is not None:
+            raise ValueError("provide either modem or transport, not both")
+
+        device = modem
+        if device is None:
+            device = Modem(transport=transport) if transport is not None else Modem()
+        elif transport is not None:
+            device.transport = transport
+
+        previous = self.devices.get(device.name)
+        if isinstance(previous, Modem) and previous is not device:
+            previous.close()
+
         self.register(device.name, device)
         self.register_service(device.name, device)
         return device
