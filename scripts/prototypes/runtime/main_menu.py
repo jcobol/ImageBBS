@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Iterable, Optional
+from typing import ClassVar, Iterable, Mapping, Optional
 
 from ..ampersand_registry import AmpersandRegistry
 from ..device_context import ConsoleService
@@ -50,6 +50,13 @@ class MainMenuModule:
     MENU_PROMPT_SLOT = 0x09
     INVALID_SELECTION_SLOT = 0x0D
 
+    _COMMAND_TRANSITIONS: ClassVar[Mapping[MenuCommand, SessionState]] = {
+        MenuCommand.MESSAGE_BASE: SessionState.MESSAGE_EDITOR,
+        MenuCommand.FILE_TRANSFERS: SessionState.FILE_TRANSFERS,
+        MenuCommand.SYSOP: SessionState.SYSOP_OPTIONS,
+        MenuCommand.EXIT: SessionState.EXIT,
+    }
+
     _MESSAGE_CODES: Iterable[str] = frozenset({
         "EM",
         "MF",
@@ -86,8 +93,7 @@ class MainMenuModule:
         if self.message_editor_factory is not None:
             kernel.register_module(SessionState.MESSAGE_EDITOR, self.message_editor_factory())
         self.state = MenuState.INTRO
-        self._render_macro(self.MENU_HEADER_SLOT)
-        self._render_macro(self.MENU_PROMPT_SLOT)
+        self._render_intro()
         return SessionState.MAIN_MENU
 
     def handle_event(
@@ -99,23 +105,24 @@ class MainMenuModule:
         """Render macros and translate selection text to :class:`SessionState`."""
 
         if event is MainMenuEvent.ENTER:
-            self._render_macro(self.MENU_HEADER_SLOT)
-            self._render_macro(self.MENU_PROMPT_SLOT)
+            self._render_intro()
             self.state = MenuState.READY
             return SessionState.MAIN_MENU
 
         if event is MainMenuEvent.SELECTION:
+            if self.state is not MenuState.READY:
+                self._render_intro()
+                return SessionState.MAIN_MENU
             command = self._parse_selection(selection)
-            if command is MenuCommand.MESSAGE_BASE:
-                return SessionState.MESSAGE_EDITOR
-            if command is MenuCommand.FILE_TRANSFERS:
-                return SessionState.FILE_TRANSFERS
-            if command is MenuCommand.SYSOP:
-                return SessionState.SYSOP_OPTIONS
-            if command is MenuCommand.EXIT:
-                return SessionState.EXIT
             if command is MenuCommand.UNKNOWN:
                 self._render_macro(self.INVALID_SELECTION_SLOT)
+                return SessionState.MAIN_MENU
+
+            next_state = self._COMMAND_TRANSITIONS.get(command, SessionState.MAIN_MENU)
+            if next_state is SessionState.EXIT:
+                return SessionState.EXIT
+            if next_state is not SessionState.MAIN_MENU:
+                return next_state
             return SessionState.MAIN_MENU
 
         raise ValueError(f"unsupported main-menu event: {event!r}")
@@ -149,3 +156,15 @@ class MainMenuModule:
             raise RuntimeError("console service is unavailable")
         self._console.push_macro_slot(slot)
         self.rendered_slots.append(slot)
+
+    def _render_intro(self) -> None:
+        self._render_macro(self.MENU_HEADER_SLOT)
+        self._render_macro(self.MENU_PROMPT_SLOT)
+
+
+__all__ = [
+    "MainMenuEvent",
+    "MainMenuModule",
+    "MenuCommand",
+    "MenuState",
+]
