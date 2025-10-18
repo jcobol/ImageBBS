@@ -196,7 +196,7 @@ class MessageEditor:
 
         self.ampersand_registry = kernel.dispatcher.registry
         self.state = EditorState.INTRO
-        return SessionState.ACTIVE
+        return SessionState.MESSAGE_EDITOR
 
     def handle_event(
         self,
@@ -208,8 +208,8 @@ class MessageEditor:
 
         next_state = self.dispatch(event, session)
         if next_state is EditorState.EXIT:
-            return SessionState.COMPLETED
-        return SessionState.ACTIVE
+            return SessionState.MAIN_MENU
+        return SessionState.MESSAGE_EDITOR
 
 
 __all__ = [

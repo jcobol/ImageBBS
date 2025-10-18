@@ -25,7 +25,9 @@ from scripts.prototypes.message_editor import Event
 class StubModule:
     """Simple module implementation for kernel tests."""
 
-    responses: List[SessionState] = field(default_factory=lambda: [SessionState.ACTIVE])
+    responses: List[SessionState] = field(
+        default_factory=lambda: [SessionState.MAIN_MENU]
+    )
     handled_events: List[Tuple[object, tuple, dict]] = field(default_factory=list)
     started: bool = False
 
@@ -44,18 +46,18 @@ class StubModule:
 
 
 def test_kernel_initialises_with_stub_defaults() -> None:
-    module = StubModule(responses=[SessionState.ACTIVE])
+    module = StubModule(responses=[SessionState.MAIN_MENU])
     kernel = SessionKernel(module=module)
 
     assert module.started is True
     assert isinstance(kernel.context, DeviceContext)
     stub_defaults = SetupDefaults.stub()
     assert kernel.defaults.board_name == stub_defaults.board_name
-    assert kernel.state is SessionState.ACTIVE
+    assert kernel.state is SessionState.MAIN_MENU
 
 
 def test_kernel_service_wiring_shared_mapping() -> None:
-    module = StubModule(responses=[SessionState.ACTIVE])
+    module = StubModule(responses=[SessionState.MAIN_MENU])
     kernel = SessionKernel(module=module)
 
     dispatcher = kernel.dispatcher
@@ -68,19 +70,29 @@ def test_kernel_service_wiring_shared_mapping() -> None:
 
 
 def test_kernel_step_routes_events_and_updates_state() -> None:
-    module = StubModule(
-        responses=[SessionState.ACTIVE, SessionState.ACTIVE, SessionState.COMPLETED]
+    primary = StubModule(
+        responses=[SessionState.MAIN_MENU, SessionState.MESSAGE_EDITOR, SessionState.EXIT]
     )
-    kernel = SessionKernel(module=module)
+    kernel = SessionKernel(module=primary)
+    secondary = StubModule(
+        responses=[SessionState.MESSAGE_EDITOR, SessionState.MAIN_MENU]
+    )
+    kernel.register_module(SessionState.MESSAGE_EDITOR, secondary)
 
-    state = kernel.step("noop")
-    assert state is SessionState.ACTIVE
+    state = kernel.step("launch")
+    assert state is SessionState.MESSAGE_EDITOR
+    assert kernel.module is secondary
+
+    state = kernel.step("return")
+    assert state is SessionState.MAIN_MENU
+    assert kernel.module is primary
 
     state = kernel.step("terminate")
-    assert state is SessionState.COMPLETED
-    assert kernel.state is SessionState.COMPLETED
-    assert module.handled_events[0][0] == "noop"
-    assert module.handled_events[1][0] == "terminate"
+    assert state is SessionState.EXIT
+    assert kernel.state is SessionState.EXIT
+    assert primary.handled_events[0][0] == "launch"
+    assert secondary.handled_events[0][0] == "return"
+    assert primary.handled_events[1][0] == "terminate"
 
 
 def test_message_editor_module_completes_session() -> None:
@@ -89,9 +101,9 @@ def test_message_editor_module_completes_session() -> None:
     session = SessionContext(board_id="123", user_id="abc")
 
     state = kernel.step(Event.ENTER, session)
-    assert state is SessionState.ACTIVE
+    assert state is SessionState.MESSAGE_EDITOR
 
     session.current_message = "Q"
     state = kernel.step(Event.COMMAND_SELECTED, session)
-    assert state is SessionState.COMPLETED
-    assert kernel.state is SessionState.COMPLETED
+    assert state is SessionState.MAIN_MENU
+    assert kernel.state is SessionState.MAIN_MENU

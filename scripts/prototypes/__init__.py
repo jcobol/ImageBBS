@@ -27,6 +27,7 @@ from .message_editor import (
     SessionContext,
     TransitionError,
 )
+from .runtime import MainMenuEvent, MainMenuModule, MenuCommand, MenuState
 from .session_kernel import SessionKernel, SessionModule, SessionState
 from .setup_defaults import (
     BoardStatistics,
@@ -89,7 +90,11 @@ __all__ = [
     "DiskDrive",
     "EditorState",
     "Event",
+    "MainMenuEvent",
+    "MainMenuModule",
     "LogicalChannel",
+    "MenuCommand",
+    "MenuState",
     "MessageEditor",
     "Modem",
     "LoopbackModemTransport",
