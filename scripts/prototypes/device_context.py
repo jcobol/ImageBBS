@@ -235,6 +235,54 @@ class Console(Device):
             for offset, byte in enumerate(payload):
                 self._screen.poke_colour_address(colour_address + offset, byte)
 
+    def peek_block(
+        self,
+        *,
+        screen_address: int | None = None,
+        screen_length: int | None = None,
+        colour_address: int | None = None,
+        colour_length: int | None = None,
+    ) -> tuple[bytes | None, bytes | None]:
+        """Return screen and/or colour RAM spans without mutating the console."""
+
+        if screen_length is None and colour_length is None:
+            raise ValueError("peek_block requires screen_length and/or colour_length")
+
+        if screen_length is not None and screen_length < 0:
+            raise ValueError("screen_length must be non-negative")
+        if colour_length is not None and colour_length < 0:
+            raise ValueError("colour_length must be non-negative")
+
+        screen_payload: bytes | None = None
+        colour_payload: bytes | None = None
+        screen = self._screen
+
+        if screen_length:
+            if screen_address is None:
+                raise ValueError(
+                    "screen_address must be provided to peek a screen span"
+                )
+            screen_payload = bytes(
+                screen.peek_screen_address(screen_address + offset)
+                for offset in range(screen_length)
+            )
+        elif screen_length == 0:
+            screen_payload = b""
+
+        if colour_length:
+            if colour_address is None:
+                raise ValueError(
+                    "colour_address must be provided to peek a colour span"
+                )
+            colour_payload = bytes(
+                screen.peek_colour_address(colour_address + offset)
+                for offset in range(colour_length)
+            )
+        elif colour_length == 0:
+            colour_payload = b""
+
+        return screen_payload, colour_payload
+
     @property
     def screen(self) -> PetsciiScreen:
         """Return the backing PETSCII screen buffer."""
@@ -512,25 +560,25 @@ class ConsoleService:
     ) -> None:
         """Copy live screen/colour bytes into ``buffer`` without mutating RAM."""
 
-        screen = self.screen
+        screen_bytes, colour_bytes = self.peek_block(
+            screen_address=screen_address if buffer.screen_length else None,
+            screen_length=buffer.screen_length if buffer.screen_length else 0,
+            colour_address=colour_address if buffer.colour_length else None,
+            colour_length=buffer.colour_length if buffer.colour_length else 0,
+        )
+
         if buffer.screen_length:
-            if screen_address is None:
+            if screen_bytes is None:
                 raise ValueError(
                     "screen_address must be provided to capture a screen span"
                 )
-            buffer.screen_bytes[:] = bytes(
-                screen.peek_screen_address(screen_address + offset)
-                for offset in range(buffer.screen_length)
-            )
+            buffer.screen_bytes[:] = screen_bytes
         if buffer.colour_length:
-            if colour_address is None:
+            if colour_bytes is None:
                 raise ValueError(
                     "colour_address must be provided to capture a colour span"
                 )
-            buffer.colour_bytes[:] = bytes(
-                screen.peek_colour_address(colour_address + offset)
-                for offset in range(buffer.colour_length)
-            )
+            buffer.colour_bytes[:] = colour_bytes
 
     def restore_region(
         self,
@@ -548,29 +596,13 @@ class ConsoleService:
         if not buffer:
             raise ValueError("buffer does not contain screen or colour spans")
 
-        screen_payload: bytearray | None = None
-        colour_payload: bytearray | None = None
-
-        if buffer.screen_length:
-            if screen_address is None:
-                raise ValueError(
-                    "screen_address must be provided to restore a screen span"
-                )
-            screen_payload = buffer.screen_bytes
-        if buffer.colour_length:
-            if colour_address is None:
-                raise ValueError(
-                    "colour_address must be provided to restore a colour span"
-                )
-            colour_payload = buffer.colour_bytes
-
         self.poke_block(
-            screen_address=screen_address if screen_payload is not None else None,
-            screen_bytes=screen_payload,
-            screen_length=buffer.screen_length if screen_payload is not None else None,
-            colour_address=colour_address if colour_payload is not None else None,
-            colour_bytes=colour_payload,
-            colour_length=buffer.colour_length if colour_payload is not None else None,
+            screen_address=screen_address if buffer.screen_length else None,
+            screen_bytes=buffer.screen_bytes if buffer.screen_length else None,
+            screen_length=buffer.screen_length if buffer.screen_length else None,
+            colour_address=colour_address if buffer.colour_length else None,
+            colour_bytes=buffer.colour_bytes if buffer.colour_length else None,
+            colour_length=buffer.colour_length if buffer.colour_length else None,
         )
 
     def swap_region(
@@ -589,27 +621,20 @@ class ConsoleService:
         if not buffer:
             raise ValueError("buffer does not contain screen or colour spans")
 
-        screen_snapshot: bytes | None = None
-        colour_snapshot: bytes | None = None
-        screen = self.screen
+        screen_snapshot, colour_snapshot = self.peek_block(
+            screen_address=screen_address if buffer.screen_length else None,
+            screen_length=buffer.screen_length if buffer.screen_length else 0,
+            colour_address=colour_address if buffer.colour_length else None,
+            colour_length=buffer.colour_length if buffer.colour_length else 0,
+        )
 
-        if buffer.screen_length:
-            if screen_address is None:
-                raise ValueError(
-                    "screen_address must be provided to swap a screen span"
-                )
-            screen_snapshot = bytes(
-                screen.peek_screen_address(screen_address + offset)
-                for offset in range(buffer.screen_length)
+        if buffer.screen_length and screen_snapshot is None:
+            raise ValueError(
+                "screen_address must be provided to swap a screen span"
             )
-        if buffer.colour_length:
-            if colour_address is None:
-                raise ValueError(
-                    "colour_address must be provided to swap a colour span"
-                )
-            colour_snapshot = bytes(
-                screen.peek_colour_address(colour_address + offset)
-                for offset in range(buffer.colour_length)
+        if buffer.colour_length and colour_snapshot is None:
+            raise ValueError(
+                "colour_address must be provided to swap a colour span"
             )
 
         self.poke_block(
@@ -674,6 +699,23 @@ class ConsoleService:
             screen_length=screen_length,
             colour_address=colour_address,
             colour_bytes=colour_bytes,
+            colour_length=colour_length,
+        )
+
+    def peek_block(
+        self,
+        *,
+        screen_address: int | None = None,
+        screen_length: int | None = None,
+        colour_address: int | None = None,
+        colour_length: int | None = None,
+    ) -> tuple[bytes | None, bytes | None]:
+        """Return screen and/or colour RAM spans without mutating the renderer."""
+
+        return self.device.peek_block(
+            screen_address=screen_address,
+            screen_length=screen_length,
+            colour_address=colour_address,
             colour_length=colour_length,
         )
 

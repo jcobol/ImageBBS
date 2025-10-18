@@ -37,6 +37,61 @@ def _read_colour(service: ConsoleService, address: int, length: int) -> bytes:
     )
 
 
+def test_peek_block_snapshots_masked_pane_span() -> None:
+    console = Console()
+    service = ConsoleService(console)
+
+    screen_address = 0x0770
+    colour_address = 0xDB70
+    span_length = 0x28
+
+    original_screen = bytes((0x60 + i) % 256 for i in range(span_length))
+    original_colour = bytes((i % 16) for i in range(span_length))
+
+    service.poke_block(
+        screen_address=screen_address,
+        screen_bytes=original_screen,
+        colour_address=colour_address,
+        colour_bytes=original_colour,
+    )
+
+    expected_screen = _read_screen(service, screen_address, span_length)
+    expected_colour = _read_colour(service, colour_address, span_length)
+
+    captured_screen, captured_colour = service.peek_block(
+        screen_address=screen_address,
+        screen_length=span_length,
+        colour_address=colour_address,
+        colour_length=span_length,
+    )
+
+    assert captured_screen == expected_screen
+    assert captured_colour == expected_colour
+
+    mutated_screen = bytes((0x10 + i) % 256 for i in range(span_length))
+    mutated_colour = bytes(((i + 7) % 16) for i in range(span_length))
+
+    service.poke_block(
+        screen_address=screen_address,
+        screen_bytes=mutated_screen,
+        colour_address=colour_address,
+        colour_bytes=mutated_colour,
+    )
+
+    refreshed_screen, refreshed_colour = service.peek_block(
+        screen_address=screen_address,
+        screen_length=span_length,
+        colour_address=colour_address,
+        colour_length=span_length,
+    )
+
+    assert refreshed_screen == _read_screen(service, screen_address, span_length)
+    assert refreshed_colour == _read_colour(service, colour_address, span_length)
+    assert captured_screen == expected_screen
+    assert captured_colour == expected_colour
+    assert service.device.transcript_bytes == b""
+
+
 def test_swap_region_exchanges_screen_and_colour_payloads() -> None:
     console = Console()
     service = ConsoleService(console)
