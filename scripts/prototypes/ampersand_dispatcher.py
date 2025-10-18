@@ -1,6 +1,7 @@
 """High-level ampersand dispatcher that mirrors the ImageBBS wedge."""
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import MutableMapping, Optional, Tuple
 
@@ -96,8 +97,7 @@ class AmpersandDispatcher:
 
         start_expression = 0
 
-        routine_literal, index = self._read_literal(text, index)
-        routine = self._coerce_byte(routine_literal)
+        routine, index = self._consume_byte_expression(text, index)
 
         argument_x = 0
         argument_y = 0
@@ -105,13 +105,11 @@ class AmpersandDispatcher:
         index = self._skip_whitespace(text, index)
         if index < length and text[index] == ",":
             index += 1
-            literal, index = self._read_literal(text, index)
-            argument_x = self._coerce_byte(literal)
+            argument_x, index = self._consume_byte_expression(text, index)
             index = self._skip_whitespace(text, index)
             if index < length and text[index] == ",":
                 index += 1
-                literal, index = self._read_literal(text, index)
-                argument_y = self._coerce_byte(literal)
+                argument_y, index = self._consume_byte_expression(text, index)
 
         expression = text[start_expression:index]
         remainder = text[index:]
@@ -123,16 +121,43 @@ class AmpersandDispatcher:
         )
         return invocation, remainder
 
-    def _read_literal(self, text: str, index: int) -> Tuple[str, int]:
+    def _consume_byte_expression(self, text: str, index: int) -> Tuple[int, int]:
+        expression, index = self._read_expression(text, index)
+        value = self._evaluate_numeric_expression(expression)
+        return self._clamp_byte(value), index
+
+    def _read_expression(self, text: str, index: int) -> Tuple[str, int]:
         length = len(text)
         index = self._skip_whitespace(text, index)
         start = index
-        while index < length and text[index] not in ",:\r\n\t ":
+        last_non_space = start - 1
+        depth = 0
+
+        while index < length:
+            char = text[index]
+            if char in ",:" and depth == 0:
+                break
+            if char in "\r\n":
+                break
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+                if depth < 0:
+                    raise ValueError("ampersand expression has unmatched ')'")
+            if not char.isspace():
+                last_non_space = index
             index += 1
-        if start == index:
+
+        if depth != 0:
+            raise ValueError("ampersand expression has unmatched '('")
+
+        if last_non_space < start:
             raise ValueError("ampersand expression missing numeric literal")
-        literal = text[start:index]
-        return literal, index
+
+        expression = text[start : last_non_space + 1]
+        index = self._skip_whitespace(text, index)
+        return expression, index
 
     def _skip_whitespace(self, text: str, index: int) -> int:
         length = len(text)
@@ -140,16 +165,175 @@ class AmpersandDispatcher:
             index += 1
         return index
 
-    def _coerce_byte(self, literal: str) -> int:
-        text = literal.strip()
-        if not text:
-            raise ValueError("ampersand arguments must not be empty")
-        base = 16 if text.lower().startswith("0x") else 10
+    def _evaluate_numeric_expression(self, expression: str) -> float:
+        evaluator = _NumericExpressionEvaluator(expression)
         try:
-            value = int(text, base=base)
+            return evaluator.evaluate()
+        except ZeroDivisionError as exc:  # pragma: no cover - defensive guard
+            raise ValueError("ampersand expression division by zero") from exc
+        except ValueError:
+            raise
+        except Exception as exc:  # pragma: no cover - defensive guard
+            raise ValueError(f"invalid ampersand expression '{expression}'") from exc
+
+    def _clamp_byte(self, value: float) -> int:
+        if math.isnan(value) or math.isinf(value):
+            raise ValueError("ampersand expression produced non-finite result")
+        integer = math.floor(value)
+        if integer < 0:
+            return 0
+        if integer > 0xFF:
+            return 0xFF
+        return int(integer)
+
+
+class _NumericExpressionEvaluator:
+    """Parse and evaluate BASIC-style arithmetic expressions."""
+
+    def __init__(self, text: str) -> None:
+        self._text = text
+        self._length = len(text)
+        self._index = 0
+
+    def evaluate(self) -> float:
+        self._skip_whitespace()
+        value = self._parse_expression()
+        self._skip_whitespace()
+        if self._index != self._length:
+            raise ValueError(
+                f"unexpected trailing characters in ampersand expression: {self._text[self._index:]}"
+            )
+        return value
+
+    def _parse_expression(self) -> float:
+        value = self._parse_term()
+        while True:
+            self._skip_whitespace()
+            if self._match("+"):
+                value += self._parse_term()
+            elif self._match("-"):
+                value -= self._parse_term()
+            else:
+                break
+        return value
+
+    def _parse_term(self) -> float:
+        value = self._parse_power()
+        while True:
+            self._skip_whitespace()
+            if self._match("*"):
+                value *= self._parse_power()
+            elif self._match("/"):
+                divisor = self._parse_power()
+                if divisor == 0:
+                    raise ZeroDivisionError("division by zero in ampersand expression")
+                value /= divisor
+            else:
+                break
+        return value
+
+    def _parse_power(self) -> float:
+        value = self._parse_factor()
+        self._skip_whitespace()
+        if self._match("^"):
+            exponent = self._parse_power()
+            value = value ** exponent
+        return value
+
+    def _parse_factor(self) -> float:
+        self._skip_whitespace()
+        if self._match("+"):
+            return self._parse_factor()
+        if self._match("-"):
+            return -self._parse_factor()
+        return self._parse_primary()
+
+    def _parse_primary(self) -> float:
+        self._skip_whitespace()
+        if self._match("("):
+            value = self._parse_expression()
+            self._skip_whitespace()
+            if not self._match(")"):
+                raise ValueError("ampersand expression has unmatched '('")
+            return value
+        return self._parse_number()
+
+    def _parse_number(self) -> float:
+        self._skip_whitespace()
+        if self._index >= self._length:
+            raise ValueError("ampersand expression missing numeric literal")
+
+        start = self._index
+        text = self._text
+        if text[self._index] == "$":
+            self._index += 1
+            start_digits = self._index
+            while self._index < self._length and text[self._index] in "0123456789abcdefABCDEF":
+                self._index += 1
+            if start_digits == self._index:
+                raise ValueError("ampersand expression missing hex digits")
+            return float(int(text[start_digits:self._index], 16))
+
+        if (
+            text[self._index] == "0"
+            and self._index + 1 < self._length
+            and text[self._index + 1] in "xX"
+        ):
+            self._index += 2
+            start_digits = self._index
+            while self._index < self._length and text[self._index] in "0123456789abcdefABCDEF":
+                self._index += 1
+            if start_digits == self._index:
+                raise ValueError("ampersand expression missing hex digits")
+            return float(int(text[start_digits:self._index], 16))
+
+        has_digits = False
+        while self._index < self._length and text[self._index].isdigit():
+            self._index += 1
+            has_digits = True
+
+        if self._index < self._length and text[self._index] == ".":
+            self._index += 1
+            while self._index < self._length and text[self._index].isdigit():
+                self._index += 1
+                has_digits = True
+
+        if not has_digits:
+            raise ValueError("ampersand expression missing numeric literal")
+
+        if (
+            self._index < self._length
+            and text[self._index] in "eE"
+        ):
+            exp_index = self._index
+            self._index += 1
+            if (
+                self._index < self._length
+                and text[self._index] in "+-"
+            ):
+                self._index += 1
+            exp_digits_start = self._index
+            while self._index < self._length and text[self._index].isdigit():
+                self._index += 1
+            if exp_digits_start == self._index:
+                raise ValueError("ampersand expression has malformed exponent")
+
+        number_text = text[start:self._index]
+        try:
+            return float(number_text)
         except ValueError as exc:  # pragma: no cover - defensive guard
-            raise ValueError(f"invalid ampersand argument '{literal}'") from exc
-        return max(0, min(0xFF, value))
+            raise ValueError(f"invalid ampersand numeric literal '{number_text}'") from exc
+
+    def _skip_whitespace(self) -> None:
+        text = self._text
+        while self._index < self._length and text[self._index] in " \t\r\n":
+            self._index += 1
+
+    def _match(self, token: str) -> bool:
+        if self._index < self._length and self._text[self._index] == token:
+            self._index += 1
+            return True
+        return False
 
 
 __all__ = [

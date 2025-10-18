@@ -3,6 +3,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from scripts.prototypes.ampersand_dispatcher import (  # noqa: E402
@@ -31,14 +33,14 @@ def test_dispatcher_parses_invocation_and_delegates() -> None:
     dispatcher = context.register_ampersand_dispatcher()
     flag_index = _registry_flag_index(dispatcher)
 
-    expression = f"&,{flag_index},5,7:REM CHAIN"
+    expression = f"&,{flag_index}+0,2+3,(16/2)+1:REM CHAIN"
     result = dispatcher.dispatch(expression)
 
     assert isinstance(result, AmpersandResult)
     assert result.flag_index == flag_index
     assert dispatcher.last_invocation is not None
     assert dispatcher.last_invocation.argument_x == 5
-    assert dispatcher.last_invocation.argument_y == 7
+    assert dispatcher.last_invocation.argument_y == 9
     assert dispatcher.remainder == ":REM CHAIN"
     assert result.services["console"] is console_service
 
@@ -87,7 +89,8 @@ def test_dispatcher_uses_configured_overrides(tmp_path: Path) -> None:
         dispatcher = context.get_service("ampersand")
         assert isinstance(dispatcher, AmpersandDispatcher)
 
-        result = dispatcher.dispatch(f"&,{flag_index},1,2", payload={"origin": "test"})
+        expression = f"&,{flag_index},1+0,(1+1)"
+        result = dispatcher.dispatch(expression, payload={"origin": "test"})
         assert result.rendered_text == "override"
         assert isinstance(result.context, AmpersandDispatchContext)
     finally:
@@ -113,3 +116,33 @@ def test_dispatcher_shares_console_service_with_registry() -> None:
     appended = after[len(before) :]
     glyph_run = console_service.glyph_lookup.macros_by_slot[result.slot]
     assert appended == bytes(glyph_run.payload)
+
+
+def test_parse_invocation_evaluates_numeric_expressions() -> None:
+    dispatcher = AmpersandDispatcher()
+    text = "&,$10 + 5,2*(3+1),$1E/2"
+
+    invocation, remainder = dispatcher.parse_invocation(text)
+
+    assert invocation.routine == 0x10 + 5
+    assert invocation.argument_x == 8
+    assert invocation.argument_y == 15
+    assert invocation.expression == text
+    assert remainder == ""
+
+
+def test_parse_invocation_retains_remainder_for_chained_calls() -> None:
+    dispatcher = AmpersandDispatcher()
+    text = "&,1+1:&,2+2"
+
+    invocation, remainder = dispatcher.parse_invocation(text)
+
+    assert invocation.routine == 2
+    assert remainder == ":&,2+2"
+
+
+def test_parse_invocation_rejects_unmatched_parentheses() -> None:
+    dispatcher = AmpersandDispatcher()
+
+    with pytest.raises(ValueError):
+        dispatcher.parse_invocation("&,((1+2)")
