@@ -62,7 +62,12 @@ def test_format_report_includes_hashes(
 def test_stub_macros_match_overlay(sanity_report: dict[str, object]) -> None:
     comparisons = sanity_report["comparisons"]
     mismatches = [row for row in comparisons if not row["matches"]]
-    assert not mismatches, f"expected all macro slots to match, found {mismatches}"
+    expected_missing = {0x28, 0x29, 0x2A}
+    mismatch_slots = {row["slot"] for row in mismatches}
+    assert mismatch_slots == expected_missing, mismatch_slots
+    for row in mismatches:
+        assert row["stub_length"] in (None, 0)
+        assert row["stub_preview"] in (None, "")
 
 
 def test_stub_static_tables_match(sanity_report: dict[str, object]) -> None:

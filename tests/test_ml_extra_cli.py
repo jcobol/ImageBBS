@@ -181,6 +181,30 @@ def test_snapshot_guard_update_baseline(tmp_path: Path) -> None:
     assert refreshed_payload == expected_payload
 
 
+def test_dump_macros_file_transfer_slots(
+    capsys: pytest.CaptureFixture[str],
+    defaults: ml_extra_defaults.MLExtraDefaults,
+) -> None:
+    slots = [0x28, 0x29, 0x2A]
+    slot_args = [item for slot in slots for item in ("--slot", f"${slot:02x}")]
+    ml_extra_dump_macros.main(["--json", *slot_args])
+    output = capsys.readouterr().out
+    payload = json.loads(output)
+    assert len(payload) == len(slots)
+    rows_by_slot = {row["slot"]: row for row in payload}
+    assert set(rows_by_slot) == {40, 41, 42}
+    header = rows_by_slot[40]
+    prompt = rows_by_slot[41]
+    error = rows_by_slot[42]
+    assert header["sha256"] == "8e1d129eba5881d8546705478687e0fd2bd6b22e688ceda58cef0d11b3a44620"
+    assert prompt["sha256"] == "ff429b988d00e0cadc5fadedb482816f4cee1805686aae0669a6e8a7630c8621"
+    assert error["sha256"] == "748748598d02e1d8760e64d3c6f0d0e173d8adf4f64a2a28340d8dfc0ef04292"
+    assert "FILE TRANSFER MENU" in header["text"]
+    assert header["slot"] in defaults.macros_by_slot
+    for slot in slots:
+        assert slot in defaults.macros_by_slot
+
+
 def test_refresh_pipeline_matches_baseline(tmp_path: Path) -> None:
     baseline_copy = tmp_path / "baseline.json"
     baseline_copy.write_text(
