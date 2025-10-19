@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Mapping
+from typing import Iterable, Mapping
 
 from ..device_context import ConsoleService
 from ..message_editor import EditorState, Event as MessageEditorEvent
@@ -32,6 +32,7 @@ class SessionRunner:
     kernel: SessionKernel = field(init=False)
     console: ConsoleService = field(init=False)
     _editor_context: SessionContext = field(init=False)
+    _editor_module: MessageEditor | None = field(init=False, default=None)
 
     _ENTER_EVENTS: Mapping[SessionState, object] = field(
         init=False,
@@ -108,9 +109,7 @@ class SessionRunner:
             raise ValueError(f"state {state!r} does not accept textual input")
 
         if state is SessionState.MESSAGE_EDITOR:
-            context = self._editor_context
-            context.current_message = text
-            return self._dispatch(command_event, context)
+            return self._send_editor_command(text)
 
         return self._dispatch(command_event, text)
 
@@ -125,9 +124,19 @@ class SessionRunner:
 
     def _dispatch(self, event: object, *args: object) -> SessionState:
         previous_state = self.kernel.state
+        editor_before_state: EditorState | None = None
+        if previous_state is SessionState.MESSAGE_EDITOR:
+            editor = self._get_message_editor()
+            if editor is not None:
+                editor_before_state = editor.state
         next_state = self.kernel.step(event, *args)
         if next_state is not SessionState.EXIT and next_state is not previous_state:
             self._enter_state(next_state)
+        elif (
+            next_state is SessionState.MESSAGE_EDITOR
+            and previous_state is SessionState.MESSAGE_EDITOR
+        ):
+            self._handle_editor_state_change(editor_before_state)
         return next_state
 
     def _enter_state(self, state: SessionState) -> None:
@@ -146,9 +155,77 @@ class SessionRunner:
         self._dispatch(enter_event)
 
     def _prepare_editor_for_enter(self) -> None:
-        module = self.kernel._modules.get(SessionState.MESSAGE_EDITOR)
+        module = self._get_message_editor()
         if isinstance(module, MessageEditor) and module.state is EditorState.EXIT:
             module.state = EditorState.INTRO
+
+    def _get_message_editor(self) -> MessageEditor | None:
+        module = self.kernel._modules.get(SessionState.MESSAGE_EDITOR)
+        if isinstance(module, MessageEditor):
+            self._editor_module = module
+            return module
+        return None
+
+    def _handle_editor_state_change(
+        self, previous_state: EditorState | None
+    ) -> None:
+        editor = self._get_message_editor()
+        if editor is None:
+            return
+        current_state = editor.state
+        if previous_state is None or current_state is previous_state:
+            return
+        self._dispatch(MessageEditorEvent.ENTER, self._editor_context)
+
+    def _send_editor_command(self, text: str) -> SessionState:
+        editor = self._get_message_editor()
+        if editor is None:
+            raise RuntimeError("message editor module is unavailable")
+        context = self._editor_context
+        event = self._resolve_editor_event(editor, context, text)
+        return self._dispatch(event, context)
+
+    def _resolve_editor_event(
+        self, editor: MessageEditor, context: SessionContext, text: str
+    ) -> MessageEditorEvent:
+        state = editor.state
+        if state is EditorState.READ_MESSAGES:
+            context.current_message = text
+            return MessageEditorEvent.MESSAGE_SELECTED
+        if state is EditorState.POST_MESSAGE:
+            subject, lines = self._partition_editor_submission(text, include_subject=True)
+            context.current_message = subject
+            context.draft_buffer = lines
+            return MessageEditorEvent.DRAFT_SUBMITTED
+        if state is EditorState.EDIT_DRAFT:
+            if context.selected_message_id is None:
+                context.current_message = text
+                context.draft_buffer.clear()
+                return MessageEditorEvent.ENTER
+            _, lines = self._partition_editor_submission(
+                text, include_subject=False
+            )
+            context.draft_buffer = lines
+            return MessageEditorEvent.DRAFT_SUBMITTED
+
+        context.current_message = text
+        return MessageEditorEvent.COMMAND_SELECTED
+
+    def _partition_editor_submission(
+        self, text: str, *, include_subject: bool
+    ) -> tuple[str, list[str]]:
+        lines = list(self._split_editor_lines(text))
+        if include_subject:
+            subject = lines[0] if lines else ""
+            body = lines[1:] if lines else []
+            return subject, body
+        return "", lines
+
+    def _split_editor_lines(self, text: str) -> Iterable[str]:
+        if not text:
+            return ()
+        normalised = text.replace("\r\n", "\n").replace("\r", "\n")
+        return normalised.split("\n")
 
 
 __all__ = ["SessionRunner"]
