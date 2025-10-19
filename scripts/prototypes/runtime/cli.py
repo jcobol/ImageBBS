@@ -59,11 +59,20 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Dial HOST:PORT and bridge the session over TCP",
     )
-    parser.add_argument(
+    ui_group = parser.add_mutually_exclusive_group()
+    ui_group.add_argument(
         "--curses-ui",
+        dest="curses_ui",
         action="store_true",
         help="Render the session using the curses sysop console",
     )
+    ui_group.add_argument(
+        "--console-ui",
+        dest="curses_ui",
+        action="store_false",
+        help="Render the session using the plain console stream",
+    )
+    parser.set_defaults(curses_ui=True)
     parser.add_argument(
         "--baud-limit",
         type=int,
