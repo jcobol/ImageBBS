@@ -13,13 +13,13 @@ from typing import IO, Sequence, Tuple
 from ..message_editor import MessageEditor, SessionContext
 from ..session_kernel import SessionState
 from ..setup_config import load_drive_config
-from ..setup_defaults import SetupDefaults
+from ..setup_defaults import ModemDefaults, SetupDefaults
 from .console_ui import SysopConsoleApp
 from .main_menu import MainMenuModule
 from .message_store import MessageStore
 from .message_store_repository import load_message_store, save_message_store
 from .session_runner import SessionRunner
-from .transports import TelnetModemTransport
+from .transports import BaudLimitedTransport, TelnetModemTransport
 
 
 def _parse_host_port(value: str) -> Tuple[str, int]:
@@ -64,6 +64,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Render the session using the curses sysop console",
     )
+    parser.add_argument(
+        "--baud-limit",
+        type=int,
+        default=None,
+        help="Limit modem throughput to the specified bits per second",
+    )
     return parser.parse_args(argv)
 
 
@@ -72,6 +78,9 @@ def _build_defaults(args: argparse.Namespace) -> SetupDefaults:
 
     config_path: Path | None = args.drive_config
     if config_path is None:
+        baud_override = args.baud_limit
+        if baud_override is not None:
+            defaults = replace(defaults, modem=ModemDefaults(baud_limit=baud_override))
         return defaults
 
     if not config_path.exists():
@@ -79,7 +88,13 @@ def _build_defaults(args: argparse.Namespace) -> SetupDefaults:
 
     config = load_drive_config(config_path)
     defaults = replace(defaults, drives=config.drives)
-    object.__setattr__(defaults, "ampersand_overrides", dict(config.ampersand_overrides))
+    ampersand_overrides = dict(config.ampersand_overrides)
+    modem_override = config.modem_baud_limit
+    if args.baud_limit is not None:
+        modem_override = args.baud_limit
+    if modem_override is not None:
+        defaults = replace(defaults, modem=ModemDefaults(baud_limit=modem_override))
+    object.__setattr__(defaults, "ampersand_overrides", ampersand_overrides)
     return defaults
 
 
@@ -143,12 +158,18 @@ async def run_stream_session(
     """Create a runner and bridge it to ``reader``/``writer``."""
 
     runner = create_runner(args)
-    transport = TelnetModemTransport(runner, reader, writer)
+    telnet_transport = TelnetModemTransport(runner, reader, writer)
+    baud_limit = getattr(getattr(runner.defaults, "modem", None), "baud_limit", None)
+    transport = (
+        BaudLimitedTransport(telnet_transport, baud_limit)
+        if baud_limit is not None
+        else telnet_transport
+    )
     context = runner.kernel.context
     context.register_modem_device(transport=transport)
     transport.open()
     try:
-        await transport.wait_closed()
+        await telnet_transport.wait_closed()
     finally:
         transport.close()
         try:

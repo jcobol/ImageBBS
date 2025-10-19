@@ -29,6 +29,7 @@ from .message_editor import (
 )
 from .runtime.main_menu import MainMenuEvent, MainMenuModule, MenuCommand, MenuState
 from .runtime.message_store import MessageRecord, MessageStore, MessageSummary
+from .runtime.transports import BaudLimitedTransport
 from .runtime.session_runner import SessionRunner
 from .session_kernel import SessionKernel, SessionModule, SessionState
 from .setup_defaults import (
@@ -40,6 +41,7 @@ from .setup_defaults import (
     DeviceDriveMap,
     DriveInventory,
     FilesystemDriveLocator,
+    ModemDefaults,
     PrimeTimeWindow,
     SetupDefaults,
     SysopProfile,
@@ -102,6 +104,7 @@ __all__ = [
     "MessageStore",
     "MessageSummary",
     "SessionRunner",
+    "BaudLimitedTransport",
     "Modem",
     "LoopbackModemTransport",
     "ModemTransport",
@@ -114,6 +117,7 @@ __all__ = [
     "SessionKernel",
     "SessionModule",
     "SessionState",
+    "ModemDefaults",
     "SetupDefaults",
     "SysopProfile",
     "derive_drive_inventory",

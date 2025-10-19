@@ -12,7 +12,10 @@ from scripts.prototypes.runtime.cli import (
     start_session_server,
 )
 from scripts.prototypes.session_kernel import SessionState
-from scripts.prototypes.setup_defaults import FilesystemDriveLocator
+from scripts.prototypes.setup_defaults import (
+    DEFAULT_MODEM_BAUD_LIMIT,
+    FilesystemDriveLocator,
+)
 
 
 def test_run_session_handles_exit_sequence() -> None:
@@ -31,6 +34,7 @@ def test_run_session_handles_exit_sequence() -> None:
     assert transcript
     assert args.listen is None
     assert args.connect is None
+    assert runner.defaults.modem.baud_limit == DEFAULT_MODEM_BAUD_LIMIT
 
 
 def test_create_runner_applies_configuration_and_persistence(tmp_path: Path) -> None:
@@ -42,6 +46,8 @@ def test_create_runner_applies_configuration_and_persistence(tmp_path: Path) -> 
                 '1 = "."',
                 "[ampersand_overrides]",
                 '1 = "scripts.prototypes.runtime.ampersand_overrides:handle_chkflags"',
+                "[modem]",
+                "baud_limit = 2400",
                 "",
             ]
         )
@@ -67,6 +73,7 @@ def test_create_runner_applies_configuration_and_persistence(tmp_path: Path) -> 
     assert getattr(defaults, "ampersand_overrides") == {
         1: "scripts.prototypes.runtime.ampersand_overrides:handle_chkflags"
     }
+    assert defaults.modem.baud_limit == 2400
 
     services = runner.editor_context.services
     assert services is not None
@@ -76,6 +83,33 @@ def test_create_runner_applies_configuration_and_persistence(tmp_path: Path) -> 
     assert runner.editor_context.user_id
     assert runner.message_store_path == messages_path
     assert runner.editor_context.store is runner.message_store
+
+
+def test_cli_baud_limit_overrides_config(tmp_path: Path) -> None:
+    config_path = tmp_path / "drives.toml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "[slots]",
+                '1 = "."',
+                "[modem]",
+                "baud_limit = 2400",
+                "",
+            ]
+        )
+    )
+
+    args = parse_args(
+        [
+            "--drive-config",
+            str(config_path),
+            "--baud-limit",
+            "9600",
+        ]
+    )
+
+    runner = create_runner(args)
+    assert runner.defaults.modem.baud_limit == 9600
 
 
 def test_listen_session_serves_banner_and_exits_cleanly() -> None:

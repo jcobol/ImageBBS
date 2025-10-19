@@ -166,6 +166,16 @@ class SysopProfile:
 
 
 @dataclass(frozen=True)
+class ModemDefaults:
+    """Derived defaults for the host modem transport."""
+
+    baud_limit: Optional[int] = None
+
+
+DEFAULT_MODEM_BAUD_LIMIT = 1200
+
+
+@dataclass(frozen=True)
 class SetupDefaults:
     """Aggregates the stubbed values exposed by ``setup`` for host tooling."""
 
@@ -183,6 +193,7 @@ class SetupDefaults:
     prime_time: PrimeTimeWindow
     chat_mode_messages: ChatModeMessages
     macro_modules: Tuple[str, ...]
+    modem: ModemDefaults = field(default_factory=ModemDefaults)
 
     @property
     def active_drives(self) -> Tuple[DriveAssignment, ...]:
@@ -260,6 +271,8 @@ class SetupDefaults:
         statistics = BoardStatistics(**defaults["statistics"])
         prime_time = PrimeTimeWindow(**defaults["prime_time"])
         chat_messages = ChatModeMessages(**defaults["chat_mode_messages"])
+        raw_modem = defaults.get("modem")
+        modem_defaults = _derive_modem_defaults(raw_modem)
 
         stub_overlays = tuple(defaults.get("overlays", ()))
         actual_overlays = extract_overlay_sequence()
@@ -284,6 +297,7 @@ class SetupDefaults:
             statistics=statistics,
             prime_time=prime_time,
             chat_mode_messages=chat_messages,
+            modem=modem_defaults,
             macro_modules=macro_modules,
         )
 
@@ -324,6 +338,7 @@ __all__ = [
     "BoardStatistics",
     "ChatModeMessages",
     "PrimeTimeWindow",
+    "ModemDefaults",
     "SetupDefaults",
     "SysopProfile",
     "SetupDataRecords",
@@ -357,6 +372,31 @@ def _literal_eval(value: str, *, key: str, source: Path) -> Any:
     except (ValueError, SyntaxError) as exc:  # pragma: no cover - defensive guard
         message = f"unable to parse stub default for {key!r} in {source}: {value}"
         raise ValueError(message) from exc
+
+
+def _coerce_optional_int(value: Any) -> Optional[int]:
+    """Return ``value`` as an optional ``int`` while tolerating ``None``."""
+
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:  # pragma: no cover - defensive guard
+        raise ValueError(f"expected integer value, received {value!r}") from exc
+
+
+def _derive_modem_defaults(raw_modem: Any) -> ModemDefaults:
+    """Return modem defaults seeded from stub metadata."""
+
+    if isinstance(raw_modem, dict):
+        if "baud_limit" in raw_modem:
+            baud_limit = _coerce_optional_int(raw_modem.get("baud_limit"))
+        else:
+            baud_limit = DEFAULT_MODEM_BAUD_LIMIT
+    else:
+        baud_limit = DEFAULT_MODEM_BAUD_LIMIT
+
+    return ModemDefaults(baud_limit=baud_limit)
 
 
 def load_stub_defaults(stub_path: Optional[Path] = None) -> Dict[str, Any]:

@@ -17,6 +17,7 @@ from scripts.prototypes import (  # noqa: E402
 )
 from scripts.prototypes.setup_defaults import (  # noqa: E402
     CommodoreDeviceDrive,
+    DEFAULT_MODEM_BAUD_LIMIT,
     FilesystemDriveLocator,
 )
 from scripts.prototypes.device_context import DiskDrive  # noqa: E402
@@ -49,6 +50,7 @@ def test_load_drive_config_merges_stub_defaults(sample_config: Path) -> None:
 
     defaults = SetupDefaults.stub()
     assert len(assignments) >= len(defaults.drives)
+    assert defaults.modem.baud_limit == DEFAULT_MODEM_BAUD_LIMIT
 
     for slot in (1, 2, 3, 4):
         locator = lookup[slot].locator
@@ -63,6 +65,7 @@ def test_load_drive_config_merges_stub_defaults(sample_config: Path) -> None:
 
     inventory = derive_drive_inventory(assignments)
     assert inventory == defaults.drive_inventory
+    assert config.modem_baud_limit is None
 
 
 def test_bootstrap_device_context_registers_filesystem_drives(sample_config: Path) -> None:
@@ -131,3 +134,22 @@ def test_load_drive_config_parses_ampersand_overrides(tmp_path: Path) -> None:
 
     config = load_drive_config(config_path)
     assert config.ampersand_overrides == {0: "package.module:callable", 0x21: "pkg.mod.attr"}
+    assert config.modem_baud_limit is None
+
+
+def test_load_drive_config_parses_modem_baud_limit(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "drive").mkdir()
+
+    config_path = config_dir / "storage.toml"
+    config_path.write_text(
+        "[slots]\n"
+        "8 = \"drive\"\n\n"
+        "[modem]\n"
+        "baud_limit = 2400\n",
+        encoding="utf-8",
+    )
+
+    config = load_drive_config(config_path)
+    assert config.modem_baud_limit == 2400
