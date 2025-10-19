@@ -894,6 +894,33 @@ class ConsoleService:
 
         self.clear_masked_pane_staging(buffers, glyph=fill_glyph, colour=fill_colour)
 
+    def commit_masked_pane_staging(
+        self,
+        *,
+        fill_glyph: int = 0x20,
+        fill_colour: int | None = None,
+    ) -> None:
+        """Flush staged overlay bytes to ``$0770/$DB70`` using bound buffers."""
+
+        buffers = self._masked_pane_buffers
+        if buffers is None:
+            raise DeviceError("masked pane buffers have not been bound")
+
+        self.rotate_masked_pane_buffers(
+            buffers,
+            fill_glyph=fill_glyph,
+            fill_colour=fill_colour,
+        )
+
+        self.poke_block(
+            screen_address=self._MASKED_OVERLAY_SCREEN_BASE,
+            screen_bytes=buffers.live_screen,
+            screen_length=buffers.width,
+            colour_address=self._MASKED_OVERLAY_COLOUR_BASE,
+            colour_bytes=buffers.live_colour,
+            colour_length=buffers.width,
+        )
+
     def capture_region(
         self,
         buffer: "ConsoleRegionBuffer",
@@ -1526,10 +1553,14 @@ def bootstrap_device_context(
     """Instantiate a device context with modern drive mappings."""
 
     context = DeviceContext()
-    context.register_console_device()
+    console_service = context.register_console_device()
     context.register_modem_device()
     context.register_ampersand_dispatcher(override_imports=ampersand_overrides)
     context.register_service("device_context", context)
+    masked_pane_buffers = MaskedPaneBuffers()
+    console_service.capture_masked_pane_buffers(masked_pane_buffers)
+    console_service.set_masked_pane_buffers(masked_pane_buffers)
+    context.register_service("masked_pane_buffers", masked_pane_buffers)
     for assignment in assignments:
         locator = assignment.locator
         if isinstance(locator, FilesystemDriveLocator):

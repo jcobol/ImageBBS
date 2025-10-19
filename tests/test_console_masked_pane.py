@@ -7,6 +7,7 @@ from scripts.prototypes.device_context import (  # noqa: E402
     Console,
     ConsoleService,
     MaskedPaneBuffers,
+    bootstrap_device_context,
 )
 
 
@@ -256,3 +257,42 @@ def test_masked_pane_staging_block_writes_bypass_renderer() -> None:
     )
     assert _read_colour(service, normal_colour_address, 2) == expected_colour
     assert console.transcript_bytes == b""
+
+
+def test_commit_masked_pane_staging_flushes_overlay_and_resets_buffers() -> None:
+    context = bootstrap_device_context(assignments=())
+    service = context.get_service("console")
+    assert isinstance(service, ConsoleService)
+
+    buffers = context.get_service("masked_pane_buffers")
+    assert isinstance(buffers, MaskedPaneBuffers)
+    assert service._masked_pane_buffers is buffers
+
+    screen_payload = bytes((0x60 + i) % 256 for i in range(buffers.width))
+    colour_payload = bytes(((i + 3) % 16) for i in range(buffers.width))
+
+    service.poke_block(
+        screen_address=ConsoleService._MASKED_STAGING_SCREEN_BASE,
+        screen_bytes=screen_payload,
+        colour_address=ConsoleService._MASKED_STAGING_COLOUR_BASE,
+        colour_bytes=colour_payload,
+    )
+
+    assert bytes(buffers.staged_screen) == screen_payload
+    assert bytes(buffers.staged_colour) == colour_payload
+
+    service.commit_masked_pane_staging()
+
+    palette = service.screen.palette
+    expected_colour = bytes(
+        _resolve_palette_colour(value, palette) for value in colour_payload
+    )
+
+    assert _read_screen(service, 0x0770, buffers.width) == screen_payload
+    assert _read_colour(service, 0xDB70, buffers.width) == expected_colour
+
+    expected_fill_colour = service.screen_colour & 0xFF
+    assert bytes(buffers.staged_screen) == bytes((0x20,) * buffers.width)
+    assert bytes(buffers.staged_colour) == bytes(
+        (expected_fill_colour,) * buffers.width
+    )
