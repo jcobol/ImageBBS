@@ -16,11 +16,23 @@ from scripts.prototypes.device_context import (
     ConsoleService,
     DriveAssignment,
     FilesystemDriveLocator,
+    MaskedPaneBuffers,
     bootstrap_device_context,
 )
 from scripts.prototypes.message_editor import SessionContext
 from scripts.prototypes.runtime.ampersand_overrides import BUILTIN_AMPERSAND_OVERRIDES
 from scripts.prototypes.runtime.message_store import MessageStore
+
+
+def _resolve_palette_colour(value: int, palette: tuple[int, ...], *, default_index: int = 0) -> int:
+    resolved = int(value) & 0xFF
+    if resolved in palette:
+        return resolved
+    if 0 <= resolved < len(palette):
+        return palette[resolved]
+    if not 0 <= default_index < len(palette):
+        raise ValueError("default_index must reference a palette entry")
+    return palette[default_index]
 
 
 def _build_dispatcher() -> AmpersandDispatcher:
@@ -205,3 +217,96 @@ def test_dispatcher_injects_registry_and_services_into_payload() -> None:
     assert payload["registry"] is registry
     assert payload["services"] is registry.services
     assert result.services["console"] is console_service
+
+
+def test_outscn_commits_masked_pane_staging_when_data_present() -> None:
+    dispatcher = _build_dispatcher()
+    registry = dispatcher.registry
+    console_service = registry.services["console"]
+    assert isinstance(console_service, ConsoleService)
+
+    buffers = registry.services["masked_pane_buffers"]
+    assert isinstance(buffers, MaskedPaneBuffers)
+
+    screen_payload = bytes((0x60 + i) % 256 for i in range(buffers.width))
+    colour_payload = bytes(((i + 3) % 16) for i in range(buffers.width))
+
+    console_service.poke_block(
+        screen_address=ConsoleService._MASKED_STAGING_SCREEN_BASE,
+        screen_bytes=screen_payload,
+        colour_address=ConsoleService._MASKED_STAGING_COLOUR_BASE,
+        colour_bytes=colour_payload,
+    )
+
+    dispatcher.dispatch("&,50")
+
+    assert bytes(buffers.live_screen) == screen_payload
+    assert bytes(buffers.live_colour) == colour_payload
+
+    fill_colour = console_service.screen_colour & 0xFF
+    assert bytes(buffers.staged_screen) == bytes((0x20,) * buffers.width)
+    assert bytes(buffers.staged_colour) == bytes((fill_colour,) * buffers.width)
+
+    screen_bytes, colour_bytes = console_service.peek_block(
+        screen_address=ConsoleService._MASKED_OVERLAY_SCREEN_BASE,
+        screen_length=buffers.width,
+        colour_address=ConsoleService._MASKED_OVERLAY_COLOUR_BASE,
+        colour_length=buffers.width,
+    )
+
+    assert screen_bytes == screen_payload
+    palette = console_service.screen.palette
+    expected_colour = bytes(
+        _resolve_palette_colour(value, palette) for value in colour_payload
+    )
+    assert colour_bytes == expected_colour
+
+
+def test_outscn_ignores_empty_masked_pane_staging() -> None:
+    dispatcher = _build_dispatcher()
+    registry = dispatcher.registry
+    console_service = registry.services["console"]
+    assert isinstance(console_service, ConsoleService)
+
+    buffers = registry.services["masked_pane_buffers"]
+    assert isinstance(buffers, MaskedPaneBuffers)
+
+    fill_colour = console_service.screen_colour & 0xFF
+    live_screen_payload = bytes((0x33,) * buffers.width)
+    live_colour_payload = bytes((0x04,) * buffers.width)
+
+    buffers.live_screen[:] = live_screen_payload
+    buffers.live_colour[:] = live_colour_payload
+    buffers.staged_screen[:] = bytes((0x20,) * buffers.width)
+    buffers.staged_colour[:] = bytes((fill_colour,) * buffers.width)
+
+    console_service.poke_block(
+        screen_address=ConsoleService._MASKED_OVERLAY_SCREEN_BASE,
+        screen_bytes=live_screen_payload,
+        colour_address=ConsoleService._MASKED_OVERLAY_COLOUR_BASE,
+        colour_bytes=live_colour_payload,
+    )
+
+    before_screen, before_colour = console_service.peek_block(
+        screen_address=ConsoleService._MASKED_OVERLAY_SCREEN_BASE,
+        screen_length=buffers.width,
+        colour_address=ConsoleService._MASKED_OVERLAY_COLOUR_BASE,
+        colour_length=buffers.width,
+    )
+
+    dispatcher.dispatch("&,50")
+
+    assert bytes(buffers.live_screen) == live_screen_payload
+    assert bytes(buffers.live_colour) == live_colour_payload
+    assert bytes(buffers.staged_screen) == bytes((0x20,) * buffers.width)
+    assert bytes(buffers.staged_colour) == bytes((fill_colour,) * buffers.width)
+
+    after_screen, after_colour = console_service.peek_block(
+        screen_address=ConsoleService._MASKED_OVERLAY_SCREEN_BASE,
+        screen_length=buffers.width,
+        colour_address=ConsoleService._MASKED_OVERLAY_COLOUR_BASE,
+        colour_length=buffers.width,
+    )
+
+    assert after_screen == before_screen
+    assert after_colour == before_colour
