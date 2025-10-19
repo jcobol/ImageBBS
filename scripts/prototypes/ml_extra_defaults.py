@@ -12,7 +12,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from types import SimpleNamespace
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 from . import ml_extra_extract
 
@@ -326,6 +327,39 @@ _EXTRA_MACRO_PAYLOADS: dict[int, tuple[int, ...]] = {
     ),
 }
 
+
+def _strip_macro_terminator(payload: Iterable[int]) -> Tuple[int, ...]:
+    """Normalise ``payload`` by trimming the first trailing zero byte."""
+
+    trimmed: list[int] = []
+    for raw in payload:
+        value = int(raw) & 0xFF
+        if value == 0x00:
+            break
+        trimmed.append(value)
+    return tuple(trimmed)
+
+
+def _render_macro_screen(
+    payload: Iterable[int],
+    *,
+    defaults: object,
+) -> "MacroScreen" | None:
+    """Render ``payload`` through :class:`PetsciiScreen` and capture screen buffers."""
+
+    rendered = _strip_macro_terminator(payload)
+    if not rendered:
+        return None
+
+    from .console_renderer import PetsciiScreen
+
+    screen = PetsciiScreen(defaults=defaults)
+    screen.write(bytes(rendered))
+    return MacroScreen(
+        glyph_matrix=screen.code_matrix,
+        colour_matrix=screen.colour_matrix,
+    )
+
 _LIGHTBAR_TABLE_ADDR = 0xD3F6
 _LIGHTBAR_TABLE_LENGTH = 6  # four flag bytes + underline char/colour
 _PALETTE_ADDR = 0xC66A
@@ -340,6 +374,45 @@ _SID_VOLUME = 0xD418
 
 
 @dataclass(frozen=True)
+class MacroScreen:
+    """Snapshot of glyph and colour buffers rendered for a macro payload."""
+
+    glyph_matrix: Tuple[Tuple[int, ...], ...]
+    colour_matrix: Tuple[Tuple[int, ...], ...]
+
+    def __post_init__(self) -> None:
+        if len(self.glyph_matrix) != len(self.colour_matrix):
+            raise ValueError("glyph and colour matrices must have matching heights")
+        for glyph_row, colour_row in zip(self.glyph_matrix, self.colour_matrix, strict=True):
+            if len(glyph_row) != len(colour_row):
+                raise ValueError("glyph and colour rows must have matching widths")
+
+    @property
+    def height(self) -> int:
+        """Return the number of rows captured in the snapshot."""
+
+        return len(self.glyph_matrix)
+
+    @property
+    def width(self) -> int:
+        """Return the number of columns captured per row."""
+
+        return len(self.glyph_matrix[0]) if self.glyph_matrix else 0
+
+    @property
+    def glyph_bytes(self) -> Tuple[int, ...]:
+        """Return the flattened PETSCII glyph buffer in row-major order."""
+
+        return tuple(value for row in self.glyph_matrix for value in row)
+
+    @property
+    def colour_bytes(self) -> Tuple[int, ...]:
+        """Return the flattened colour RAM buffer in row-major order."""
+
+        return tuple(value for row in self.colour_matrix for value in row)
+
+
+@dataclass(frozen=True)
 class MacroDirectoryEntry:
     """Single pointer-directory record recovered from ``ml.extra``."""
 
@@ -347,6 +420,7 @@ class MacroDirectoryEntry:
     address: int
     payload: Tuple[int, ...]
     decoded_text: str
+    screen: MacroScreen | None = None
 
     def as_dict(self) -> Dict[str, object]:
         """Return a JSON-serialisable representation of the entry."""
@@ -587,17 +661,26 @@ class MLExtraDefaults:
             sid_volume=_read_sid_volume(memory, load_address),
         )
 
-        macro_entries: list[MacroDirectoryEntry] = [
-            MacroDirectoryEntry(
-                slot=entry.slot,
-                address=entry.address,
-                payload=tuple(entry.data),
-                decoded_text=entry.text,
+        macro_defaults = SimpleNamespace(
+            lightbar=lightbar,
+            palette=palette,
+            hardware=hardware,
+        )
+
+        macro_entries: list[MacroDirectoryEntry] = []
+        for entry in ml_extra_extract.iter_pointer_directory(
+            memory, load_addr=load_address
+        ):
+            payload = tuple(entry.data)
+            macro_entries.append(
+                MacroDirectoryEntry(
+                    slot=entry.slot,
+                    address=entry.address,
+                    payload=payload,
+                    decoded_text=entry.text,
+                    screen=_render_macro_screen(payload, defaults=macro_defaults),
+                )
             )
-            for entry in ml_extra_extract.iter_pointer_directory(
-                memory, load_addr=load_address
-            )
-        ]
 
         existing_slots = {entry.slot for entry in macro_entries}
         for slot, payload in sorted(_EXTRA_MACRO_PAYLOADS.items()):
@@ -609,6 +692,7 @@ class MLExtraDefaults:
                     address=0x0000,
                     payload=payload,
                     decoded_text=ml_extra_extract.decode_petscii(payload),
+                    screen=_render_macro_screen(payload, defaults=macro_defaults),
                 )
             )
 
