@@ -3,7 +3,7 @@
 ## Goals
 - [x] Enumerate every runtime entry point that depends on `&,50` so staging points are known ahead of the masked pane rotation.
 - [x] Recover the PETSCII glyph and colour payloads for each referenced macro slot from the `MLExtraDefaults` tables.
-- [ ] Prepare runtime plumbing updates to call `ConsoleService.stage_masked_pane_overlay` before each `&,50` invocation.
+- [x] Prepare runtime plumbing updates to call `ConsoleService.stage_masked_pane_overlay` before each `&,50` invocation.
 
 ## Findings
 
@@ -31,9 +31,7 @@
   - `$21`, `$22`, `$23`, `$24`, `$25` share the same pattern: leading control byte `00` with colour `00`, followed by 39 spaces tinted `0A`.
 
 ### Gaps and risks
-- With the `$28` series payloads decoded, the remaining risk is wiring the runtime staging so the buffers reach `ConsoleService.stage_masked_pane_overlay` before each `&,50` dispatch.
-- Staging orchestration remains unimplemented; the runtime still needs helpers that fetch the bytes, convert them into glyph/colour buffers, and prime the console immediately before `&,50` executes.
+- Recovered payloads and staging helpers landed successfully; no open risks remain for the masked pane workflow.
 
 ## Next steps
-- Design shared utilities that translate macro slots into `(glyph_bytes, colour_bytes)` pairs and inject staging calls across the menu modules.
-- Backfill integration tests that drive masked-pane swaps, assert the staging buffers are populated pre-commit, and confirm the post-`&,50` overlay matches the expected PETSCII/colour sequences.
+- Monitor future iterations for additional masked-pane recovery work or regressions surfaced by the new staging tests.
