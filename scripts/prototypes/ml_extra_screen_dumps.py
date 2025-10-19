@@ -136,7 +136,14 @@ def main(argv: Sequence[str] | None = None) -> None:
     flag_path = output_dir / "ml-extra-flag-screens.json"
 
     json_kwargs = {"separators": (",", ":")}
-    macro_path.write_text(json.dumps(macro_payload, **json_kwargs) + "\n", encoding="utf-8")
+
+    if macro_payload:
+        macro_body = ",\n".join(json.dumps(entry, **json_kwargs) for entry in macro_payload)
+        macro_text = f"[\n{macro_body}\n]\n"
+    else:
+        macro_text = "[]\n"
+
+    macro_path.write_text(macro_text, encoding="utf-8")
     flag_path.write_text(json.dumps(flag_payload, **json_kwargs) + "\n", encoding="utf-8")
 
 
