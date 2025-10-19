@@ -37,6 +37,18 @@ def test_run_session_handles_exit_sequence() -> None:
     assert runner.defaults.modem.baud_limit == DEFAULT_MODEM_BAUD_LIMIT
 
 
+def test_parse_args_defaults_to_curses_ui() -> None:
+    args = parse_args([])
+
+    assert args.curses_ui is True
+
+
+def test_parse_args_console_flag_disables_curses_ui() -> None:
+    args = parse_args(["--console-ui"])
+
+    assert args.curses_ui is False
+
+
 def test_create_runner_applies_configuration_and_persistence(tmp_path: Path) -> None:
     config_path = tmp_path / "drives.toml"
     config_path.write_text(
