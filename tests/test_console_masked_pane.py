@@ -181,3 +181,78 @@ def test_masked_pane_buffer_rotation_matches_loopb94e() -> None:
     assert bytes(buffers.tempbott_next) == bytes((fill_glyph,) * buffers.width)
     assert bytes(buffers.colour_var_4078) == bytes((fill_colour,) * buffers.width)
     assert console.transcript_bytes == b""
+
+
+def test_masked_pane_staging_single_byte_writes_capture_buffers() -> None:
+    console = Console()
+    service = ConsoleService(console)
+    buffers = MaskedPaneBuffers()
+    service.set_masked_pane_buffers(buffers)
+
+    stage_screen_address = ConsoleService._MASKED_STAGING_SCREEN_BASE
+    stage_colour_address = ConsoleService._MASKED_STAGING_COLOUR_BASE
+
+    last_screen_address = (
+        ConsoleService._SCREEN_BASE
+        + console.screen.width * console.screen.height
+        - 1
+    )
+    last_colour_address = (
+        ConsoleService._COLOUR_BASE
+        + console.screen.width * console.screen.height
+        - 1
+    )
+
+    baseline_screen = console.screen.peek_screen_address(last_screen_address)
+    baseline_colour = console.screen.peek_colour_address(last_colour_address)
+
+    service.poke_screen_byte(stage_screen_address, 0x41)
+    service.poke_colour_byte(stage_colour_address, 0x06)
+    service.fill_colour(stage_colour_address, 0x07, 3)
+
+    assert bytes(buffers.staged_screen[:1]) == b"A"
+    assert bytes(buffers.staged_colour[:3]) == bytes((0x07,) * 3)
+
+    assert console.screen.peek_screen_address(last_screen_address) == baseline_screen
+    assert console.screen.peek_colour_address(last_colour_address) == baseline_colour
+    assert console.transcript_bytes == b""
+
+
+def test_masked_pane_staging_block_writes_bypass_renderer() -> None:
+    console = Console()
+    service = ConsoleService(console)
+    buffers = MaskedPaneBuffers()
+    service.set_masked_pane_buffers(buffers)
+
+    stage_screen_address = ConsoleService._MASKED_STAGING_SCREEN_BASE
+    stage_colour_address = ConsoleService._MASKED_STAGING_COLOUR_BASE
+
+    screen_payload = bytes((0x30 + i) % 256 for i in range(buffers.width))
+    colour_payload = bytes((i + 5) % 16 for i in range(buffers.width))
+
+    service.poke_block(
+        screen_address=stage_screen_address,
+        screen_bytes=screen_payload,
+        colour_address=stage_colour_address,
+        colour_bytes=colour_payload,
+    )
+
+    assert bytes(buffers.staged_screen) == screen_payload
+    assert bytes(buffers.staged_colour) == colour_payload
+
+    normal_screen_address = ConsoleService._SCREEN_BASE
+    normal_colour_address = ConsoleService._COLOUR_BASE
+    service.poke_block(
+        screen_address=normal_screen_address,
+        screen_bytes=b"AB",
+        colour_address=normal_colour_address,
+        colour_bytes=bytes((0x01, 0x02)),
+    )
+
+    assert _read_screen(service, normal_screen_address, 2) == b"AB"
+    palette = service.screen.palette
+    expected_colour = bytes(
+        _resolve_palette_colour(value, palette) for value in (0x01, 0x02)
+    )
+    assert _read_colour(service, normal_colour_address, 2) == expected_colour
+    assert console.transcript_bytes == b""

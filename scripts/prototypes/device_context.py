@@ -713,6 +713,8 @@ class ConsoleService:
     _MASKED_OVERLAY_SCREEN_BASE = 0x0770
     _MASKED_OVERLAY_COLOUR_BASE = 0xDB70
     _MASKED_OVERLAY_WIDTH = 40
+    _MASKED_STAGING_SCREEN_BASE = 0x4028
+    _MASKED_STAGING_COLOUR_BASE = 0x4078
     _IDLE_TIMER_SCREEN_ADDRESSES = (
         0x04DE,
         0x04E0,
@@ -721,6 +723,7 @@ class ConsoleService:
 
     def __post_init__(self) -> None:
         self._masked_pane_blink = MaskedPaneBlinkScheduler()
+        self._masked_pane_buffers: MaskedPaneBuffers | None = None
 
     @property
     def defaults(self) -> ml_extra_defaults.MLExtraDefaults:
@@ -1009,17 +1012,25 @@ class ConsoleService:
     def poke_screen_byte(self, address: int, value: int) -> None:
         """Write a raw PETSCII code to ``address`` in screen RAM."""
 
+        if self._capture_masked_pane_screen(address, value):
+            return
         self.device.poke_screen_byte(address, value)
 
     def poke_colour_byte(self, address: int, value: int) -> None:
         """Write a colour attribute to ``address`` in colour RAM."""
 
+        if self._capture_masked_pane_colour(address, value):
+            return
         self.device.poke_colour_byte(address, value)
 
     def fill_colour(self, address: int, value: int, length: int) -> None:
         """Write ``value`` across ``length`` bytes in colour RAM starting at ``address``."""
 
-        self.device.fill_colour(address, value, length)
+        if length < 0:
+            raise ValueError("length must be non-negative")
+
+        for offset in range(length):
+            self.poke_colour_byte(address + offset, value)
 
     def poke_block(
         self,
@@ -1038,14 +1049,31 @@ class ConsoleService:
         expected by existing overlay helpers.
         """
 
-        self.device.poke_block(
-            screen_address=screen_address,
-            screen_bytes=screen_bytes,
-            screen_length=screen_length,
-            colour_address=colour_address,
-            colour_bytes=colour_bytes,
-            colour_length=colour_length,
-        )
+        if screen_bytes is None and colour_bytes is None:
+            raise ValueError("poke_block requires screen_bytes and/or colour_bytes")
+
+        if screen_length is not None and screen_length < 0:
+            raise ValueError("screen_length must be non-negative")
+        if colour_length is not None and colour_length < 0:
+            raise ValueError("colour_length must be non-negative")
+
+        if screen_bytes is not None:
+            if screen_address is None:
+                raise ValueError("screen_address must be provided with screen_bytes")
+            payload = bytes(screen_bytes)
+            if screen_length is not None:
+                payload = payload[:screen_length]
+            for offset, byte in enumerate(payload):
+                self.poke_screen_byte(screen_address + offset, byte)
+
+        if colour_bytes is not None:
+            if colour_address is None:
+                raise ValueError("colour_address must be provided with colour_bytes")
+            payload = bytes(colour_bytes)
+            if colour_length is not None:
+                payload = payload[:colour_length]
+            for offset, byte in enumerate(payload):
+                self.poke_colour_byte(colour_address + offset, byte)
 
     def peek_block(
         self,
@@ -1074,6 +1102,40 @@ class ConsoleService:
                 f"screen address ${screen_address:04x} precedes screen base"
             )
         return ConsoleService._COLOUR_BASE + offset
+
+    def set_masked_pane_buffers(self, buffers: MaskedPaneBuffers) -> None:
+        """Register ``buffers`` to capture masked-pane staging writes."""
+
+        self._masked_pane_buffers = buffers
+
+    def clear_masked_pane_buffers(self) -> None:
+        """Disable masked-pane staging interception."""
+
+        self._masked_pane_buffers = None
+
+    def _capture_masked_pane_screen(self, address: int, value: int) -> bool:
+        buffers = self._masked_pane_buffers
+        if buffers is None:
+            return False
+
+        offset = address - self._MASKED_STAGING_SCREEN_BASE
+        if not 0 <= offset < buffers.width:
+            return False
+
+        buffers.staged_screen[offset] = int(value) & 0xFF
+        return True
+
+    def _capture_masked_pane_colour(self, address: int, value: int) -> bool:
+        buffers = self._masked_pane_buffers
+        if buffers is None:
+            return False
+
+        offset = address - self._MASKED_STAGING_COLOUR_BASE
+        if not 0 <= offset < buffers.width:
+            return False
+
+        buffers.staged_colour[offset] = int(value) & 0xFF
+        return True
 
     def set_pause_indicator(self, value: int, *, colour: int | None = None) -> None:
         """Update the sysop pause indicator cell at ``$041e``."""
