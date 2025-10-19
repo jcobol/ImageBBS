@@ -24,16 +24,16 @@
   - `$09` prompt: single row with glyph bytes `66 C2 E7 C2 A5 68 C3 AD E1 C1 C9 80 F0 03 EE E1 C1 60 E8 EC E1 C1 A2 E0 80 D7 60 60 A2 00 20 ...` and colours `0A 0A 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 00 ...`.
   - `$0D` invalid selection: row glyphs begin `60 A2 00` (“? ”) then pad with spaces; colours `0A 0A 00` followed by `0A` fill.
 - **File transfer slots**
-  - Runtime references `$28`, `$29`, and `$2A`, but the recovered `ml.extra` dump only includes slots `0x02`, `0x04`, `0x09`, `0x0D`, `0x0E`, `0x0F`, and `0x14–0x19`. Additional archival work is required to source the glyph/colour payloads for the `$28` family before staging can be wired.
+  - `$28` header: the `ml-extra-macro-screens.json` snapshot preserves a 248-byte payload that clears the screen and paints six 40-column rows (`FILE TRANSFER MENU` plus five command pairs) with foreground colour `$0A` over background `$08`, leaving blank spacer rows between each line. The leading clear-screen control byte (`$93`) retains colour `$00/$08`, and the populated rows land at indices 0, 2, 4, 6, 8, and 10 within the 25×40 glyph matrix, matching the prompt/error panes already archived.【F:docs/porting/artifacts/ml-extra-macro-screens.json†L1-L1】
+  - `$29` prompt and `$2A` invalid-selection panes continue to occupy 22-byte and 19-byte payloads respectively with the same `$0A/$08` colour pairing across their 25×40 snapshots, keeping the offsets and buffer geometry aligned with the recovered header macro.【F:docs/porting/artifacts/ml-extra-macro-screens.json†L1-L1】
 - **Sysop slots**
   - `$20` header glyph bytes `68 C3 85 06 E2 C1 A0 00 20 ...` with colours `0A` foreground except for the control reset byte at position 8.
   - `$21`, `$22`, `$23`, `$24`, `$25` share the same pattern: leading control byte `00` with colour `00`, followed by 39 spaces tinted `0A`.
 
 ### Gaps and risks
-- Without payloads for the `$28` series macros the file-transfer menu cannot yet stage accurate masked-pane data.
-- Staging orchestration remains unimplemented; once payloads are complete the runtime needs helpers that fetch the bytes, convert them into glyph/colour buffers, and call `ConsoleService.stage_masked_pane_overlay` immediately before each `&,50` dispatch.
+- With the `$28` series payloads decoded, the remaining risk is wiring the runtime staging so the buffers reach `ConsoleService.stage_masked_pane_overlay` before each `&,50` dispatch.
+- Staging orchestration remains unimplemented; the runtime still needs helpers that fetch the bytes, convert them into glyph/colour buffers, and prime the console immediately before `&,50` executes.
 
 ## Next steps
-- Recover the `$28`–`$2A` macro payloads from additional overlay dumps or BASIC listings, then update the host tables.
 - Design shared utilities that translate macro slots into `(glyph_bytes, colour_bytes)` pairs and inject staging calls across the menu modules.
 - Backfill integration tests that drive masked-pane swaps, assert the staging buffers are populated pre-commit, and confirm the post-`&,50` overlay matches the expected PETSCII/colour sequences.
