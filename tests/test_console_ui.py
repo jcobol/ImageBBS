@@ -1,9 +1,14 @@
 from __future__ import annotations
-
+import sys
 from dataclasses import dataclass
+from pathlib import Path
+
+import pytest
+
+sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from scripts.prototypes.device_context import ConsoleService
-from scripts.prototypes.runtime.console_ui import SysopConsoleApp
+from scripts.prototypes.runtime.console_ui import SysopConsoleApp, translate_petscii
 
 
 @dataclass
@@ -189,3 +194,19 @@ def test_capture_frame_disables_indicators_when_blank():
 
     for digit in frame.idle_timer_digits:
         assert digit == 0x30
+
+
+@pytest.mark.parametrize(
+    "code, expected_char",
+    [
+        (0xA0, " "),
+        (0xB0, "0"),
+        (0xFA, "Z"),
+    ],
+)
+def test_translate_petscii_preserves_high_bit_glyphs(
+    code: int, expected_char: str
+) -> None:
+    char, reverse = translate_petscii(code)
+    assert char == expected_char
+    assert reverse is True

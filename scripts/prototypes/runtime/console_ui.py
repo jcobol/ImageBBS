@@ -5,7 +5,7 @@ from __future__ import annotations
 import curses
 import time
 from dataclasses import dataclass
-from typing import Tuple
+from typing import Final, Tuple
 
 from ..device_context import ConsoleService
 from ..session_kernel import SessionState
@@ -187,8 +187,8 @@ class SysopConsoleApp:
 
         for row_index, row in enumerate(frame.screen_chars):
             for col_index, code in enumerate(row):
-                char = self._petscii_to_char(code)
-                attrs = curses.A_NORMAL
+                char, reverse = translate_petscii(code)
+                attrs = curses.A_REVERSE if reverse else curses.A_NORMAL
                 if (row_index, col_index) in indicator_positions:
                     attrs |= curses.A_REVERSE
                 try:
@@ -198,17 +198,19 @@ class SysopConsoleApp:
 
         pane_row = self.screen_height + 1
         for col_index, code in enumerate(frame.masked_pane_chars):
-            char = self._petscii_to_char(code)
+            char, reverse = translate_petscii(code)
+            attrs = curses.A_DIM | (curses.A_REVERSE if reverse else curses.A_NORMAL)
             try:
-                stdscr.addch(pane_row, col_index, char, curses.A_DIM)
+                stdscr.addch(pane_row, col_index, char, attrs)
             except curses.error:
                 continue
 
         overlay_row = pane_row + 1
         for col_index, code in enumerate(frame.masked_overlay_chars):
-            char = self._petscii_to_char(code)
+            char, reverse = translate_petscii(code)
+            attrs = curses.A_DIM | (curses.A_REVERSE if reverse else curses.A_NORMAL)
             try:
-                stdscr.addch(overlay_row, col_index, char, curses.A_DIM)
+                stdscr.addch(overlay_row, col_index, char, attrs)
             except curses.error:
                 continue
 
@@ -317,11 +319,164 @@ class SysopConsoleApp:
         col = offset % self.screen_width
         return row, col
 
-    def _petscii_to_char(self, code: int) -> str:
-        value = int(code) & 0x7F
-        if value < 0x20:
-            value = 0x20
-        return chr(value)
+
+__all__ = ["ConsoleFrame", "SysopConsoleApp", "translate_petscii"]
+
+_PETSCII_BASE_GLYPHS: Final[Tuple[str, ...]] = (
+    # 0x00 - 0x07
+    " ",
+    " ",
+    " ",
+    " ",
+    " ",
+    " ",
+    " ",
+    " ",
+    # 0x08 - 0x0F
+    " ",
+    " ",
+    " ",
+    " ",
+    " ",
+    " ",
+    " ",
+    " ",
+    # 0x10 - 0x17
+    " ",
+    " ",
+    " ",
+    " ",
+    " ",
+    " ",
+    " ",
+    " ",
+    # 0x18 - 0x1F
+    " ",
+    " ",
+    " ",
+    " ",
+    " ",
+    " ",
+    " ",
+    " ",
+    # 0x20 - 0x27
+    " ",
+    "!",
+    '"',
+    "#",
+    "$",
+    "%",
+    "&",
+    "'",
+    # 0x28 - 0x2F
+    "(",
+    ")",
+    "*",
+    "+",
+    ",",
+    "-",
+    ".",
+    "/",
+    # 0x30 - 0x37
+    "0",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    # 0x38 - 0x3F
+    "8",
+    "9",
+    ":",
+    ";",
+    "<",
+    "=",
+    ">",
+    "?",
+    # 0x40 - 0x47
+    "@",
+    "A",
+    "B",
+    "C",
+    "D",
+    "E",
+    "F",
+    "G",
+    # 0x48 - 0x4F
+    "H",
+    "I",
+    "J",
+    "K",
+    "L",
+    "M",
+    "N",
+    "O",
+    # 0x50 - 0x57
+    "P",
+    "Q",
+    "R",
+    "S",
+    "T",
+    "U",
+    "V",
+    "W",
+    # 0x58 - 0x5F
+    "X",
+    "Y",
+    "Z",
+    "[",
+    "#",
+    "]",
+    "^",
+    "_",
+    # 0x60 - 0x67
+    "@",
+    "A",
+    "B",
+    "C",
+    "D",
+    "E",
+    "F",
+    "G",
+    # 0x68 - 0x6F
+    "H",
+    "I",
+    "J",
+    "K",
+    "L",
+    "M",
+    "N",
+    "O",
+    # 0x70 - 0x77
+    "P",
+    "Q",
+    "R",
+    "S",
+    "T",
+    "U",
+    "V",
+    "W",
+    # 0x78 - 0x7F
+    "X",
+    "Y",
+    "Z",
+    " ",
+    " ",
+    " ",
+    " ",
+    " ",
+)
 
 
-__all__ = ["ConsoleFrame", "SysopConsoleApp"]
+_PETSCII_TRANSLATION_TABLE: Final[Tuple[Tuple[str, bool], ...]] = tuple(
+    (_PETSCII_BASE_GLYPHS[index & 0x7F], bool(index & 0x80))
+    for index in range(256)
+)
+
+
+def translate_petscii(code: int) -> Tuple[str, bool]:
+    """Return the glyph and reverse flag for a PETSCII ``code``."""
+
+    return _PETSCII_TRANSLATION_TABLE[int(code) & 0xFF]
