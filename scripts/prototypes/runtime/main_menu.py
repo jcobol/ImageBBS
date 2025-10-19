@@ -168,6 +168,9 @@ class MainMenuModule:
             raise KeyError(f"macro slot ${slot:02x} missing from defaults")
         if not isinstance(self._console, ConsoleService):  # pragma: no cover - guard
             raise RuntimeError("console service is unavailable")
+        staged = self._console.stage_macro_slot(slot)
+        if staged is None:
+            raise RuntimeError(f"console failed to stage macro slot ${slot:02x}")
         self._console.push_macro_slot(slot)
         self.rendered_slots.append(slot)
 
