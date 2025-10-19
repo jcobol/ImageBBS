@@ -1,0 +1,237 @@
+from __future__ import annotations
+
+import sys
+from contextlib import contextmanager
+from pathlib import Path
+from typing import Dict, Iterator, Tuple
+
+sys.path.append(str(Path(__file__).resolve().parents[1]))
+
+from scripts.prototypes.device_context import (  # noqa: E402
+    ConsoleService,
+    MaskedPaneBuffers,
+)
+from scripts.prototypes.runtime.file_transfers import (  # noqa: E402
+    FileTransferEvent,
+    FileTransfersModule,
+)
+from scripts.prototypes.runtime.main_menu import (  # noqa: E402
+    MainMenuEvent,
+    MainMenuModule,
+)
+from scripts.prototypes.runtime.sysop_options import (  # noqa: E402
+    SysopOptionsEvent,
+    SysopOptionsModule,
+)
+from scripts.prototypes.session_kernel import SessionKernel  # noqa: E402
+
+
+@contextmanager
+def _capture_macro_staging(
+    console: ConsoleService, buffers: MaskedPaneBuffers
+) -> Iterator[Dict[int, Tuple[Tuple[int, ...], Tuple[int, ...]]]]:
+    """Capture staged glyph/colour spans keyed by macro slot."""
+
+    original_stage_macro = console.stage_macro_slot
+    original_stage_overlay = console.stage_masked_pane_overlay
+    captured: Dict[int, Tuple[Tuple[int, ...], Tuple[int, ...]]] = {}
+    pending_fallback_slot: int | None = None
+
+    def _stage_macro(slot: int, *args, **kwargs):  # type: ignore[override]
+        nonlocal pending_fallback_slot
+        result = original_stage_macro(slot, *args, **kwargs)
+        if result is not None:
+            glyphs = tuple(buffers.staged_screen[: buffers.width])
+            colours = tuple(buffers.staged_colour[: buffers.width])
+            captured[slot] = (glyphs, colours)
+            pending_fallback_slot = None
+        else:
+            pending_fallback_slot = slot
+        return result
+
+    def _stage_overlay(*args, **kwargs):  # type: ignore[override]
+        nonlocal pending_fallback_slot
+        result = original_stage_overlay(*args, **kwargs)
+        if pending_fallback_slot is not None:
+            slot = pending_fallback_slot
+            glyphs = tuple(buffers.staged_screen[: buffers.width])
+            colours = tuple(buffers.staged_colour[: buffers.width])
+            captured[slot] = (glyphs, colours)
+            pending_fallback_slot = None
+        return result
+
+    console.stage_macro_slot = _stage_macro  # type: ignore[assignment]
+    console.stage_masked_pane_overlay = _stage_overlay  # type: ignore[assignment]
+    try:
+        yield captured
+    finally:
+        console.stage_macro_slot = original_stage_macro  # type: ignore[assignment]
+        console.stage_masked_pane_overlay = original_stage_overlay  # type: ignore[assignment]
+
+
+def _expected_macro_span(
+    slot: int,
+    module,
+    console: ConsoleService,
+) -> Tuple[Tuple[int, ...], Tuple[int, ...]]:
+    """Return 40-byte glyph/colour spans mirrored from defaults or fallbacks."""
+
+    width = 40
+    defaults = module.registry.defaults  # type: ignore[attr-defined]
+    entry = defaults.macros_by_slot.get(slot)
+
+    glyphs: Tuple[int, ...] | None = None
+    colours: Tuple[int, ...] | None = None
+
+    if entry is not None and entry.screen is not None:
+        glyphs = tuple(entry.screen.glyph_bytes[:width])
+        colours = tuple(entry.screen.colour_bytes[:width])
+    else:
+        run = console.glyph_lookup.macros_by_slot.get(slot)
+        if run is not None:
+            glyphs = tuple(run.rendered[:width])
+            fill = console.screen_colour & 0xFF
+            colours = tuple((fill,) * min(len(glyphs), width))
+        else:
+            fallback = getattr(module, "_FALLBACK_MACRO_STAGING", {}).get(slot)
+            if fallback is not None:
+                glyphs = tuple(fallback[0][:width])
+                colours = tuple(fallback[1][:width])
+
+    if glyphs is None or colours is None:
+        raise AssertionError(f"no macro payload recovered for slot ${slot:02x}")
+
+    if len(glyphs) < width:
+        glyphs = glyphs + (0x20,) * (width - len(glyphs))
+    if len(colours) < width:
+        fill = console.screen_colour & 0xFF
+        colours = colours + (fill,) * (width - len(colours))
+
+    return glyphs[:width], colours[:width]
+
+
+def test_main_menu_macro_staging_sequences() -> None:
+    module = MainMenuModule()
+    kernel = SessionKernel(module=module)
+
+    console = kernel.services["console"]
+    assert isinstance(console, ConsoleService)
+    buffers = kernel.context.get_service("masked_pane_buffers")
+    assert isinstance(buffers, MaskedPaneBuffers)
+
+    with _capture_macro_staging(console, buffers) as captured:
+        kernel.step(MainMenuEvent.ENTER)
+        kernel.step(MainMenuEvent.SELECTION, "??")
+
+    expected_slots = {
+        module.MENU_HEADER_SLOT,
+        module.MENU_PROMPT_SLOT,
+        module.INVALID_SELECTION_SLOT,
+    }
+
+    assert expected_slots <= captured.keys()
+
+    for slot in expected_slots:
+        expected = _expected_macro_span(slot, module, console)
+        staged = captured[slot]
+        assert staged[0] == expected[0]
+        assert staged[1] == expected[1]
+
+
+def test_sysop_options_macro_staging_sequences() -> None:
+    module = SysopOptionsModule()
+    kernel = SessionKernel(module=module)
+
+    console = kernel.services["console"]
+    assert isinstance(console, ConsoleService)
+    buffers = kernel.context.get_service("masked_pane_buffers")
+    assert isinstance(buffers, MaskedPaneBuffers)
+
+    with _capture_macro_staging(console, buffers) as captured:
+        kernel.step(SysopOptionsEvent.ENTER)
+        kernel.step(SysopOptionsEvent.COMMAND, "??")
+        kernel.step(SysopOptionsEvent.COMMAND, "SY")
+        kernel.step(SysopOptionsEvent.COMMAND, "A")
+
+    expected_slots = {
+        module.MENU_HEADER_SLOT,
+        module.MENU_PROMPT_SLOT,
+        module.SAYING_PREAMBLE_SLOT,
+        module.SAYING_OUTPUT_SLOT,
+        module.INVALID_SELECTION_SLOT,
+        module.ABORT_SLOT,
+    }
+
+    assert expected_slots <= captured.keys()
+
+    for slot in expected_slots:
+        expected = _expected_macro_span(slot, module, console)
+        staged = captured[slot]
+        assert staged[0] == expected[0]
+        assert staged[1] == expected[1]
+
+
+def test_file_transfers_macro_staging_sequences() -> None:
+    module = FileTransfersModule()
+    kernel = SessionKernel(module=module)
+
+    console = kernel.services["console"]
+    assert isinstance(console, ConsoleService)
+    buffers = kernel.context.get_service("masked_pane_buffers")
+    assert isinstance(buffers, MaskedPaneBuffers)
+
+    with _capture_macro_staging(console, buffers) as captured:
+        kernel.step(FileTransferEvent.ENTER)
+        kernel.step(FileTransferEvent.COMMAND, "??")
+
+    expected_slots = {
+        module.MENU_HEADER_SLOT,
+        module.MENU_PROMPT_SLOT,
+        module.INVALID_SELECTION_SLOT,
+    }
+
+    assert expected_slots <= captured.keys()
+
+    for slot in expected_slots:
+        expected = _expected_macro_span(slot, module, console)
+        staged = captured[slot]
+        assert staged[0] == expected[0]
+        assert staged[1] == expected[1]
+
+
+def test_commit_masked_pane_staging_swaps_live_buffers() -> None:
+    module = FileTransfersModule()
+    kernel = SessionKernel(module=module)
+
+    console = kernel.services["console"]
+    assert isinstance(console, ConsoleService)
+    buffers = kernel.context.get_service("masked_pane_buffers")
+    assert isinstance(buffers, MaskedPaneBuffers)
+
+    kernel.step(FileTransferEvent.ENTER)
+
+    staged_screen = tuple(buffers.staged_screen[: buffers.width])
+    staged_colour = tuple(buffers.staged_colour[: buffers.width])
+
+    console.commit_masked_pane_staging()
+
+    live_screen = tuple(buffers.live_screen[: buffers.width])
+    live_colour = tuple(buffers.live_colour[: buffers.width])
+    assert live_screen == staged_screen
+    assert live_colour == staged_colour
+
+    screen_bytes, colour_bytes = console.peek_block(
+        screen_address=ConsoleService._MASKED_OVERLAY_SCREEN_BASE,
+        screen_length=buffers.width,
+        colour_address=ConsoleService._MASKED_OVERLAY_COLOUR_BASE,
+        colour_length=buffers.width,
+    )
+
+    assert screen_bytes == bytes(staged_screen)
+    assert colour_bytes == bytes(staged_colour)
+
+    fill_colour = console.screen_colour & 0xFF
+    assert tuple(buffers.staged_screen[: buffers.width]) == (0x20,) * buffers.width
+    assert tuple(buffers.staged_colour[: buffers.width]) == (
+        fill_colour,
+    ) * buffers.width
