@@ -296,3 +296,58 @@ def test_commit_masked_pane_staging_flushes_overlay_and_resets_buffers() -> None
     assert bytes(buffers.staged_colour) == bytes(
         (expected_fill_colour,) * buffers.width
     )
+
+
+def test_stage_masked_pane_overlay_normalises_payloads_and_defers_commit() -> None:
+    console = Console()
+    service = ConsoleService(console)
+    buffers = MaskedPaneBuffers()
+    service.set_masked_pane_buffers(buffers)
+
+    width = buffers.width
+    baseline_screen = _read_screen(
+        service, ConsoleService._MASKED_OVERLAY_SCREEN_BASE, width
+    )
+    baseline_colour = _read_colour(
+        service, ConsoleService._MASKED_OVERLAY_COLOUR_BASE, width
+    )
+
+    screen_payload = bytes((0x41 + i) % 256 for i in range(10))
+    colour_payload = bytes(((i + 3) % 16) for i in range(6))
+    fill_colour = 0x0B
+
+    service.stage_masked_pane_overlay(
+        screen_payload, colour_payload, fill_colour=fill_colour
+    )
+
+    truncated_screen = screen_payload[:width]
+    expected_screen = truncated_screen + bytes(
+        (0x20,) * (width - len(truncated_screen))
+    )
+
+    truncated_colour = colour_payload[:width]
+    expected_colour = truncated_colour + bytes(
+        (fill_colour,) * (width - len(truncated_colour))
+    )
+
+    assert bytes(buffers.staged_screen) == expected_screen
+    assert bytes(buffers.staged_colour) == expected_colour
+
+    screen_overflow_payload = bytes((0x60 + i) % 256 for i in range(width + 5))
+    service.stage_masked_pane_overlay(screen_overflow_payload)
+
+    truncated_screen = screen_overflow_payload[:width]
+    expected_colour = bytes(((service.screen_colour & 0xFF),) * width)
+
+    assert bytes(buffers.staged_screen) == truncated_screen
+    assert bytes(buffers.staged_colour) == expected_colour
+
+    assert (
+        _read_screen(service, ConsoleService._MASKED_OVERLAY_SCREEN_BASE, width)
+        == baseline_screen
+    )
+    assert (
+        _read_colour(service, ConsoleService._MASKED_OVERLAY_COLOUR_BASE, width)
+        == baseline_colour
+    )
+    assert console.transcript_bytes == b""
