@@ -203,6 +203,12 @@ def test_dump_macros_file_transfer_slots(
     assert header["slot"] in defaults.macros_by_slot
     for slot in slots:
         assert slot in defaults.macros_by_slot
+        entry = defaults.macros_by_slot[slot]
+        assert entry.screen is not None
+        assert entry.screen.width == 40
+        assert entry.screen.height == 25
+        assert len(entry.screen.glyph_bytes) == entry.screen.width * entry.screen.height
+        assert len(entry.screen.colour_bytes) == entry.screen.width * entry.screen.height
 
 
 def test_refresh_pipeline_matches_baseline(tmp_path: Path) -> None:
