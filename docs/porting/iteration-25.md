@@ -5,7 +5,7 @@
 - Inventory the extracted payloads to confirm record boundaries and highlight the additional decoding work still required before the stub can be replaced with the real overlay data.
 
 ## Findings
-- `ml_extra_extract.py` now records the PETSCII blobs verbatim for each of the twelve directory slots, making it possible to diff the recovered bytes against the on-disk overlay during the upcoming transplant step.【F:scripts/prototypes/ml_extra_extract.py†L18-L100】
+- `ml_extra_extract.py` now records the PETSCII blobs verbatim for each of the twelve ampersand-directed slots, making it possible to diff the recovered bytes against the on-disk overlay during the upcoming transplant step; later captures mirror the file-transfer header/prompt/error payloads so the combined archive tracks fifteen slots in total.【F:scripts/prototypes/ml_extra_extract.py†L18-L100】【F:scripts/prototypes/ml_extra_defaults.py†L25-L105】【F:docs/porting/artifacts/ml-extra-macro-screens.json.gz.base64†L1-L1】
 - The helper continues to emit a best-effort PETSCII transcription for quick inspection, but the raw byte arrays clarify that the authentic overlay stores macro bodies rather than human-readable prose, so the stub will need to embed those binary sequences directly.【F:scripts/prototypes/ml_extra_extract.py†L42-L94】
 
 ## Next steps
