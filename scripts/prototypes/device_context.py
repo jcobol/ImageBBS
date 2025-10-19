@@ -67,13 +67,61 @@ class LogicalChannel:
     def read(self, size: Optional[int] = None) -> str:
         if size is None:
             size = len(self._buffer)
-        chars: Iterable[str] = (self._buffer.popleft() for _ in range(min(size, len(self._buffer))))
+        chars: Iterable[str] = (
+            self._buffer.popleft() for _ in range(min(size, len(self._buffer)))
+        )
         return "".join(chars)
 
     def dump(self) -> str:
         """Expose the buffered payload for inspection in tests."""
 
         return "".join(self._buffer)
+
+    def close(self) -> None:  # pragma: no cover - default implementation has no effect
+        """Close the underlying resource bound to the channel, if any."""
+
+
+class SequentialFileChannel(LogicalChannel):
+    """Channel backed by a sequential file on the host filesystem."""
+
+    def __init__(self, descriptor: ChannelDescriptor, path: Path, mode: str) -> None:
+        super().__init__(descriptor)
+        self.path = path
+        self._handle = path.open(mode)
+
+    @staticmethod
+    def _to_host_bytes(data: str | bytes) -> bytes:
+        if isinstance(data, bytes):
+            payload = data
+        else:
+            payload = data.encode("latin-1", errors="strict")
+        payload = payload.replace(b"\r\n", b"\n")
+        return payload.replace(b"\r", b"\n")
+
+    @staticmethod
+    def _to_petscii_text(data: bytes) -> str:
+        payload = data.replace(b"\r\n", b"\n").replace(b"\n", b"\r")
+        return payload.decode("latin-1", errors="strict")
+
+    def write(self, data: str | bytes) -> None:  # type: ignore[override]
+        payload = self._to_host_bytes(data)
+        self._handle.write(payload)
+        self._handle.flush()
+
+    def read(self, size: Optional[int] = None) -> str:  # type: ignore[override]
+        if size is None:
+            raw = self._handle.read()
+        else:
+            raw = self._handle.read(size)
+        if not raw:
+            return ""
+        return self._to_petscii_text(raw)
+
+    def close(self) -> None:
+        try:
+            self._handle.flush()
+        finally:
+            self._handle.close()
 
 
 class Device:
@@ -94,31 +142,95 @@ class DiskDrive(Device):
     name = "disk"
 
     def __init__(self, root: Path) -> None:
+        root.mkdir(parents=True, exist_ok=True)
         self.root = root
+        self._root = root.resolve()
 
     def open(self, descriptor: ChannelDescriptor) -> LogicalChannel:
+        if descriptor.secondary_address != 15:
+            raise DeviceError("disk: data channels require open_file")
         channel = LogicalChannel(descriptor)
-        if descriptor.secondary_address == 15:
-            # Command channel; mirror Commodore behaviour by preloading the DOS prompt.
-            channel.write("00,OK,00,00\r")
+        # Command channel; mirror Commodore behaviour by preloading the DOS prompt.
+        channel.write("00,OK,00,00\r")
         return channel
 
+    @staticmethod
+    def _split_filename(specification: str) -> Tuple[str, Optional[str], Optional[str]]:
+        parts = [segment.strip() for segment in specification.split(",")]
+        if not parts or not parts[0]:
+            raise DeviceError("disk: filename is required")
+        name = parts[0]
+        file_type = parts[1] if len(parts) > 1 and parts[1] else None
+        mode = parts[2] if len(parts) > 2 and parts[2] else None
+        return name, file_type, mode
+
+    def _filename_to_path(self, name: str) -> Path:
+        if ":" in name:
+            _, name = name.split(":", 1)
+        name = name.strip()
+        if not name:
+            raise DeviceError("disk: empty filename token")
+        path = Path(name)
+        if path.is_absolute():
+            raise DeviceError("disk: absolute paths are not permitted")
+        host_path = (self._root / path).resolve()
+        try:
+            host_path.relative_to(self._root)
+        except ValueError as exc:
+            raise DeviceError("disk: path escapes configured root") from exc
+        return host_path
+
+    def _parse_filename(self, specification: str) -> Tuple[Path, Optional[str], str]:
+        name, file_type, mode = self._split_filename(specification)
+        path = self._filename_to_path(name)
+        type_normalised: Optional[str] = None
+        if file_type:
+            type_normalised = file_type.upper()
+            if type_normalised not in {"S", "SEQ"}:
+                raise DeviceError(f"disk: unsupported file type '{file_type}'")
+        mode_token = (mode or "R").upper()
+        if mode_token not in {"R", "W", "A"}:
+            raise DeviceError(f"disk: unsupported file mode '{mode_token}'")
+        return path, type_normalised, mode_token
+
+    def open_file(self, descriptor: ChannelDescriptor, specification: str) -> SequentialFileChannel:
+        path, file_type, mode_token = self._parse_filename(specification)
+        if file_type is not None and file_type not in {"S", "SEQ"}:
+            raise DeviceError("disk: only sequential files are supported")
+        if mode_token == "R":
+            if not path.exists() or not path.is_file():
+                raise DeviceError(f"disk: '{path.name}' does not exist")
+            file_mode = "rb"
+        elif mode_token == "W":
+            path.parent.mkdir(parents=True, exist_ok=True)
+            file_mode = "wb"
+        else:  # mode_token == "A"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            file_mode = "ab"
+        return SequentialFileChannel(descriptor, path, file_mode)
+
     def command(self, raw: str) -> str:
-        verb, *args = raw.strip().split()
-        verb = verb.upper()
-        if verb == "I":
+        command = raw.strip()
+        if not command:
+            raise DeviceError("disk: empty command")
+        upper = command.upper()
+        if upper == "I":
             return "00,OK,00,00"
-        if verb == "$":
+        if upper == "$":
             # Simplistic directory listing for prototype purposes.
             entries = sorted(p.name for p in self.root.glob("**/*") if p.is_file())
             listing = "\r".join(entries)
             return f"00,{listing or '0 FILES'},00,00"
-        if verb == "S" and args:
-            # Scratch/delete command.
-            (target,) = args
-            for match in self.root.glob(target):
-                if match.is_file():
-                    match.unlink()
+        if upper.startswith("S"):
+            specification = command[1:]
+            if specification.startswith(":"):
+                specification = specification[1:]
+            specification = specification.strip()
+            if not specification:
+                raise DeviceError("disk: scratch command requires a filename")
+            path = self._filename_to_path(self._split_filename(specification)[0])
+            if path.exists() and path.is_file():
+                path.unlink()
             return "00,OK,00,00"
         raise DeviceError(f"disk: unsupported command '{raw}'")
 
@@ -1249,15 +1361,42 @@ class DeviceContext:
         descriptor = ChannelDescriptor(device=device_name, logical_number=logical_number, secondary_address=secondary_address)
         device = self.devices[device_name]
         channel = device.open(descriptor)
+        self.close(logical_number, secondary_address)
         self.channels[(logical_number, secondary_address)] = channel
         if secondary_address == 15:
             self.command_channels[logical_number] = channel
         return channel
 
+    def open_file(
+        self,
+        slot: int,
+        logical_number: int,
+        filename: str,
+        secondary_address: int,
+    ) -> LogicalChannel:
+        device_name = self.drive_device_name(slot)
+        try:
+            device = self.devices[device_name]
+        except KeyError as exc:
+            raise DeviceError(f"drive slot {slot}: no disk drive registered") from exc
+        if not isinstance(device, DiskDrive):
+            raise DeviceError(f"{device_name}: device does not support file channels")
+        descriptor = ChannelDescriptor(
+            device=device_name,
+            logical_number=logical_number,
+            secondary_address=secondary_address,
+        )
+        channel = device.open_file(descriptor, filename)
+        self.close(logical_number, secondary_address)
+        self.channels[(logical_number, secondary_address)] = channel
+        return channel
+
     def close(self, logical_number: int, secondary_address: int) -> None:
-        self.channels.pop((logical_number, secondary_address), None)
+        channel = self.channels.pop((logical_number, secondary_address), None)
         if secondary_address == 15:
             self.command_channels.pop(logical_number, None)
+        if channel is not None:
+            channel.close()
 
     def issue_command(self, logical_number: int, command: str) -> str:
         channel = self.command_channels.get(logical_number)
@@ -1355,4 +1494,5 @@ __all__ = [
     "Modem",
     "ModemChannel",
     "ModemTransport",
+    "SequentialFileChannel",
 ]
