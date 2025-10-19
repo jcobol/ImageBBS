@@ -902,6 +902,53 @@ class ConsoleService:
             colour_bytes=colour_slice,
         )
 
+    @staticmethod
+    def _pad_linear_span(payload: bytes, width: int, fill: int) -> bytes:
+        """Return ``payload`` truncated/padded to ``width`` using ``fill``."""
+
+        fill_byte = int(fill) & 0xFF
+        if width <= 0:
+            return b""
+
+        slice_ = bytes(payload[:width])
+        if len(slice_) >= width:
+            return slice_
+
+        return slice_ + bytes((fill_byte,) * (width - len(slice_)))
+
+    def _macro_slot_overlay_spans(
+        self,
+        slot: int,
+        run: GlyphRun,
+        *,
+        fill_colour: int | None,
+    ) -> tuple[bytes, bytes]:
+        """Return 40-byte glyph/colour spans representing ``slot``."""
+
+        width = self._MASKED_OVERLAY_WIDTH
+        glyph_fill = 0x20
+        colour_fill = self.screen_colour if fill_colour is None else int(fill_colour)
+        colour_fill &= 0xFF
+
+        entry = self.defaults.macros_by_slot.get(slot)
+        glyph_bytes: bytes
+        colour_bytes: bytes | None
+
+        if entry is not None and entry.screen is not None:
+            glyph_bytes = bytes(entry.screen.glyph_bytes[:width])
+            colour_bytes = bytes(entry.screen.colour_bytes[:width])
+        else:
+            glyph_bytes = bytes(run.rendered[:width])
+            colour_bytes = None
+
+        glyph_slice = self._pad_linear_span(glyph_bytes, width, glyph_fill)
+        if colour_bytes is None:
+            colour_slice = bytes((colour_fill,) * width)
+        else:
+            colour_slice = self._pad_linear_span(colour_bytes, width, colour_fill)
+
+        return glyph_slice, colour_slice
+
     def rotate_masked_pane_buffers(
         self,
         buffers: MaskedPaneBuffers,
@@ -1288,6 +1335,32 @@ class ConsoleService:
         payload = bytes(run.payload)
         if payload:
             self.device.write(payload)
+        return run
+
+    def stage_macro_slot(
+        self,
+        slot: int,
+        *,
+        fill_colour: int | None = None,
+    ) -> GlyphRun | None:
+        """Stage macro ``slot`` into ``tempbott+40``/``var_4078`` buffers."""
+
+        run = self.glyph_lookup.macros_by_slot.get(slot)
+        if run is None:
+            return None
+
+        glyph_slice, colour_slice = self._macro_slot_overlay_spans(
+            slot,
+            run,
+            fill_colour=fill_colour,
+        )
+
+        self.stage_masked_pane_overlay(
+            glyph_slice,
+            colour_slice,
+            fill_colour=fill_colour,
+        )
+
         return run
 
     def push_flag_macro(self, flag_index: int) -> GlyphRun | None:
