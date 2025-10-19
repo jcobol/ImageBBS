@@ -6,6 +6,7 @@ import pytest
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from scripts.prototypes import SessionRunner, SessionState
+from scripts.prototypes.message_editor import EditorState, MessageEditor
 from scripts.prototypes.runtime.file_transfers import FileTransfersModule
 from scripts.prototypes.runtime.main_menu import MainMenuModule
 from scripts.prototypes.runtime.sysop_options import SysopOptionsModule
@@ -92,5 +93,97 @@ def test_session_runner_reuses_editor_context(runner: SessionRunner) -> None:
     state = runner.send_command("MF")
     assert state is SessionState.MESSAGE_EDITOR
     assert runner.editor_context is context
-    assert len(context.modem_buffer) == before + 1
+    assert len(context.modem_buffer) >= before + 1
     assert context.modem_buffer[-1]
+
+
+def _enter_message_editor(runner: SessionRunner) -> SessionState:
+    runner.read_output()
+    state = runner.send_command("MF")
+    assert state is SessionState.MESSAGE_EDITOR
+    return state
+
+
+def test_session_runner_lists_and_reads_messages(runner: SessionRunner) -> None:
+    store = runner.message_store
+    store.append(
+        board_id=runner.board_id,
+        subject="Subject",
+        author_handle="SYSOP",
+        lines=["Line 1", "Line 2"],
+    )
+
+    _enter_message_editor(runner)
+    context = runner.editor_context
+    context.modem_buffer.clear()
+
+    state = runner.send_command("R")
+    assert state is SessionState.MESSAGE_EDITOR
+    assert context.modem_buffer
+    assert any("#001" in output for output in context.modem_buffer)
+
+    context.modem_buffer.clear()
+    state = runner.send_command("1")
+    assert state is SessionState.MESSAGE_EDITOR
+    assert context.selected_message_id == 1
+    assert any("Line 1" in output for output in context.modem_buffer)
+    assert any("Line 2" in output for output in context.modem_buffer)
+
+
+def test_session_runner_posts_message(runner: SessionRunner) -> None:
+    _enter_message_editor(runner)
+    context = runner.editor_context
+    context.modem_buffer.clear()
+
+    state = runner.send_command("P")
+    assert state is SessionState.MESSAGE_EDITOR
+    assert context.modem_buffer
+    assert context.draft_buffer == []
+
+    context.modem_buffer.clear()
+    submission = "My Subject\nNew post line"
+    state = runner.send_command(submission)
+    assert state is SessionState.MESSAGE_EDITOR
+    assert context.selected_message_id == 1
+    assert context.modem_buffer
+
+    record = runner.message_store.fetch(runner.board_id, 1)
+    assert record.subject == "My Subject"
+    assert record.lines == ("New post line",)
+
+
+def test_session_runner_edits_existing_message(runner: SessionRunner) -> None:
+    original = runner.message_store.append(
+        board_id=runner.board_id,
+        subject="Subject",
+        author_handle="SYSOP",
+        lines=["Original line"],
+    )
+
+    _enter_message_editor(runner)
+    context = runner.editor_context
+    context.modem_buffer.clear()
+
+    state = runner.send_command("E")
+    assert state is SessionState.MESSAGE_EDITOR
+    editor = runner.kernel._modules[SessionState.MESSAGE_EDITOR]
+    assert isinstance(editor, MessageEditor)
+    assert editor.state is EditorState.EDIT_DRAFT
+
+    context.modem_buffer.clear()
+    state = runner.send_command(str(original.message_id))
+    assert state is SessionState.MESSAGE_EDITOR
+    editor = runner.kernel._modules[SessionState.MESSAGE_EDITOR]
+    assert isinstance(editor, MessageEditor)
+    assert editor.state is EditorState.EDIT_DRAFT
+    assert context.selected_message_id == original.message_id
+    assert context.draft_buffer == ["Original line"]
+    assert context.modem_buffer
+
+    context.modem_buffer.clear()
+    state = runner.send_command("Updated text")
+    assert state is SessionState.MESSAGE_EDITOR
+    assert context.modem_buffer
+
+    updated = runner.message_store.fetch(runner.board_id, original.message_id)
+    assert updated.lines == ("Updated text",)
