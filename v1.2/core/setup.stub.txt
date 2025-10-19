@@ -52,6 +52,7 @@
 101 rem stub-placeholder prime_time = "e.data record 20 minutes window pending disk dump"
 102 rem stub-default chat_mode_messages = {"entering": "{cyan}* Entering Chat Mode *", "exiting": "{yellow}* Exiting Chat Mode *", "returning_to_editor": "{white}* Returning to the Editor *"}
 103 rem stub-placeholder chat_mode_messages = "Manual excerpt – setup.bas does not stage these strings directly"
+104 rem stub-default modem = {"baud_limit": 1200}
 
 110 rem Stage 4 – Overlay loads (setup.bas 180-190, 107-134, 131-132)
 112 rem   A$="RS232": GOSUB 190 (loads ML.RS232)

@@ -4,12 +4,212 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
-from typing import Coroutine, Deque, Iterable, Optional
+from typing import Awaitable, Callable, Coroutine, Deque, Iterable, Optional
 
 from ..device_context import ModemTransport
 from ..session_kernel import SessionState
 from .session_runner import SessionRunner
 
+
+SleepCallable = Callable[[float], Awaitable[object]]
+
+
+class _BaudBudget:
+    """Token bucket that enforces a serial-style bits-per-second limit."""
+
+    __slots__ = ("limit", "bits_per_character", "_time", "_last_time", "_available_bits")
+
+    def __init__(
+        self, limit: int, bits_per_character: int, time_provider: Callable[[], float]
+    ) -> None:
+        self.limit = float(limit)
+        self.bits_per_character = float(bits_per_character)
+        self._time = time_provider
+        self._last_time: float | None = None
+        self._available_bits: float = self.limit
+
+    def available_chars(self, upper_bound: Optional[int] = None) -> int:
+        now = self._time()
+        if self._last_time is None:
+            self._available_bits = self.limit
+        else:
+            delta = max(0.0, now - self._last_time)
+            self._available_bits = min(
+                self.limit, self._available_bits + (delta * self.limit)
+            )
+        self._last_time = now
+        available = int(self._available_bits // self.bits_per_character)
+        if upper_bound is not None:
+            available = min(available, upper_bound)
+        return available
+
+    def consume(self, chars: int) -> None:
+        self._available_bits = max(
+            0.0, self._available_bits - (chars * self.bits_per_character)
+        )
+
+    def delay_until_available(self, chars: int = 1) -> float:
+        required_bits = chars * self.bits_per_character
+        deficit = max(0.0, required_bits - self._available_bits)
+        if deficit <= 0.0:
+            return 0.0
+        return deficit / self.limit
+
+
+class BaudLimitedTransport(ModemTransport):
+    """Decorator that throttles a :class:`ModemTransport` by baud rate."""
+
+    def __init__(
+        self,
+        transport: ModemTransport,
+        baud_limit: Optional[int],
+        *,
+        bits_per_character: int = 8,
+        time_provider: Callable[[], float] | None = None,
+        sleep: SleepCallable | None = None,
+    ) -> None:
+        self.transport = transport
+        if baud_limit is not None and baud_limit <= 0:
+            baud_limit = None
+        self._baud_limit = baud_limit
+        self._bits_per_character = bits_per_character
+        self._time_provider = time_provider
+        self._sleep_fn = sleep
+
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._time_fn: Callable[[], float] | None = None
+        self._send_queue: Deque[str] = deque()
+        self._receive_buffer: Deque[str] = deque()
+        self._send_event: asyncio.Event | None = None
+        self._send_task: asyncio.Task[None] | None = None
+        self._closing = False
+        self._send_budget: _BaudBudget | None = None
+        self._receive_budget: _BaudBudget | None = None
+
+    # ModemTransport API -------------------------------------------------
+
+    def open(self) -> None:
+        if self._loop is not None:
+            return
+        loop = asyncio.get_running_loop()
+        self._loop = loop
+        self._time_fn = self._time_provider or loop.time
+        self._sleep_fn = self._sleep_fn or asyncio.sleep  # type: ignore[assignment]
+        self.transport.open()
+        if self._baud_limit is None:
+            return
+        time_fn = self._time_fn
+        assert time_fn is not None
+        self._send_budget = _BaudBudget(self._baud_limit, self._bits_per_character, time_fn)
+        self._receive_budget = _BaudBudget(
+            self._baud_limit, self._bits_per_character, time_fn
+        )
+        self._send_event = asyncio.Event()
+        self._send_task = loop.create_task(self._drain_outbound())
+
+    def send(self, data: str) -> None:
+        if not data:
+            return
+        if self._baud_limit is None:
+            self.transport.send(data)
+            return
+        if self._send_event is None:
+            raise RuntimeError("transport not opened")
+        self._send_queue.extend(data)
+        self._send_event.set()
+
+    def receive(self, size: Optional[int] = None) -> str:
+        if self._baud_limit is None or self._receive_budget is None:
+            return self.transport.receive(size)
+
+        max_chars = size if size is not None else None
+        available = self._receive_budget.available_chars(max_chars)
+        if available <= 0:
+            return ""
+
+        delivered: list[str] = []
+        consumed = 0
+
+        if self._receive_buffer:
+            buffered = self._drain_queue(self._receive_buffer, min(len(self._receive_buffer), available))
+            if buffered:
+                delivered.append(buffered)
+                consumed += len(buffered)
+                available -= len(buffered)
+                if max_chars is not None:
+                    max_chars = max(0, max_chars - len(buffered))
+
+        if available > 0 and (max_chars is None or max_chars > 0):
+            request = available if max_chars is None else min(available, max_chars)
+            if request > 0:
+                chunk = self.transport.receive(request)
+                if chunk:
+                    if len(chunk) > request:
+                        delivered.append(chunk[:request])
+                        self._receive_buffer.extend(chunk[request:])
+                        consumed += request
+                    else:
+                        delivered.append(chunk)
+                        consumed += len(chunk)
+
+        if consumed:
+            self._receive_budget.consume(consumed)
+        return "".join(delivered)
+
+    def feed(self, data: str) -> None:
+        self.transport.feed(data)
+
+    def collect_transmit(self) -> str:
+        return self.transport.collect_transmit()
+
+    def close(self) -> None:
+        if self._closing:
+            return
+        self._closing = True
+        if self._send_task is not None:
+            self._send_task.cancel()
+        if self._send_event is not None:
+            self._send_event.set()
+        self.transport.close()
+
+    async def wait_closed(self) -> None:
+        waiter = getattr(self.transport, "wait_closed", None)
+        if callable(waiter):
+            await waiter()
+
+    # Lifecycle helpers --------------------------------------------------
+
+    async def _drain_outbound(self) -> None:
+        assert self._send_event is not None
+        assert self._send_budget is not None
+        try:
+            while True:
+                if not self._send_queue:
+                    self._send_event.clear()
+                    await self._send_event.wait()
+                    if self._closing and not self._send_queue:
+                        break
+                if not self._send_queue:
+                    continue
+                allowance = self._send_budget.available_chars(len(self._send_queue))
+                if allowance <= 0:
+                    delay = self._send_budget.delay_until_available()
+                    await self._sleep_fn(delay)
+                    continue
+                chunk = self._drain_queue(self._send_queue, allowance)
+                if not chunk:
+                    continue
+                self.transport.send(chunk)
+                self._send_budget.consume(len(chunk))
+        except asyncio.CancelledError:
+            pass
+
+    @staticmethod
+    def _drain_queue(queue: Deque[str], count: int) -> str:
+        chars: list[str] = []
+        for _ in range(min(count, len(queue))):
+            chars.append(queue.popleft())
+        return "".join(chars)
 
 class TelnetModemTransport(ModemTransport):
     """Bridge :class:`SessionRunner` console traffic over asyncio streams."""
@@ -153,5 +353,5 @@ class TelnetModemTransport(ModemTransport):
             self._mark_closed()
 
 
-__all__ = ["TelnetModemTransport"]
+__all__ = ["BaudLimitedTransport", "TelnetModemTransport"]
 

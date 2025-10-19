@@ -20,6 +20,7 @@ class SetupConfig:
 
     drives: tuple[DriveAssignment, ...]
     ampersand_overrides: Dict[int, str]
+    modem_baud_limit: int | None = None
 
     def __post_init__(self) -> None:
         # Ensure mutable values are not shared between instances.
@@ -35,6 +36,7 @@ def load_drive_config(config_path: Path) -> SetupConfig:
     defaults = SetupDefaults.stub()
     drive_overrides = _parse_drive_config(data, base=config_path.parent)
     ampersand_overrides = _parse_ampersand_overrides(data)
+    modem_baud_limit = _parse_modem_baud_limit(data)
 
     merged: list[DriveAssignment] = []
     remaining = dict(drive_overrides)
@@ -47,6 +49,7 @@ def load_drive_config(config_path: Path) -> SetupConfig:
     return SetupConfig(
         drives=tuple(merged),
         ampersand_overrides=ampersand_overrides,
+        modem_baud_limit=modem_baud_limit,
     )
 
 
@@ -80,6 +83,29 @@ def _parse_ampersand_overrides(data: Mapping[str, Any]) -> Dict[int, str]:
         index = _coerce_flag_index(raw_index)
         overrides[index] = _coerce_import_path(raw_path)
     return overrides
+
+
+def _parse_modem_baud_limit(data: Mapping[str, Any]) -> int | None:
+    raw_modem = data.get("modem")
+    if raw_modem is None:
+        return None
+    if not isinstance(raw_modem, Mapping):
+        raise ValueError("modem configuration must be a mapping")
+
+    raw_limit = raw_modem.get("baud_limit")
+    if raw_limit is None:
+        return None
+    if isinstance(raw_limit, int):
+        return raw_limit
+    if isinstance(raw_limit, str):
+        text = raw_limit.strip()
+        if not text:
+            return None
+        try:
+            return int(text)
+        except ValueError as exc:  # pragma: no cover - defensive guard
+            raise ValueError("modem.baud_limit must be an integer") from exc
+    raise TypeError("modem.baud_limit must be an integer")
 
 
 def _coerce_slot(raw_slot: Any) -> int:
