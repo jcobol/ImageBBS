@@ -322,161 +322,59 @@ class SysopConsoleApp:
 
 __all__ = ["ConsoleFrame", "SysopConsoleApp", "translate_petscii"]
 
-_PETSCII_BASE_GLYPHS: Final[Tuple[str, ...]] = (
-    # 0x00 - 0x07
-    " ",
-    " ",
-    " ",
-    " ",
-    " ",
-    " ",
-    " ",
-    " ",
-    # 0x08 - 0x0F
-    " ",
-    " ",
-    " ",
-    " ",
-    " ",
-    " ",
-    " ",
-    " ",
-    # 0x10 - 0x17
-    " ",
-    " ",
-    " ",
-    " ",
-    " ",
-    " ",
-    " ",
-    " ",
-    # 0x18 - 0x1F
-    " ",
-    " ",
-    " ",
-    " ",
-    " ",
-    " ",
-    " ",
-    " ",
-    # 0x20 - 0x27
-    " ",
-    "!",
-    '"',
-    "#",
-    "$",
-    "%",
-    "&",
-    "'",
-    # 0x28 - 0x2F
-    "(",
-    ")",
-    "*",
-    "+",
-    ",",
-    "-",
-    ".",
-    "/",
-    # 0x30 - 0x37
-    "0",
-    "1",
-    "2",
-    "3",
-    "4",
-    "5",
-    "6",
-    "7",
-    # 0x38 - 0x3F
-    "8",
-    "9",
-    ":",
-    ";",
-    "<",
-    "=",
-    ">",
-    "?",
-    # 0x40 - 0x47
-    "@",
-    "A",
-    "B",
-    "C",
-    "D",
-    "E",
-    "F",
-    "G",
-    # 0x48 - 0x4F
-    "H",
-    "I",
-    "J",
-    "K",
-    "L",
-    "M",
-    "N",
-    "O",
-    # 0x50 - 0x57
-    "P",
-    "Q",
-    "R",
-    "S",
-    "T",
-    "U",
-    "V",
-    "W",
-    # 0x58 - 0x5F
-    "X",
-    "Y",
-    "Z",
-    "[",
-    "#",
-    "]",
-    "^",
-    "_",
-    # 0x60 - 0x67
-    "@",
-    "A",
-    "B",
-    "C",
-    "D",
-    "E",
-    "F",
-    "G",
-    # 0x68 - 0x6F
-    "H",
-    "I",
-    "J",
-    "K",
-    "L",
-    "M",
-    "N",
-    "O",
-    # 0x70 - 0x77
-    "P",
-    "Q",
-    "R",
-    "S",
-    "T",
-    "U",
-    "V",
-    "W",
-    # 0x78 - 0x7F
-    "X",
-    "Y",
-    "Z",
-    " ",
-    " ",
-    " ",
-    " ",
-    " ",
+
+def _build_base_glyphs() -> tuple[str, ...]:
+    table = [" "] * 0x80
+    table[0x00] = "@"
+    for offset in range(26):
+        table[0x01 + offset] = chr(ord("A") + offset)
+    table[0x1B] = "["
+    table[0x1C] = "£"
+    table[0x1D] = "]"
+    table[0x1E] = "↑"
+    table[0x1F] = "←"
+    for code in range(0x20, 0x40):
+        table[code] = chr(code)
+    for code in range(0x40, 0x5B):
+        table[code] = chr(code)
+    table[0x5B] = "["
+    table[0x5C] = "\\"
+    table[0x5D] = "]"
+    table[0x5E] = "^"
+    table[0x5F] = "_"
+    for code in range(0x60, 0x7B):
+        table[code] = chr(code)
+    table[0x7B] = "{"
+    table[0x7C] = "|"
+    table[0x7D] = "}"
+    table[0x7E] = "~"
+    table[0x7F] = "⌂"
+    return tuple(table)
+
+
+def _decode_glyph(raw: int) -> str:
+    base = raw & 0x7F
+    glyph = _PETSCII_BASE_GLYPHS[base]
+    if 0xE0 <= raw <= 0xFA and "a" <= glyph <= "z":
+        return glyph.upper()
+    return glyph
+
+
+def _resolve_reverse(code: int) -> bool:
+    raw = int(code) & 0xFF
+    if raw == 0xA0:
+        return False
+    return bool(raw & 0x80)
+
+
+_PETSCII_BASE_GLYPHS: Final[tuple[str, ...]] = _build_base_glyphs()
+
+_PETSCII_TRANSLATION_TABLE: Final[tuple[tuple[str, bool], ...]] = tuple(
+    (_decode_glyph(index), _resolve_reverse(index)) for index in range(256)
 )
 
 
-_PETSCII_TRANSLATION_TABLE: Final[Tuple[Tuple[str, bool], ...]] = tuple(
-    (_PETSCII_BASE_GLYPHS[index & 0x7F], bool(index & 0x80))
-    for index in range(256)
-)
-
-
-def translate_petscii(code: int) -> Tuple[str, bool]:
+def translate_petscii(code: int) -> tuple[str, bool]:
     """Return the glyph and reverse flag for a PETSCII ``code``."""
 
     return _PETSCII_TRANSLATION_TABLE[int(code) & 0xFF]
