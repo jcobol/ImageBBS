@@ -18,6 +18,28 @@ def _bootstrap_kernel() -> tuple[SessionKernel, FileTransfersModule]:
     return kernel, module
 
 
+def _expected_overlay(
+    module: FileTransfersModule, console: ConsoleService, slot: int
+) -> tuple[tuple[int, ...], tuple[int, ...]]:
+    defaults = module.registry.defaults
+    entry = defaults.macros_by_slot.get(slot)
+    width = 40
+    if entry is not None and entry.screen is not None:
+        glyphs = tuple(entry.screen.glyph_bytes[:width])
+        colours = tuple(entry.screen.colour_bytes[:width])
+    else:
+        run = console.glyph_lookup.macros_by_slot.get(slot)
+        if run is None:  # pragma: no cover - defensive guard
+            raise AssertionError(f"no glyph run for macro slot ${slot:02x}")
+        glyphs = tuple(run.rendered[:width])
+        colours = tuple((console.screen_colour,) * len(glyphs))
+    if len(glyphs) < width:
+        glyphs = glyphs + (0x20,) * (width - len(glyphs))
+    if len(colours) < width:
+        colours = colours + (console.screen_colour,) * (width - len(colours))
+    return glyphs[:width], colours[:width]
+
+
 def test_file_transfers_renders_macros_on_start_and_enter() -> None:
     kernel, module = _bootstrap_kernel()
 
@@ -39,6 +61,44 @@ def test_file_transfers_renders_macros_on_start_and_enter() -> None:
         module.MENU_HEADER_SLOT,
         module.MENU_PROMPT_SLOT,
     ]
+
+    buffers = kernel.context.get_service("masked_pane_buffers")
+    glyphs, colours = _expected_overlay(
+        module, console_service, module.MENU_PROMPT_SLOT
+    )
+    assert tuple(buffers.staged_screen[:40]) == glyphs
+    assert tuple(buffers.staged_colour[:40]) == colours
+
+
+def test_file_transfers_macros_stage_masked_pane_buffers() -> None:
+    kernel, module = _bootstrap_kernel()
+    console_service = kernel.services["console"]
+    assert isinstance(console_service, ConsoleService)
+    buffers = kernel.context.get_service("masked_pane_buffers")
+
+    buffers.clear_staging()
+    module._render_macro(module.MENU_HEADER_SLOT)
+    glyphs, colours = _expected_overlay(
+        module, console_service, module.MENU_HEADER_SLOT
+    )
+    assert tuple(buffers.staged_screen[:40]) == glyphs
+    assert tuple(buffers.staged_colour[:40]) == colours
+
+    buffers.clear_staging()
+    module._render_macro(module.MENU_PROMPT_SLOT)
+    glyphs, colours = _expected_overlay(
+        module, console_service, module.MENU_PROMPT_SLOT
+    )
+    assert tuple(buffers.staged_screen[:40]) == glyphs
+    assert tuple(buffers.staged_colour[:40]) == colours
+
+    buffers.clear_staging()
+    module._render_macro(module.INVALID_SELECTION_SLOT)
+    glyphs, colours = _expected_overlay(
+        module, console_service, module.INVALID_SELECTION_SLOT
+    )
+    assert tuple(buffers.staged_screen[:40]) == glyphs
+    assert tuple(buffers.staged_colour[:40]) == colours
 
 
 def test_file_transfers_accepts_known_command() -> None:

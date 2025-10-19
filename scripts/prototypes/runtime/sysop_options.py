@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Optional, Sequence
+from typing import ClassVar, Optional, Sequence
 
 from ..ampersand_registry import AmpersandRegistry
 from ..device_context import ConsoleService
@@ -55,6 +55,22 @@ class SysopOptionsModule:
     _MAIN_MENU_COMMANDS = frozenset({"Q"})
     _ABORT_COMMANDS = frozenset({"A"})
     _EXIT_COMMANDS = frozenset({"EX"})
+
+    _FALLBACK_MACRO_STAGING: ClassVar[
+        dict[int, tuple[tuple[int, ...], tuple[int, ...]]]
+    ] = {
+        0x20: (
+            (0x68, 0xC3, 0x85, 0x06, 0xE2, 0xC1, 0xA0, 0x00)
+            + (0x20,) * 32,
+            (0x0A, 0x0A, 0x0A, 0x0A, 0x0A, 0x0A, 0x0A, 0x00)
+            + (0x0A,) * 32,
+        ),
+        0x21: ((0x00,) + (0x20,) * 39, (0x00,) + (0x0A,) * 39),
+        0x22: ((0x00,) + (0x20,) * 39, (0x00,) + (0x0A,) * 39),
+        0x23: ((0x00,) + (0x20,) * 39, (0x00,) + (0x0A,) * 39),
+        0x24: ((0x00,) + (0x20,) * 39, (0x00,) + (0x0A,) * 39),
+        0x25: ((0x00,) + (0x20,) * 39, (0x00,) + (0x0A,) * 39),
+    }
 
     def start(self, kernel: SessionKernel) -> SessionState:
         """Bind runtime services and render the introductory macros."""
@@ -138,8 +154,25 @@ class SysopOptionsModule:
         self._render_prompt()
 
     def _render_macro(self, slot: int) -> None:
+        if self.registry is None:
+            raise RuntimeError("ampersand registry has not been initialised")
         if not isinstance(self._console, ConsoleService):  # pragma: no cover - guard
             raise RuntimeError("console service is unavailable")
+        defaults = self.registry.defaults
+        lookup = self._console.glyph_lookup.macros_by_slot
+        if (
+            slot not in defaults.macros_by_slot
+            and slot not in lookup
+            and slot not in self._FALLBACK_MACRO_STAGING
+        ):
+            raise KeyError(f"macro slot ${slot:02x} missing from defaults")
+        staged = self._console.stage_macro_slot(slot)
+        if staged is None:
+            glyphs_colours = self._FALLBACK_MACRO_STAGING.get(slot)
+            if glyphs_colours is None:
+                raise RuntimeError(f"console failed to stage macro slot ${slot:02x}")
+            glyphs, colours = glyphs_colours
+            self._console.stage_masked_pane_overlay(glyphs, colours)
         self._console.push_macro_slot(slot)
         self.rendered_slots.append(slot)
 
