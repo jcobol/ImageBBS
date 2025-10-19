@@ -7,7 +7,12 @@ from typing import Mapping, MutableMapping, Sequence, TYPE_CHECKING, cast
 
 from ..ampersand_dispatcher import AmpersandDispatchContext
 from ..ampersand_registry import AmpersandRegistry, AmpersandResult
-from ..device_context import ConsoleService, DeviceContext, DeviceError
+from ..device_context import (
+    ConsoleService,
+    DeviceContext,
+    DeviceError,
+    MaskedPaneBuffers,
+)
 from .message_store import MessageRecord, MessageStore
 
 if TYPE_CHECKING:  # pragma: no cover - imported for type checking only
@@ -17,6 +22,7 @@ if TYPE_CHECKING:  # pragma: no cover - imported for type checking only
 BUILTIN_AMPERSAND_OVERRIDES: Mapping[int, str] = MappingProxyType(
     {
         0x34: "scripts.prototypes.runtime.ampersand_overrides:handle_chkflags",
+        0x32: "scripts.prototypes.runtime.ampersand_overrides:handle_outscn",
         0x08: "scripts.prototypes.runtime.ampersand_overrides:handle_dskdir",
         0x03: "scripts.prototypes.runtime.ampersand_overrides:handle_read0",
     }
@@ -85,6 +91,30 @@ def handle_dskdir(context: AmpersandDispatchContext) -> AmpersandResult:
     else:
         combined = listing_text
     return replace(result, rendered_text=combined)
+
+
+def handle_outscn(context: AmpersandDispatchContext) -> AmpersandResult:
+    """Emulate ``outscn`` (``&,50``) by committing masked pane staging."""
+
+    registry = _require_registry(context)
+    services = _resolve_services(context, registry)
+    console = _resolve_console_service(services)
+    buffers = _resolve_masked_pane_buffers(services, context.payload)
+
+    result = registry.dispatch(context.invocation.routine, context, use_default=True)
+
+    if console is None or buffers is None:
+        return result
+
+    fill_glyph = 0x20
+    fill_colour = console.screen_colour & 0xFF
+
+    if _masked_pane_has_payload(buffers, fill_glyph, fill_colour):
+        console.commit_masked_pane_staging(
+            fill_glyph=fill_glyph, fill_colour=fill_colour
+        )
+
+    return result
 
 
 def handle_read0(context: AmpersandDispatchContext) -> AmpersandResult:
@@ -158,6 +188,31 @@ def _resolve_device_context(
     if isinstance(candidate, DeviceContext):
         return candidate
     return None
+
+
+def _resolve_masked_pane_buffers(
+    services: Mapping[str, object], payload: object
+) -> MaskedPaneBuffers | None:
+    buffers = services.get("masked_pane_buffers")
+    if isinstance(buffers, MaskedPaneBuffers):
+        return buffers
+    payload_mapping = _payload_mapping(payload)
+    candidate = payload_mapping.get("masked_pane_buffers")
+    if isinstance(candidate, MaskedPaneBuffers):
+        return candidate
+    return None
+
+
+def _masked_pane_has_payload(
+    buffers: MaskedPaneBuffers, fill_glyph: int, fill_colour: int
+) -> bool:
+    glyph_byte = int(fill_glyph) & 0xFF
+    colour_byte = int(fill_colour) & 0xFF
+    if any(byte != glyph_byte for byte in buffers.staged_screen):
+        return True
+    if any(byte != colour_byte for byte in buffers.staged_colour):
+        return True
+    return False
 
 
 def _update_indicator(
@@ -275,5 +330,6 @@ __all__ = [
     "BUILTIN_AMPERSAND_OVERRIDES",
     "handle_chkflags",
     "handle_dskdir",
+    "handle_outscn",
     "handle_read0",
 ]
