@@ -74,7 +74,7 @@ def _normalise_snapshot(snapshot: Mapping[str, Any]) -> Dict[str, Any]:
             hardware_data: Dict[str, Any] = {"vic_registers": vic_registers}
             raw_timeline = value.get("vic_register_timeline")
             if isinstance(raw_timeline, Iterable):
-                timeline: list[VicRegisterTimelineEntry] = []
+                timeline: list[Dict[str, int | None]] = []
                 for entry in raw_timeline:
                     if not isinstance(entry, Mapping):
                         continue
@@ -84,14 +84,14 @@ def _normalise_snapshot(snapshot: Mapping[str, Any]) -> Dict[str, Any]:
                     if not isinstance(store, int) or not isinstance(address, int):
                         continue
                     timeline.append(
-                        VicRegisterTimelineEntry(
-                            store=store,
-                            address=address,
-                            value=value_field if isinstance(value_field, int) else None,
-                        )
+                        {
+                            "store": store,
+                            "address": address,
+                            "value": value_field if isinstance(value_field, int) else None,
+                        }
                     )
                 hardware_data["vic_register_timeline"] = tuple(
-                    sorted(timeline, key=lambda entry: entry.store)
+                    sorted(timeline, key=lambda entry: entry["store"])
                 )
             pointer_data = value.get("pointer")
             if isinstance(pointer_data, Mapping):
