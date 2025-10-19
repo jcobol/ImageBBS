@@ -351,3 +351,64 @@ def test_stage_masked_pane_overlay_normalises_payloads_and_defers_commit() -> No
         == baseline_colour
     )
     assert console.transcript_bytes == b""
+
+
+def test_stage_macro_slot_populates_staging_buffers() -> None:
+    console = Console()
+    service = ConsoleService(console)
+    buffers = MaskedPaneBuffers()
+    service.set_masked_pane_buffers(buffers)
+
+    width = buffers.width
+    overlay_screen_address = ConsoleService._MASKED_OVERLAY_SCREEN_BASE
+    overlay_colour_address = ConsoleService._MASKED_OVERLAY_COLOUR_BASE
+    baseline_screen = _read_screen(service, overlay_screen_address, width)
+    baseline_colour = _read_colour(service, overlay_colour_address, width)
+
+    slot = 0x29
+    macro_entry = console.defaults.macros_by_slot[slot]
+    assert macro_entry.screen is not None
+
+    expected_screen = bytes(macro_entry.screen.glyph_bytes[:width])
+    expected_colour = bytes(macro_entry.screen.colour_bytes[:width])
+
+    run = service.macro_glyphs[slot]
+    result = service.stage_macro_slot(slot)
+
+    assert result is run
+    assert bytes(buffers.staged_screen) == expected_screen
+    assert bytes(buffers.staged_colour) == expected_colour
+    assert _read_screen(service, overlay_screen_address, width) == baseline_screen
+    assert _read_colour(service, overlay_colour_address, width) == baseline_colour
+    assert console.transcript_bytes == b""
+
+
+def test_stage_macro_slot_without_screen_uses_rendered_payload() -> None:
+    console = Console()
+    service = ConsoleService(console)
+    buffers = MaskedPaneBuffers()
+    service.set_masked_pane_buffers(buffers)
+
+    width = buffers.width
+    overlay_screen_address = ConsoleService._MASKED_OVERLAY_SCREEN_BASE
+    overlay_colour_address = ConsoleService._MASKED_OVERLAY_COLOUR_BASE
+    baseline_screen = _read_screen(service, overlay_screen_address, width)
+    baseline_colour = _read_colour(service, overlay_colour_address, width)
+
+    slot = 0x02
+    run = service.macro_glyphs[slot]
+
+    fill_colour = 0x0C
+    result = service.stage_macro_slot(slot, fill_colour=fill_colour)
+
+    rendered_bytes = bytes(run.rendered[:width])
+    padding = bytes((0x20,) * (width - len(rendered_bytes)))
+    expected_screen = rendered_bytes + padding
+    expected_colour = bytes((fill_colour & 0xFF,) * width)
+
+    assert result is run
+    assert bytes(buffers.staged_screen) == expected_screen
+    assert bytes(buffers.staged_colour) == expected_colour
+    assert _read_screen(service, overlay_screen_address, width) == baseline_screen
+    assert _read_colour(service, overlay_colour_address, width) == baseline_colour
+    assert console.transcript_bytes == b""
