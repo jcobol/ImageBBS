@@ -197,16 +197,22 @@ def test_capture_frame_disables_indicators_when_blank():
 
 
 @pytest.mark.parametrize(
-    "code, expected_char",
+    "code, expected_char, expected_reverse",
     [
-        (0xA0, " "),
-        (0xB0, "0"),
-        (0xFA, "Z"),
+        (0x01, "A", False),
+        (0x1C, "£", False),
+        (0x41, "A", False),
+        (0x61, "a", False),
+        (0x7F, "⌂", False),
+        (0xA0, " ", False),
+        (0xB0, "0", True),
+        (0xC1, "A", True),
+        (0xFA, "Z", True),
     ],
 )
-def test_translate_petscii_preserves_high_bit_glyphs(
-    code: int, expected_char: str
+def test_translate_petscii_maps_screen_codes(
+    code: int, expected_char: str, expected_reverse: bool
 ) -> None:
     char, reverse = translate_petscii(code)
     assert char == expected_char
-    assert reverse is True
+    assert reverse is expected_reverse
