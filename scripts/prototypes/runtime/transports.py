@@ -7,11 +7,16 @@ from collections import deque
 from typing import Awaitable, Callable, Coroutine, Deque, Iterable, Optional
 
 from ..device_context import ModemTransport
+from ..message_editor import EditorState
 from ..session_kernel import SessionState
 from .session_runner import SessionRunner
 
 
 SleepCallable = Callable[[float], Awaitable[object]]
+
+
+_EDITOR_ABORT_COMMAND = "/abort"
+_EDITOR_SUBMIT_COMMAND = "/send"
 
 
 class _BaudBudget:
@@ -333,6 +338,8 @@ class TelnetModemTransport(ModemTransport):
     async def _pump_reader(self) -> None:
         try:
             while not self._close_event.is_set():
+                if await self._maybe_collect_editor_submission():
+                    continue
                 try:
                     data = await self.reader.readline()
                 except ConnectionError:
@@ -351,6 +358,80 @@ class TelnetModemTransport(ModemTransport):
                         break
         finally:
             self._mark_closed()
+
+    async def _maybe_collect_editor_submission(self) -> bool:
+        runner = self.runner
+        if runner.state is not SessionState.MESSAGE_EDITOR:
+            return False
+        if not runner.requires_editor_submission():
+            return False
+        try:
+            await self._collect_editor_submission()
+        except ConnectionError:
+            self._mark_closed()
+        return True
+
+    async def _collect_editor_submission(self) -> None:
+        runner = self.runner
+        context = runner.editor_context
+        editor_state = runner.get_editor_state()
+        existing_subject = context.current_message if editor_state is not None else ""
+        existing_lines = list(context.draft_buffer)
+
+        def _write(line: str, *, newline: bool = True) -> None:
+            payload = line + ("\r\n" if newline else "")
+            self.send(payload)
+
+        async def _readline() -> str:
+            data = await self.reader.readline()
+            if data == b"":
+                raise ConnectionError
+            text = data.decode(self.encoding, errors="ignore")
+            return text.rstrip("\r\n")
+
+        _write("")
+        _write("-- Message Editor --")
+        _write(
+            f"Type {_EDITOR_SUBMIT_COMMAND} to save or {_EDITOR_ABORT_COMMAND} to cancel."
+        )
+
+        subject_text = existing_subject
+        if editor_state is EditorState.POST_MESSAGE:
+            prompt = "Subject"
+            if existing_subject:
+                prompt += f" [{existing_subject}]"
+            prompt += ": "
+            _write(prompt, newline=False)
+            subject_line = await _readline()
+            command = subject_line.strip().lower()
+            if command == _EDITOR_ABORT_COMMAND:
+                runner.abort_editor()
+                return
+            if subject_line:
+                subject_text = subject_line
+
+        if editor_state is EditorState.EDIT_DRAFT and existing_lines:
+            _write("Current message lines:")
+            for line in existing_lines:
+                _write(f"> {line}")
+
+        _write("Enter message body.")
+        lines: list[str] = []
+        while True:
+            _write("> ", newline=False)
+            line = await _readline()
+            command = line.strip().lower()
+            if command == _EDITOR_ABORT_COMMAND:
+                runner.abort_editor()
+                return
+            if command == _EDITOR_SUBMIT_COMMAND:
+                final_lines = lines if lines else existing_lines
+                if editor_state is EditorState.POST_MESSAGE:
+                    runner.submit_editor_draft(subject=subject_text, lines=final_lines)
+                else:
+                    runner.submit_editor_draft(subject=None, lines=final_lines)
+                return
+            lines.append(line)
 
 
 __all__ = ["BaudLimitedTransport", "TelnetModemTransport"]

@@ -88,6 +88,44 @@ class SessionRunner:
 
         return self._editor_context
 
+    def get_editor_state(self) -> EditorState | None:
+        """Return the active :class:`EditorState` when the editor is loaded."""
+
+        editor = self._get_message_editor()
+        if editor is None:
+            return None
+        return editor.state
+
+    def requires_editor_submission(self) -> bool:
+        """Return ``True`` when the editor expects a draft submission."""
+
+        state = self.get_editor_state()
+        if state is None:
+            return False
+        if state is EditorState.POST_MESSAGE:
+            return True
+        if state is EditorState.EDIT_DRAFT:
+            return self._editor_context.selected_message_id is not None
+        return False
+
+    def submit_editor_draft(
+        self,
+        *,
+        subject: str | None = None,
+        lines: Iterable[str] | None = None,
+    ) -> SessionState:
+        """Populate the editor context and dispatch ``DRAFT_SUBMITTED``."""
+
+        editor = self._get_message_editor()
+        if editor is None:
+            raise RuntimeError("message editor module is unavailable")
+        context = self._editor_context
+        if subject is not None:
+            context.current_message = subject
+        if lines is not None:
+            context.draft_buffer = list(lines)
+        return self._dispatch(MessageEditorEvent.DRAFT_SUBMITTED, context)
+
     def read_output(self) -> str:
         """Flush buffered console output and return it as a string."""
 
