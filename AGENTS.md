@@ -73,3 +73,8 @@ ERROR_FORMAT_VIOLATION
 
 Remember: Your response MUST consist ONLY of the required task blocks (or the single token ERROR_FORMAT_VIOLATION). No explanations.
 
+# Files to not modify
+
+Do not modify files in these directories:
+- scripts/
+
