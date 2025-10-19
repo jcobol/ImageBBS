@@ -866,6 +866,42 @@ class ConsoleService:
         colour_value = self.screen_colour if colour is None else int(colour) & 0xFF
         buffers.clear_staging(glyph=glyph, colour=colour_value)
 
+    def stage_masked_pane_overlay(
+        self,
+        screen_bytes: Sequence[int] | Iterable[int] | bytes | bytearray,
+        colour_bytes: Sequence[int] | Iterable[int] | bytes | bytearray | None = None,
+        *,
+        fill_colour: int | None = None,
+    ) -> None:
+        """Normalise ``screen_bytes``/``colour_bytes`` and stage them for commit."""
+
+        width = self._MASKED_OVERLAY_WIDTH
+
+        glyph_payload = bytes(screen_bytes)
+        glyph_slice = glyph_payload[:width]
+        if len(glyph_slice) < width:
+            glyph_slice = glyph_slice + bytes((0x20,) * (width - len(glyph_slice)))
+
+        default_colour = self.screen_colour if fill_colour is None else int(fill_colour)
+        default_colour &= 0xFF
+
+        if colour_bytes is None:
+            colour_slice = bytes((default_colour,) * width)
+        else:
+            colour_payload = bytes(colour_bytes)
+            colour_slice = colour_payload[:width]
+            if len(colour_slice) < width:
+                colour_slice = colour_slice + bytes(
+                    (default_colour,) * (width - len(colour_slice))
+                )
+
+        self.poke_block(
+            screen_address=self._MASKED_STAGING_SCREEN_BASE,
+            screen_bytes=glyph_slice,
+            colour_address=self._MASKED_STAGING_COLOUR_BASE,
+            colour_bytes=colour_slice,
+        )
+
     def rotate_masked_pane_buffers(
         self,
         buffers: MaskedPaneBuffers,
