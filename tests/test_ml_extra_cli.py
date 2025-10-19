@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import gzip
 import json
 import subprocess
 import sys
@@ -30,6 +32,17 @@ def sample_slot(defaults: ml_extra_defaults.MLExtraDefaults) -> int:
 @pytest.fixture(scope="module")
 def metadata_snapshot(defaults: ml_extra_defaults.MLExtraDefaults) -> dict[str, object]:
     return ml_extra_reporting.collect_overlay_metadata(defaults)
+
+
+@pytest.fixture(scope="module")
+def macro_screen_artifacts() -> dict[int, dict[str, object]]:
+    root = Path(__file__).resolve().parents[1] / "docs/porting/artifacts"
+    path = root / "ml-extra-macro-screens.json.gz.base64"
+    raw_text = path.read_text(encoding="utf-8")
+    payload = base64.b64decode("".join(raw_text.split()))
+    archive = gzip.decompress(payload).decode("utf-8")
+    records = json.loads(archive)
+    return {int(entry["slot"]): entry for entry in records}
 
 
 def test_dump_macros_metadata_json(
@@ -184,6 +197,7 @@ def test_snapshot_guard_update_baseline(tmp_path: Path) -> None:
 def test_dump_macros_file_transfer_slots(
     capsys: pytest.CaptureFixture[str],
     defaults: ml_extra_defaults.MLExtraDefaults,
+    macro_screen_artifacts: dict[int, dict[str, object]],
 ) -> None:
     slots = [0x28, 0x29, 0x2A]
     slot_args = [item for slot in slots for item in ("--slot", f"${slot:02x}")]
@@ -209,6 +223,12 @@ def test_dump_macros_file_transfer_slots(
         assert entry.screen.height == 25
         assert len(entry.screen.glyph_bytes) == entry.screen.width * entry.screen.height
         assert len(entry.screen.colour_bytes) == entry.screen.width * entry.screen.height
+        artifact = macro_screen_artifacts[slot]
+        row = rows_by_slot[slot]
+        assert row.keys() >= {"bytes", "text"}
+        assert row["bytes"] == artifact["bytes"]
+        assert row["text"] == artifact["text"]
+        assert len(artifact["bytes"]) == artifact.get("byte_count", len(artifact["bytes"]))
 
 
 def test_refresh_pipeline_matches_baseline(tmp_path: Path) -> None:
