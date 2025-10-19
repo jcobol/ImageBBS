@@ -1,6 +1,9 @@
 """Console rendering tests for the PETSCII host shim."""
 from __future__ import annotations
 
+import base64
+import gzip
+import io
 import json
 import sys
 from pathlib import Path
@@ -31,8 +34,35 @@ def _artifact_root() -> Path:
 
 
 def _load_artifact_json(name: str) -> Any:
-    path = _artifact_root() / name
-    return json.loads(path.read_text(encoding="utf-8"))
+    root = _artifact_root()
+    candidates = [name, f"{name}.base64", f"{name}.b64"]
+    if name.endswith(".gz"):
+        gz_name = name
+    else:
+        gz_name = f"{name}.gz"
+        candidates.extend([gz_name, f"{gz_name}.base64", f"{gz_name}.b64"])
+
+    for candidate in candidates:
+        path = root / candidate
+        if not path.exists():
+            continue
+        is_base64 = candidate.endswith(".base64") or candidate.endswith(".b64")
+        is_gzip = ".gz" in candidate
+        if is_base64:
+            raw_text = path.read_text(encoding="utf-8")
+            payload = base64.b64decode("".join(raw_text.split()))
+            if is_gzip:
+                with gzip.GzipFile(fileobj=io.BytesIO(payload)) as gz_handle:
+                    with io.TextIOWrapper(gz_handle, encoding="utf-8") as text_handle:
+                        return json.load(text_handle)
+            return json.loads(payload.decode("utf-8"))
+        if is_gzip:
+            with gzip.open(path, "rt", encoding="utf-8") as handle:
+                return json.load(handle)
+        with path.open("rt", encoding="utf-8") as handle:
+            return json.load(handle)
+
+    raise FileNotFoundError(f"Unable to locate artifact for {name!r} in {root}")
 
 
 def _parse_hex_value(value: Any) -> Any:
