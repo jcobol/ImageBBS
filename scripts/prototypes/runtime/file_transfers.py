@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Optional
 
+from ..ampersand_dispatcher import AmpersandDispatcher
 from ..ampersand_registry import AmpersandRegistry
 from ..device_context import ConsoleService
 from ..session_kernel import SessionKernel, SessionState
@@ -34,6 +35,7 @@ class FileTransfersModule:
     rendered_slots: list[int] = field(init=False, default_factory=list)
     last_command: str = field(init=False, default="")
     _console: ConsoleService | None = field(init=False, default=None)
+    _dispatcher: AmpersandDispatcher | None = field(init=False, default=None)
 
     # The BASIC source initialises the menu with ``&,28`` before prompting for a
     # command.  Slot ``$28`` mirrors that macro while ``$29`` and ``$2a`` track
@@ -102,6 +104,7 @@ class FileTransfersModule:
     def start(self, kernel: SessionKernel) -> SessionState:
         """Bind runtime services and render the introductory macros."""
 
+        self._dispatcher = kernel.dispatcher
         self.registry = kernel.dispatcher.registry
         console = kernel.services.get("console")
         if not isinstance(console, ConsoleService):
@@ -172,6 +175,13 @@ class FileTransfersModule:
         staged = self._console.stage_macro_slot(slot)
         if staged is None:
             raise RuntimeError(f"console failed to stage macro slot ${slot:02x}")
+        if slot == self.MENU_PROMPT_SLOT:
+            self._commit_masked_overlay()
+            restaged = self._console.stage_macro_slot(slot)
+            if restaged is None:  # pragma: no cover - defensive guard
+                raise RuntimeError(
+                    f"console failed to restage macro slot ${slot:02x}"
+                )
         self._console.push_macro_slot(slot)
         self.rendered_slots.append(slot)
 
@@ -191,6 +201,16 @@ class FileTransfersModule:
                 return prefix
             return token
         return text[:2]
+
+    def _commit_masked_overlay(self) -> None:
+        dispatcher = self._dispatcher
+        if dispatcher is not None:
+            dispatcher.dispatch("&,50")
+            return
+        if isinstance(self._console, ConsoleService):  # pragma: no cover - guard
+            self._console.commit_masked_pane_staging()
+            return
+        raise RuntimeError("console service is unavailable")
 
 
 __all__ = [

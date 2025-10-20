@@ -40,6 +40,20 @@ def _expected_overlay(
     return glyphs[:width], colours[:width]
 
 
+def _masked_overlay(
+    console: ConsoleService,
+) -> tuple[tuple[int, ...], tuple[int, ...]]:
+    screen_bytes, colour_bytes = console.peek_block(
+        screen_address=ConsoleService._MASKED_OVERLAY_SCREEN_BASE,
+        screen_length=ConsoleService._MASKED_OVERLAY_WIDTH,
+        colour_address=ConsoleService._MASKED_OVERLAY_COLOUR_BASE,
+        colour_length=ConsoleService._MASKED_OVERLAY_WIDTH,
+    )
+    screen = tuple(screen_bytes)
+    colours = tuple(colour_bytes)
+    return screen, colours
+
+
 def test_file_transfers_renders_macros_on_start_and_enter() -> None:
     kernel, module = _bootstrap_kernel()
 
@@ -69,6 +83,10 @@ def test_file_transfers_renders_macros_on_start_and_enter() -> None:
     assert tuple(buffers.staged_screen[:40]) == glyphs
     assert tuple(buffers.staged_colour[:40]) == colours
 
+    overlay_screen, overlay_colour = _masked_overlay(console_service)
+    assert overlay_screen[:40] == glyphs
+    assert overlay_colour[:40] == colours
+
 
 def test_file_transfers_macros_stage_masked_pane_buffers() -> None:
     kernel, module = _bootstrap_kernel()
@@ -92,6 +110,10 @@ def test_file_transfers_macros_stage_masked_pane_buffers() -> None:
     assert tuple(buffers.staged_screen[:40]) == glyphs
     assert tuple(buffers.staged_colour[:40]) == colours
 
+    overlay_screen, overlay_colour = _masked_overlay(console_service)
+    assert overlay_screen[:40] == glyphs
+    assert overlay_colour[:40] == colours
+
     buffers.clear_staging()
     module._render_macro(module.INVALID_SELECTION_SLOT)
     glyphs, colours = _expected_overlay(
@@ -104,6 +126,8 @@ def test_file_transfers_macros_stage_masked_pane_buffers() -> None:
 def test_file_transfers_accepts_known_command() -> None:
     kernel, module = _bootstrap_kernel()
     kernel.step(FileTransferEvent.ENTER)
+    console_service = kernel.services["console"]
+    assert isinstance(console_service, ConsoleService)
 
     state = kernel.step(FileTransferEvent.COMMAND, " ud ")
 
@@ -111,11 +135,20 @@ def test_file_transfers_accepts_known_command() -> None:
     assert module.last_command == "UD"
     assert module.rendered_slots[-1] == module.MENU_PROMPT_SLOT
 
+    glyphs, colours = _expected_overlay(
+        module, console_service, module.MENU_PROMPT_SLOT
+    )
+    overlay_screen, overlay_colour = _masked_overlay(console_service)
+    assert overlay_screen[:40] == glyphs
+    assert overlay_colour[:40] == colours
+
 
 def test_file_transfers_rejects_unknown_command() -> None:
     kernel, module = _bootstrap_kernel()
     kernel.step(FileTransferEvent.ENTER)
     module.rendered_slots.clear()
+    console_service = kernel.services["console"]
+    assert isinstance(console_service, ConsoleService)
 
     state = kernel.step(FileTransferEvent.COMMAND, "??")
 
@@ -124,6 +157,13 @@ def test_file_transfers_rejects_unknown_command() -> None:
         module.INVALID_SELECTION_SLOT,
         module.MENU_PROMPT_SLOT,
     ]
+
+    glyphs, colours = _expected_overlay(
+        module, console_service, module.MENU_PROMPT_SLOT
+    )
+    overlay_screen, overlay_colour = _masked_overlay(console_service)
+    assert overlay_screen[:40] == glyphs
+    assert overlay_colour[:40] == colours
 
 
 def test_file_transfers_exit_returns_to_main_menu() -> None:
