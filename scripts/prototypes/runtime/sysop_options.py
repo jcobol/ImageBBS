@@ -5,9 +5,11 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import ClassVar, Optional, Sequence
 
+from ..ampersand_dispatcher import AmpersandDispatcher
 from ..ampersand_registry import AmpersandRegistry
 from ..device_context import ConsoleService
 from ..session_kernel import SessionKernel, SessionModule, SessionState
+from .macro_rendering import render_macro_with_overlay_commit
 
 
 class SysopOptionsState(Enum):
@@ -42,6 +44,7 @@ class SysopOptionsModule:
     last_command: str = field(init=False, default="")
     last_saying: str = field(init=False, default="")
     _console: ConsoleService | None = field(init=False, default=None)
+    _dispatcher: AmpersandDispatcher | None = field(init=False, default=None)
     _saying_index: int = field(init=False, default=0)
 
     MENU_HEADER_SLOT = 0x20
@@ -75,6 +78,7 @@ class SysopOptionsModule:
     def start(self, kernel: SessionKernel) -> SessionState:
         """Bind runtime services and render the introductory macros."""
 
+        self._dispatcher = kernel.dispatcher
         self.registry = kernel.dispatcher.registry
         console = kernel.services.get("console")
         if not isinstance(console, ConsoleService):
@@ -166,14 +170,12 @@ class SysopOptionsModule:
             and slot not in self._FALLBACK_MACRO_STAGING
         ):
             raise KeyError(f"macro slot ${slot:02x} missing from defaults")
-        staged = self._console.stage_macro_slot(slot)
-        if staged is None:
-            glyphs_colours = self._FALLBACK_MACRO_STAGING.get(slot)
-            if glyphs_colours is None:
-                raise RuntimeError(f"console failed to stage macro slot ${slot:02x}")
-            glyphs, colours = glyphs_colours
-            self._console.stage_masked_pane_overlay(glyphs, colours)
-        self._console.push_macro_slot(slot)
+        render_macro_with_overlay_commit(
+            console=self._console,
+            dispatcher=self._dispatcher,
+            slot=slot,
+            fallback_overlay=self._FALLBACK_MACRO_STAGING.get(slot),
+        )
         self.rendered_slots.append(slot)
 
     def _next_saying(self) -> str:

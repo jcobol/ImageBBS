@@ -44,6 +44,20 @@ def _expected_overlay(
     return glyphs[:width], colours[:width]
 
 
+def _masked_overlay(
+    console: ConsoleService,
+) -> tuple[tuple[int, ...], tuple[int, ...]]:
+    screen_bytes, colour_bytes = console.peek_block(
+        screen_address=ConsoleService._MASKED_OVERLAY_SCREEN_BASE,
+        screen_length=ConsoleService._MASKED_OVERLAY_WIDTH,
+        colour_address=ConsoleService._MASKED_OVERLAY_COLOUR_BASE,
+        colour_length=ConsoleService._MASKED_OVERLAY_WIDTH,
+    )
+    if screen_bytes is None or colour_bytes is None:  # pragma: no cover - guard
+        raise AssertionError("masked overlay snapshot failed")
+    return tuple(screen_bytes), tuple(colour_bytes)
+
+
 def test_sysop_options_renders_macros_on_start_and_enter() -> None:
     kernel, module = _bootstrap_kernel()
 
@@ -72,6 +86,9 @@ def test_sysop_options_renders_macros_on_start_and_enter() -> None:
     )
     assert tuple(buffers.staged_screen[:40]) == glyphs
     assert tuple(buffers.staged_colour[:40]) == colours
+    overlay_screen, overlay_colour = _masked_overlay(console_service)
+    assert overlay_screen[:40] == glyphs
+    assert overlay_colour[:40] == colours
 
 
 def test_sysop_options_macros_stage_masked_pane_buffers() -> None:
@@ -87,6 +104,9 @@ def test_sysop_options_macros_stage_masked_pane_buffers() -> None:
     )
     assert tuple(buffers.staged_screen[:40]) == glyphs
     assert tuple(buffers.staged_colour[:40]) == colours
+    overlay_screen, overlay_colour = _masked_overlay(console_service)
+    assert overlay_screen[:40] == glyphs
+    assert overlay_colour[:40] == colours
 
     buffers.clear_staging()
     module._render_macro(module.MENU_PROMPT_SLOT)
@@ -95,6 +115,9 @@ def test_sysop_options_macros_stage_masked_pane_buffers() -> None:
     )
     assert tuple(buffers.staged_screen[:40]) == glyphs
     assert tuple(buffers.staged_colour[:40]) == colours
+    overlay_screen, overlay_colour = _masked_overlay(console_service)
+    assert overlay_screen[:40] == glyphs
+    assert overlay_colour[:40] == colours
 
     buffers.clear_staging()
     module._render_macro(module.INVALID_SELECTION_SLOT)
@@ -103,12 +126,18 @@ def test_sysop_options_macros_stage_masked_pane_buffers() -> None:
     )
     assert tuple(buffers.staged_screen[:40]) == glyphs
     assert tuple(buffers.staged_colour[:40]) == colours
+    overlay_screen, overlay_colour = _masked_overlay(console_service)
+    assert overlay_screen[:40] == glyphs
+    assert overlay_colour[:40] == colours
 
     buffers.clear_staging()
     module._render_macro(module.ABORT_SLOT)
     glyphs, colours = _expected_overlay(module, console_service, module.ABORT_SLOT)
     assert tuple(buffers.staged_screen[:40]) == glyphs
     assert tuple(buffers.staged_colour[:40]) == colours
+    overlay_screen, overlay_colour = _masked_overlay(console_service)
+    assert overlay_screen[:40] == glyphs
+    assert overlay_colour[:40] == colours
 
 
 def test_sysop_options_saying_command_renders_text() -> None:
