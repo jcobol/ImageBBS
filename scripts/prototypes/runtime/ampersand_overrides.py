@@ -206,6 +206,8 @@ def _resolve_masked_pane_buffers(
 def _masked_pane_has_payload(
     buffers: MaskedPaneBuffers, fill_glyph: int, fill_colour: int
 ) -> bool:
+    if buffers.dirty:
+        return True
     glyph_byte = int(fill_glyph) & 0xFF
     colour_byte = int(fill_colour) & 0xFF
     if any(byte != glyph_byte for byte in buffers.staged_screen):

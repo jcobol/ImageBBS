@@ -43,6 +43,7 @@ def test_masked_pane_buffers_expose_staging_views() -> None:
     assert buffers.live_colour is buffers.colour_4050
     assert buffers.staged_screen is buffers.tempbott_next
     assert buffers.staged_colour is buffers.colour_var_4078
+    assert buffers.dirty is False
 
     buffers.live_screen[:] = bytes((0x41,) * buffers.width)
     buffers.live_colour[:] = bytes((0x02,) * buffers.width)
@@ -132,6 +133,8 @@ def test_clear_masked_pane_staging_defaults_to_screen_colour() -> None:
 
     buffers.staged_screen[:] = bytes(range(buffers.width))
     buffers.staged_colour[:] = bytes((value + 1) % 16 for value in range(buffers.width))
+    buffers.recalculate_dirty()
+    assert buffers.dirty is True
 
     service.clear_masked_pane_staging(buffers)
 
@@ -141,6 +144,7 @@ def test_clear_masked_pane_staging_defaults_to_screen_colour() -> None:
     assert bytes(buffers.staged_colour) == bytes((expected_colour,) * buffers.width)
     assert bytes(buffers.tempbott_next) == bytes((0x20,) * buffers.width)
     assert bytes(buffers.colour_var_4078) == bytes((expected_colour,) * buffers.width)
+    assert buffers.dirty is False
 
 
 def test_masked_pane_buffer_rotation_matches_loopb94e() -> None:
@@ -157,6 +161,8 @@ def test_masked_pane_buffer_rotation_matches_loopb94e() -> None:
     buffers.live_colour[:] = live_colour
     buffers.staged_screen[:] = staged_screen
     buffers.staged_colour[:] = staged_colour
+    buffers.recalculate_dirty()
+    assert buffers.dirty is True
 
     fill_glyph = 0x20
     fill_colour = 0x0A
@@ -181,6 +187,7 @@ def test_masked_pane_buffer_rotation_matches_loopb94e() -> None:
     assert bytes(buffers.staged_colour) == bytes((fill_colour,) * buffers.width)
     assert bytes(buffers.tempbott_next) == bytes((fill_glyph,) * buffers.width)
     assert bytes(buffers.colour_var_4078) == bytes((fill_colour,) * buffers.width)
+    assert buffers.dirty is False
     assert console.transcript_bytes == b""
 
 
@@ -192,6 +199,8 @@ def test_masked_pane_staging_single_byte_writes_capture_buffers() -> None:
 
     stage_screen_address = ConsoleService._MASKED_STAGING_SCREEN_BASE
     stage_colour_address = ConsoleService._MASKED_STAGING_COLOUR_BASE
+
+    assert buffers.dirty is False
 
     last_screen_address = (
         ConsoleService._SCREEN_BASE
@@ -213,6 +222,7 @@ def test_masked_pane_staging_single_byte_writes_capture_buffers() -> None:
 
     assert bytes(buffers.staged_screen[:1]) == b"A"
     assert bytes(buffers.staged_colour[:3]) == bytes((0x07,) * 3)
+    assert buffers.dirty is True
 
     assert console.screen.peek_screen_address(last_screen_address) == baseline_screen
     assert console.screen.peek_colour_address(last_colour_address) == baseline_colour
@@ -228,6 +238,8 @@ def test_masked_pane_staging_block_writes_bypass_renderer() -> None:
     stage_screen_address = ConsoleService._MASKED_STAGING_SCREEN_BASE
     stage_colour_address = ConsoleService._MASKED_STAGING_COLOUR_BASE
 
+    assert buffers.dirty is False
+
     screen_payload = bytes((0x30 + i) % 256 for i in range(buffers.width))
     colour_payload = bytes((i + 5) % 16 for i in range(buffers.width))
 
@@ -240,6 +252,7 @@ def test_masked_pane_staging_block_writes_bypass_renderer() -> None:
 
     assert bytes(buffers.staged_screen) == screen_payload
     assert bytes(buffers.staged_colour) == colour_payload
+    assert buffers.dirty is True
 
     normal_screen_address = ConsoleService._SCREEN_BASE
     normal_colour_address = ConsoleService._COLOUR_BASE
@@ -280,6 +293,7 @@ def test_commit_masked_pane_staging_flushes_overlay_and_resets_buffers() -> None
 
     assert bytes(buffers.staged_screen) == screen_payload
     assert bytes(buffers.staged_colour) == colour_payload
+    assert buffers.dirty is True
 
     service.commit_masked_pane_staging()
 
@@ -296,6 +310,7 @@ def test_commit_masked_pane_staging_flushes_overlay_and_resets_buffers() -> None
     assert bytes(buffers.staged_colour) == bytes(
         (expected_fill_colour,) * buffers.width
     )
+    assert buffers.dirty is False
 
 
 def test_stage_masked_pane_overlay_normalises_payloads_and_defers_commit() -> None:
@@ -332,6 +347,7 @@ def test_stage_masked_pane_overlay_normalises_payloads_and_defers_commit() -> No
 
     assert bytes(buffers.staged_screen) == expected_screen
     assert bytes(buffers.staged_colour) == expected_colour
+    assert buffers.dirty is True
 
     screen_overflow_payload = bytes((0x60 + i) % 256 for i in range(width + 5))
     service.stage_masked_pane_overlay(screen_overflow_payload)
@@ -341,6 +357,7 @@ def test_stage_masked_pane_overlay_normalises_payloads_and_defers_commit() -> No
 
     assert bytes(buffers.staged_screen) == truncated_screen
     assert bytes(buffers.staged_colour) == expected_colour
+    assert buffers.dirty is True
 
     assert (
         _read_screen(service, ConsoleService._MASKED_OVERLAY_SCREEN_BASE, width)
@@ -378,6 +395,7 @@ def test_stage_macro_slot_populates_staging_buffers() -> None:
     assert result is run
     assert bytes(buffers.staged_screen) == expected_screen
     assert bytes(buffers.staged_colour) == expected_colour
+    assert buffers.dirty is True
     assert _read_screen(service, overlay_screen_address, width) == baseline_screen
     assert _read_colour(service, overlay_colour_address, width) == baseline_colour
     assert console.transcript_bytes == b""
@@ -409,6 +427,7 @@ def test_stage_macro_slot_without_screen_uses_rendered_payload() -> None:
     assert result is run
     assert bytes(buffers.staged_screen) == expected_screen
     assert bytes(buffers.staged_colour) == expected_colour
+    assert buffers.dirty is True
     assert _read_screen(service, overlay_screen_address, width) == baseline_screen
     assert _read_colour(service, overlay_colour_address, width) == baseline_colour
     assert console.transcript_bytes == b""

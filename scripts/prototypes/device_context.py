@@ -612,6 +612,9 @@ class MaskedPaneBuffers:
     tempbott_next: bytearray = field(init=False, repr=False)
     colour_4050: bytearray = field(init=False, repr=False)
     colour_var_4078: bytearray = field(init=False, repr=False)
+    dirty: bool = field(default=False, init=False)
+    staging_fill_glyph: int = field(init=False, repr=False)
+    staging_fill_colour: int = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         if self.width <= 0:
@@ -662,6 +665,33 @@ class MaskedPaneBuffers:
         colour_byte = int(colour) & 0xFF
         self.tempbott_next[:] = bytes((glyph_byte,) * self.width)
         self.colour_var_4078[:] = bytes((colour_byte,) * self.width)
+        self.staging_fill_glyph = glyph_byte
+        self.staging_fill_colour = colour_byte
+        self.dirty = False
+
+    def preview_staging_payload(
+        self, screen_payload: Sequence[int], colour_payload: Sequence[int]
+    ) -> None:
+        """Update ``dirty`` to reflect the provided staging payload."""
+
+        glyph_fill = getattr(self, "staging_fill_glyph", 0x20) & 0xFF
+        colour_fill = getattr(self, "staging_fill_colour", 0x00) & 0xFF
+        if any((int(byte) & 0xFF) != glyph_fill for byte in screen_payload):
+            self.dirty = True
+            return
+        if any((int(byte) & 0xFF) != colour_fill for byte in colour_payload):
+            self.dirty = True
+            return
+        self.dirty = False
+
+    def recalculate_dirty(self) -> None:
+        """Refresh ``dirty`` based on current staging buffer contents."""
+
+        glyph_fill = getattr(self, "staging_fill_glyph", 0x20) & 0xFF
+        colour_fill = getattr(self, "staging_fill_colour", 0x00) & 0xFF
+        screen_dirty = any(byte != glyph_fill for byte in self.tempbott_next)
+        colour_dirty = any(byte != colour_fill for byte in self.colour_var_4078)
+        self.dirty = screen_dirty or colour_dirty
 
 
 class MaskedPaneBlinkScheduler:
@@ -895,6 +925,10 @@ class ConsoleService:
                     (default_colour,) * (width - len(colour_slice))
                 )
 
+        buffers = self._masked_pane_buffers
+        if buffers is not None:
+            buffers.preview_staging_payload(glyph_slice, colour_slice)
+
         self.poke_block(
             screen_address=self._MASKED_STAGING_SCREEN_BASE,
             screen_bytes=glyph_slice,
@@ -969,6 +1003,7 @@ class ConsoleService:
             colour_bytes=buffers.live_colour,
             colour_length=buffers.width,
         )
+        buffers.dirty = False
 
         next_screen = bytes(buffers.staged_screen)
         next_colour = bytes(buffers.staged_colour)
@@ -988,6 +1023,8 @@ class ConsoleService:
         buffers = self._masked_pane_buffers
         if buffers is None:
             raise DeviceError("masked pane buffers have not been bound")
+        if not buffers.dirty:
+            return
 
         self.rotate_masked_pane_buffers(
             buffers,
@@ -1233,6 +1270,7 @@ class ConsoleService:
             return False
 
         buffers.staged_screen[offset] = int(value) & 0xFF
+        buffers.recalculate_dirty()
         return True
 
     def _capture_masked_pane_colour(self, address: int, value: int) -> bool:
@@ -1245,6 +1283,7 @@ class ConsoleService:
             return False
 
         buffers.staged_colour[offset] = int(value) & 0xFF
+        buffers.recalculate_dirty()
         return True
 
     def set_pause_indicator(self, value: int, *, colour: int | None = None) -> None:

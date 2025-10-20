@@ -26,6 +26,17 @@ from scripts.prototypes.runtime.sysop_options import (  # noqa: E402
 from scripts.prototypes.session_kernel import SessionKernel  # noqa: E402
 
 
+def _resolve_palette_colour(value: int, palette: tuple[int, ...], *, default_index: int = 0) -> int:
+    resolved = int(value) & 0xFF
+    if resolved in palette:
+        return resolved
+    if 0 <= resolved < len(palette):
+        return palette[resolved]
+    if not 0 <= default_index < len(palette):
+        raise ValueError("default_index must reference a palette entry")
+    return palette[default_index]
+
+
 @contextmanager
 def _capture_macro_staging(
     console: ConsoleService, buffers: MaskedPaneBuffers
@@ -235,3 +246,61 @@ def test_commit_masked_pane_staging_swaps_live_buffers() -> None:
     assert tuple(buffers.staged_colour[: buffers.width]) == (
         fill_colour,
     ) * buffers.width
+
+
+def test_basic_poke_commits_masked_pane_payload_via_ampersand() -> None:
+    module = FileTransfersModule()
+    kernel = SessionKernel(module=module)
+
+    console = kernel.services["console"]
+    assert isinstance(console, ConsoleService)
+    buffers = kernel.context.get_service("masked_pane_buffers")
+    assert isinstance(buffers, MaskedPaneBuffers)
+
+    kernel.step(FileTransferEvent.ENTER)
+    console.commit_masked_pane_staging()
+
+    assert buffers.dirty is False
+
+    custom_screen = bytes((0x41 + i) % 256 for i in range(buffers.width))
+    custom_colour = bytes(((i + 6) % 16) for i in range(buffers.width))
+
+    console.poke_block(
+        screen_address=ConsoleService._MASKED_STAGING_SCREEN_BASE,
+        screen_bytes=custom_screen,
+        colour_address=ConsoleService._MASKED_STAGING_COLOUR_BASE,
+        colour_bytes=custom_colour,
+    )
+
+    assert bytes(buffers.staged_screen) == custom_screen
+    assert bytes(buffers.staged_colour) == custom_colour
+    assert buffers.dirty is True
+
+    cached_screen = bytes(buffers.staged_screen)
+    cached_colour = bytes(buffers.staged_colour)
+
+    kernel.dispatcher.dispatch("&,50")
+
+    assert bytes(buffers.live_screen) == cached_screen
+    assert bytes(buffers.live_colour) == cached_colour
+
+    screen_bytes, colour_bytes = console.peek_block(
+        screen_address=ConsoleService._MASKED_OVERLAY_SCREEN_BASE,
+        screen_length=buffers.width,
+        colour_address=ConsoleService._MASKED_OVERLAY_COLOUR_BASE,
+        colour_length=buffers.width,
+    )
+
+    assert screen_bytes == cached_screen
+    palette = console.screen.palette
+    expected_colour = bytes(
+        _resolve_palette_colour(value, palette) for value in cached_colour
+    )
+    assert colour_bytes == expected_colour
+
+    fill_colour = console.screen_colour & 0xFF
+    assert bytes(buffers.staged_screen) == bytes((0x20,) * buffers.width)
+    assert bytes(buffers.staged_colour) == bytes((fill_colour,) * buffers.width)
+    assert buffers.dirty is False
+
+
