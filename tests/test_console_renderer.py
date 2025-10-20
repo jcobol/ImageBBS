@@ -22,6 +22,7 @@ from scripts.prototypes.console_renderer import (
     render_petscii_payload,
 )
 from scripts.prototypes.device_context import Console
+from scripts.prototypes.petscii import decode_petscii_for_cli
 
 
 @pytest.fixture(scope="module")
@@ -427,12 +428,13 @@ def _assert_payload_snapshot(
         assert transcript_bytes == tuple(payload)
 
     raw_transcript = console.transcript
-    expected_raw = payload.decode("latin-1", errors="replace")
+    expected_raw = decode_petscii_for_cli(payload)
     assert raw_transcript == expected_raw
 
     transcript_text = snapshot.get("transcript_text")
     if transcript_text is not None:
-        assert transcript_text == expected_raw
+        encoded_text = transcript_text.encode("latin-1", errors="strict")
+        assert decode_petscii_for_cli(encoded_text) == expected_raw
 
     if expected_text is not None:
         decoded = ml_extra_extract.decode_petscii(console.transcript_bytes)
@@ -499,8 +501,10 @@ def test_console_macro_screens_match_artifacts(
 
     assert console.transcript_bytes == payload
     expected_text = record.get("text") or ""
-    assert console.transcript == payload.decode("latin-1", errors="replace")
-    assert ml_extra_extract.decode_petscii(console.transcript_bytes) == expected_text
+    assert console.transcript == decode_petscii_for_cli(payload)
+    assert (
+        ml_extra_extract.decode_petscii(console.transcript_bytes) == expected_text
+    )
 
     palette = editor_defaults.palette.colours
     assert snapshot["palette"] == palette
@@ -927,7 +931,7 @@ def test_console_renders_startup_banner(editor_defaults: ml_extra_defaults.MLExt
     assert hardware["sid_volume"] == editor_defaults.hardware.sid_volume
 
     assert console.transcript_bytes == banner_sequence
-    assert console.transcript == banner_sequence.decode("latin-1")
+    assert console.transcript == decode_petscii_for_cli(banner_sequence)
 
 
 def _load_overlay_metadata() -> dict[str, object]:

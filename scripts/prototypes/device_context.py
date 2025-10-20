@@ -39,6 +39,7 @@ from .console_renderer import (
     build_overlay_glyph_lookup,
 )
 from . import ml_extra_defaults
+from .petscii import decode_petscii_for_cli
 
 
 class DeviceError(RuntimeError):
@@ -283,10 +284,9 @@ class Console(Device):
     def write(self, data: str | bytes) -> None:
         if isinstance(data, bytes):
             payload = data
-            text = data.decode("latin-1", errors="replace")
         else:
             payload = data.encode("latin-1", errors="replace")
-            text = data
+        text = decode_petscii_for_cli(payload)
         self.output.append(text)
         self._transcript.extend(payload)
         self._screen.write(payload)
