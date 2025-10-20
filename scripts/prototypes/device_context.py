@@ -730,6 +730,11 @@ class ConsoleService:
     device: Console
     name: str = "console"
 
+    # Masked-pane overlay macros mirrored from ``ml.extra`` metadata.
+    _MASKED_OVERLAY_FLAG_SLOTS = frozenset(
+        {0x04, 0x09, 0x0D, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19}
+    )
+
     _SCREEN_BASE = 0x0400
     _COLOUR_BASE = 0xD800
     _PAUSE_SCREEN_ADDRESS = 0x041E
@@ -1407,7 +1412,19 @@ class ConsoleService:
 
         for entry in self.device.flag_dispatch.entries:
             if entry.flag_index == flag_index:
-                return self.push_macro_slot(entry.slot)
+                slot = entry.slot
+                if slot in self._MASKED_OVERLAY_FLAG_SLOTS:
+                    run = self.stage_macro_slot(slot)
+                    if run is None:
+                        fallback = self.glyph_lookup.macros_by_slot.get(slot)
+                        if fallback is not None:
+                            glyph_slice, colour_slice = self._macro_slot_overlay_spans(
+                                slot,
+                                fallback,
+                                fill_colour=None,
+                            )
+                            self.stage_masked_pane_overlay(glyph_slice, colour_slice)
+                return self.push_macro_slot(slot)
         return None
 
 
