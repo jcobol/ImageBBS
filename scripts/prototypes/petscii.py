@@ -3,6 +3,118 @@ from __future__ import annotations
 
 from typing import Final, Iterable
 
+from . import petscii_glyphs
+
+
+_BLOCK_CHAR_BY_MASK: Final[dict[int, str]] = {
+    0b0000: " ",
+    0b0001: "▘",
+    0b0010: "▝",
+    0b0011: "▀",
+    0b0100: "▖",
+    0b0101: "▌",
+    0b0110: "▞",
+    0b0111: "▛",
+    0b1000: "▗",
+    0b1001: "▚",
+    0b1010: "▐",
+    0b1011: "▜",
+    0b1100: "▄",
+    0b1101: "▙",
+    0b1110: "▟",
+    0b1111: "█",
+}
+
+
+def _glyph_rows_to_ints(glyph: petscii_glyphs.GlyphMatrix) -> list[int]:
+    return [int("".join("1" if bit else "0" for bit in row), 2) for row in glyph]
+
+
+def _glyph_bounds(glyph: petscii_glyphs.GlyphMatrix) -> tuple[int, int, int, int] | None:
+    coords = [
+        (x, y) for y, row in enumerate(glyph) for x, bit in enumerate(row) if bit
+    ]
+    if not coords:
+        return None
+    xs = [x for x, _ in coords]
+    ys = [y for _, y in coords]
+    return min(xs), max(xs), min(ys), max(ys)
+
+
+def _quadrant_mask(glyph: petscii_glyphs.GlyphMatrix) -> int:
+    mask = 0
+    for index, (y0, y1, x0, x1) in enumerate(((0, 4, 0, 4), (0, 4, 4, 8), (4, 8, 0, 4), (4, 8, 4, 8))):
+        filled = sum(
+            glyph[y][x] for y in range(y0, y1) for x in range(x0, x1)
+        )
+        if filled >= 8:
+            mask |= 1 << index
+    return mask
+
+
+def _looks_like_checkerboard(rows: list[int]) -> bool:
+    seen = {value for value in rows if value}
+    return seen == {0xCC, 0x33}
+
+
+def _looks_like_left_triangle(rows: list[int]) -> bool:
+    return all(row == ((0xFF << index) & 0xFF) for index, row in enumerate(rows))
+
+
+def _approximate_graphics_glyph(code: int) -> str:
+    glyph = petscii_glyphs.get_glyph(code)
+    rows = _glyph_rows_to_ints(glyph)
+    if not any(rows):
+        return " "
+    if _looks_like_checkerboard(rows):
+        return "▒"
+    if _looks_like_left_triangle(rows):
+        return "◤"
+    mask = _quadrant_mask(glyph)
+    bounds = _glyph_bounds(glyph)
+    width = bounds[1] - bounds[0] + 1 if bounds else 0
+    height = bounds[3] - bounds[2] + 1 if bounds else 0
+
+    if mask in (0b0101, 0b1010):
+        if width <= 2:
+            return "▎" if mask == 0b0101 else "▕"
+        if width == 3:
+            return "▍" if mask == 0b0101 else "▐"
+        return _BLOCK_CHAR_BY_MASK[mask]
+    if mask in (0b0011, 0b1100):
+        if height == 1:
+            return "▔" if mask == 0b0011 else "▁"
+        if height == 2:
+            return "▀" if mask == 0b0011 else "▂"
+        if height == 3:
+            return "▀" if mask == 0b0011 else "▃"
+        return _BLOCK_CHAR_BY_MASK[mask]
+    if mask:
+        return _BLOCK_CHAR_BY_MASK[mask]
+
+    if rows[0] and not any(rows[1:]):
+        return "▔"
+    if rows[-1] and not any(rows[:-1]):
+        return "▁"
+    if rows == [24, 24, 24, 31, 31, 24, 24, 24]:
+        return "├"
+    if rows == [24, 24, 24, 31, 31, 0, 0, 0]:
+        return "┐"
+    if rows == [0, 0, 0, 248, 248, 24, 24, 24]:
+        return "└"
+    if rows == [0, 0, 0, 31, 31, 24, 24, 24]:
+        return "┘"
+    if rows == [24, 24, 24, 255, 255, 0, 0, 0]:
+        return "┴"
+    if rows == [0, 0, 0, 255, 255, 24, 24, 24]:
+        return "┬"
+    if rows == [24, 24, 24, 248, 248, 24, 24, 24]:
+        return "┼"
+    if rows == [24, 24, 24, 248, 248, 0, 0, 0]:
+        return "┌"
+
+    return "█"
+
 
 def _build_base_glyphs() -> tuple[str, ...]:
     table = [" "] * 0x80
@@ -23,21 +135,16 @@ def _build_base_glyphs() -> tuple[str, ...]:
     table[0x5D] = "]"
     table[0x5E] = "^"
     table[0x5F] = "_"
-    for code in range(0x60, 0x7B):
-        table[code] = chr(code)
-    table[0x7B] = "{"
-    table[0x7C] = "|"
-    table[0x7D] = "}"
-    table[0x7E] = "~"
-    table[0x7F] = "⌂"
+    for code in range(0x60, 0x80):
+        table[code] = _approximate_graphics_glyph(code)
     return tuple(table)
 
 
 def _decode_glyph(raw: int) -> str:
     base = raw & 0x7F
     glyph = _PETSCII_BASE_GLYPHS[base]
-    if 0xE0 <= raw <= 0xFA and "a" <= glyph <= "z":
-        return glyph.upper()
+    if 0xE0 <= raw <= 0xFA and 0x61 <= base <= 0x7A:
+        return chr(base - 0x20)
     return glyph
 
 
