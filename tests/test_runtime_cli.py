@@ -32,6 +32,7 @@ def test_run_session_handles_exit_sequence() -> None:
     assert final_state is SessionState.EXIT
     transcript = output_stream.getvalue()
     assert transcript
+    assert transcript.isascii()
     assert args.listen is None
     assert args.connect is None
     assert runner.defaults.modem.baud_limit == DEFAULT_MODEM_BAUD_LIMIT

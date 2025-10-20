@@ -5,10 +5,11 @@ from __future__ import annotations
 import curses
 import time
 from dataclasses import dataclass
-from typing import Final, Tuple
+from typing import Tuple
 
 from ..device_context import ConsoleService
 from ..session_kernel import SessionState
+from ..petscii import translate_petscii
 from .session_runner import SessionRunner
 
 
@@ -321,60 +322,3 @@ class SysopConsoleApp:
 
 
 __all__ = ["ConsoleFrame", "SysopConsoleApp", "translate_petscii"]
-
-
-def _build_base_glyphs() -> tuple[str, ...]:
-    table = [" "] * 0x80
-    table[0x00] = "@"
-    for offset in range(26):
-        table[0x01 + offset] = chr(ord("A") + offset)
-    table[0x1B] = "["
-    table[0x1C] = "£"
-    table[0x1D] = "]"
-    table[0x1E] = "↑"
-    table[0x1F] = "←"
-    for code in range(0x20, 0x40):
-        table[code] = chr(code)
-    for code in range(0x40, 0x5B):
-        table[code] = chr(code)
-    table[0x5B] = "["
-    table[0x5C] = "\\"
-    table[0x5D] = "]"
-    table[0x5E] = "^"
-    table[0x5F] = "_"
-    for code in range(0x60, 0x7B):
-        table[code] = chr(code)
-    table[0x7B] = "{"
-    table[0x7C] = "|"
-    table[0x7D] = "}"
-    table[0x7E] = "~"
-    table[0x7F] = "⌂"
-    return tuple(table)
-
-
-def _decode_glyph(raw: int) -> str:
-    base = raw & 0x7F
-    glyph = _PETSCII_BASE_GLYPHS[base]
-    if 0xE0 <= raw <= 0xFA and "a" <= glyph <= "z":
-        return glyph.upper()
-    return glyph
-
-
-def _resolve_reverse(code: int) -> bool:
-    raw = int(code) & 0xFF
-    if raw == 0xA0:
-        return False
-    return bool(raw & 0x80)
-
-
-_PETSCII_BASE_GLYPHS: Final[tuple[str, ...]] = _build_base_glyphs()
-
-_PETSCII_TRANSLATION_TABLE: Final[tuple[tuple[str, bool], ...]] = tuple(
-    (_decode_glyph(index), _resolve_reverse(index)) for index in range(256)
-)
-
-
-def translate_petscii(code: int) -> tuple[str, bool]:
-    """Return the glyph and reverse flag for a PETSCII ``code``."""
-
-    return _PETSCII_TRANSLATION_TABLE[int(code) & 0xFF]
