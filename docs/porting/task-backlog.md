@@ -66,5 +66,6 @@
       `ConsoleService.swap_region`, keeping transcript handling centralised.【F:docs/porting/iteration-40.md†L8-L16】【F:scripts/prototypes/device_context.py†L360-L470】
 - [ ] Wire the `ConsoleService` indicator helpers (`set_pause_indicator`, `set_abort_indicator`, `set_spinner_glyph`, `set_carrier_indicator`) into the modern runtime once the host UI event loop is available so status toggles reuse the documented API.【F:docs/porting/iteration-40.md†L5-L30】
 - [ ] Route the host idle timer refresh through `update_idle_timer_digits` when session scheduling lands, ensuring the colon at `$04df` remains untouched as noted in iteration 40's rationale.【F:docs/porting/iteration-40.md†L11-L29】
-- [ ] Mirror BASIC writes that populate `tempbott+40`/`var_4078` so the host caches the staged masked-pane payload before `outscn` consumes and clears it.【F:docs/porting/iteration-44.md†L10-L16】
+- [x] Catalogue the BASIC staging routines that refill `tempbott+40`/`var_4078` so the host can cache the masked-pane payload before `outscn` consumes it. *(Iteration 47 documents the macro-driven producers and their implicit `&,50` flushes.)*【F:docs/porting/iteration-47.md†L10-L21】
+- [ ] Mirror the iteration-47 staging map in the host runtime so cached payloads are queued ahead of the `outscn` equivalent.【F:docs/porting/iteration-47.md†L23-L25】
 - [ ] Feed the cached staging bytes into the host's pane-rotation helper immediately before invoking the `outscn` equivalent, keeping the swap timing aligned with the original buffer rotation.【F:docs/porting/iteration-44.md†L15-L19】
