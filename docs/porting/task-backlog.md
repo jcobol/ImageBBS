@@ -57,6 +57,7 @@
 - [x] Add an opt-in JSON mode or baseline-refresh flag to the snapshot guard so CI jobs can capture machine-readable diffs or bless intentional overlay updates without manual edits.【F:scripts/prototypes/ml_extra_snapshot_guard.py†L24-L105】【F:tests/test_ml_extra_cli.py†L206-L267】
 
 ## Host Integration Follow-ups
+Outstanding runtime wiring details are collected in [host-ui-indicator-plan.md](host-ui-indicator-plan.md) for quick reference.
 - [ ] Wire the `ConsoleService` indicator helpers (`set_pause_indicator`, `set_abort_indicator`, `set_spinner_glyph`, `set_carrier_indicator`) into the modern runtime once the host UI event loop is available so status toggles reuse the documented API.【F:docs/porting/iteration-40.md†L56-L75】
 - [ ] Route the host idle timer refresh through `update_idle_timer_digits` when session scheduling lands, ensuring the colon at `$04df` remains untouched as noted in iteration 40's rationale.【F:docs/porting/iteration-40.md†L66-L72】
 - [x] Trace which routine fills `tempbott+40` and `var_4078` between buffer swaps so the host can request the same payloads before rotating overlays.【F:docs/porting/iteration-41.md†L1-L32】
