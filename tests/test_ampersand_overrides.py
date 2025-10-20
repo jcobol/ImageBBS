@@ -238,6 +238,8 @@ def test_outscn_commits_masked_pane_staging_when_data_present() -> None:
         colour_bytes=colour_payload,
     )
 
+    assert buffers.dirty is True
+
     dispatcher.dispatch("&,50")
 
     assert bytes(buffers.live_screen) == screen_payload
@@ -260,6 +262,7 @@ def test_outscn_commits_masked_pane_staging_when_data_present() -> None:
         _resolve_palette_colour(value, palette) for value in colour_payload
     )
     assert colour_bytes == expected_colour
+    assert buffers.dirty is False
 
 
 def test_outscn_ignores_empty_masked_pane_staging() -> None:
@@ -277,8 +280,7 @@ def test_outscn_ignores_empty_masked_pane_staging() -> None:
 
     buffers.live_screen[:] = live_screen_payload
     buffers.live_colour[:] = live_colour_payload
-    buffers.staged_screen[:] = bytes((0x20,) * buffers.width)
-    buffers.staged_colour[:] = bytes((fill_colour,) * buffers.width)
+    buffers.clear_staging(glyph=0x20, colour=fill_colour)
 
     console_service.poke_block(
         screen_address=ConsoleService._MASKED_OVERLAY_SCREEN_BASE,
@@ -294,12 +296,15 @@ def test_outscn_ignores_empty_masked_pane_staging() -> None:
         colour_length=buffers.width,
     )
 
+    assert buffers.dirty is False
+
     dispatcher.dispatch("&,50")
 
     assert bytes(buffers.live_screen) == live_screen_payload
     assert bytes(buffers.live_colour) == live_colour_payload
     assert bytes(buffers.staged_screen) == bytes((0x20,) * buffers.width)
     assert bytes(buffers.staged_colour) == bytes((fill_colour,) * buffers.width)
+    assert buffers.dirty is False
 
     after_screen, after_colour = console_service.peek_block(
         screen_address=ConsoleService._MASKED_OVERLAY_SCREEN_BASE,
