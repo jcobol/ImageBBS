@@ -5,12 +5,14 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import ClassVar, Iterable, Mapping, Optional
 
+from ..ampersand_dispatcher import AmpersandDispatcher
 from ..ampersand_registry import AmpersandRegistry
 from ..device_context import ConsoleService
 from ..message_editor import MessageEditor
 from .file_transfers import FileTransfersModule
 from .sysop_options import SysopOptionsModule
 from ..session_kernel import SessionKernel, SessionModule, SessionState
+from .macro_rendering import render_macro_with_overlay_commit
 
 
 class MenuState(Enum):
@@ -49,6 +51,7 @@ class MainMenuModule:
     state: MenuState = field(init=False, default=MenuState.INTRO)
     rendered_slots: list[int] = field(init=False, default_factory=list)
     _console: ConsoleService | None = field(init=False, default=None)
+    _dispatcher: AmpersandDispatcher | None = field(init=False, default=None)
 
     MENU_HEADER_SLOT = 0x04
     MENU_PROMPT_SLOT = 0x09
@@ -88,6 +91,7 @@ class MainMenuModule:
     def start(self, kernel: SessionKernel) -> SessionState:
         """Bind registry and register auxiliary modules with ``kernel``."""
 
+        self._dispatcher = kernel.dispatcher
         self.registry = kernel.dispatcher.registry
         console = kernel.services.get("console")
         if not isinstance(console, ConsoleService):
@@ -168,10 +172,11 @@ class MainMenuModule:
             raise KeyError(f"macro slot ${slot:02x} missing from defaults")
         if not isinstance(self._console, ConsoleService):  # pragma: no cover - guard
             raise RuntimeError("console service is unavailable")
-        staged = self._console.stage_macro_slot(slot)
-        if staged is None:
-            raise RuntimeError(f"console failed to stage macro slot ${slot:02x}")
-        self._console.push_macro_slot(slot)
+        render_macro_with_overlay_commit(
+            console=self._console,
+            dispatcher=self._dispatcher,
+            slot=slot,
+        )
         self.rendered_slots.append(slot)
 
     def _render_intro(self) -> None:
