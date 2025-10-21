@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "imagebbs"
+version = "0.1.0"
+description = "ImageBBS runtime prototypes and tooling"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{name = "ImageBBS Team"}]
+dependencies = []
+
+[project.optional-dependencies]
+runtime = ["windows-curses; platform_system == 'Windows'"]
+
+[project.scripts]
+imagebbs-runtime = "imagebbs.runtime.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"imagebbs" = ["py.typed"]

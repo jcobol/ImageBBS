@@ -2,25 +2,59 @@
 
 ## Runtime Session CLI
 
-The runtime session CLI lives at `scripts/prototypes/runtime/cli.py`. It can be
-invoked directly to exercise the prototype runtime stack that wires the
-`SessionRunner`, default configuration, and the main menu module.
+The runtime session CLI is now published as part of the `imagebbs` package.
+Installing the project exposes a console script so the session runner can be
+started without invoking the module by path.
+
+### Installation
+
+From the repository root, install the package into a virtual environment:
+
+```bash
+pip install .
+```
+
+For development work the editable mode keeps the installation pointed at your
+working tree:
+
+```bash
+pip install -e .
+```
+
+The package declares an optional `runtime` extra that adds the `windows-curses`
+wheel when installing on Windows:
+
+```bash
+pip install .[runtime]
+```
 
 ### Usage
 
+After installation, launch the runtime session from anywhere with:
+
 ```bash
-python -m imagebbs.runtime.cli [OPTIONS]
+imagebbs-runtime [OPTIONS]
 ```
+
+The entry point invokes `imagebbs.runtime.cli:main`, mirroring the behaviour of
+`python -m imagebbs.runtime.cli` while removing the need to reference the
+module path explicitly.
 
 ### Options
 
 - `--drive-config <path>`: Optional TOML file defining drive slot assignments
   via `load_drive_config`. If provided, the CLI merges the file into the default
   drive configuration exposed by `SetupDefaults.stub()`.
-- `--message-store-load <path>`: Optional file path to load message store state
-  before the session begins.
-- `--message-store-save <path>`: Optional file path used to persist message
-  store state when the session exits.
+- `--messages-path <path>`: Optional path used to load and persist message store
+  state for the session.
+- `--listen <host:port>`: Accept inbound TCP connections and bridge them into
+  the session runner using the Telnet transport.
+- `--connect <host:port>`: Dial a remote TCP endpoint and bridge the resulting
+  connection into the session runner.
+- `--curses-ui` / `--console-ui`: Toggle between the curses sysop console and a
+  plain stdout stream renderer. The curses UI is enabled by default.
+- `--baud-limit <bps>`: Override the modem baud limit used when bridging
+  sessions over TCP.
 
 ### Example Drive Configuration
 
