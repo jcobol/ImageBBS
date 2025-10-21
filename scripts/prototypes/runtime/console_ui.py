@@ -13,6 +13,8 @@ from ..petscii import translate_petscii
 from .session_runner import SessionRunner
 from .indicator_controller import IndicatorController
 
+__all__ = ["ConsoleFrame", "IdleTimerScheduler", "SysopConsoleApp"]
+
 
 @dataclass(slots=True)
 class ConsoleFrame:

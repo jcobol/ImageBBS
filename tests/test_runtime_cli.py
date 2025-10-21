@@ -1,5 +1,6 @@
 import asyncio
 import io
+import unittest.mock as mock
 from pathlib import Path
 
 from imagebbs.runtime.cli import (
@@ -13,6 +14,9 @@ from imagebbs.setup_defaults import (
     DEFAULT_MODEM_BAUD_LIMIT,
     FilesystemDriveLocator,
 )
+from imagebbs.device_context import ConsoleService
+from imagebbs.runtime.console_ui import IdleTimerScheduler
+from imagebbs.runtime.indicator_controller import IndicatorController
 
 
 def test_run_session_handles_exit_sequence() -> None:
@@ -176,6 +180,79 @@ def test_run_session_posts_message_via_editor() -> None:
     record = records[0]
     assert record.subject == "Hello World"
     assert record.lines == ("This is the body",)
+
+
+def test_run_session_advances_spinner_and_idle_timer() -> None:
+    args = parse_args([])
+    runner = create_runner(args)
+
+    class FakeClock:
+        def __init__(self, values: list[float]):
+            self._values = list(values)
+            self.calls = 0
+
+        def __call__(self) -> float:
+            if not self._values:
+                raise AssertionError("fake clock requires at least one value")
+            if self.calls < len(self._values):
+                value = self._values[self.calls]
+            else:
+                value = self._values[-1]
+            self.calls += 1
+            return value
+
+    fake_clock = FakeClock([0.0, 1.0, 2.0])
+
+    class RecordingScheduler(IdleTimerScheduler):
+        def __init__(self, console: ConsoleService):
+            super().__init__(console, time_source=fake_clock)
+
+    class RecordingIndicatorController(IndicatorController):
+        def __init__(self, console: ConsoleService):
+            super().__init__(console)
+            self.set_spinner_enabled(True)
+
+    class ScriptedInput:
+        def __init__(self, lines: list[str]):
+            self._lines = list(lines)
+
+        def readline(self) -> str:
+            if self._lines:
+                return self._lines.pop(0)
+            return ""
+
+    input_stream = ScriptedInput(["\n", "\n", "EX\n"])
+    output_stream = io.StringIO()
+
+    with mock.patch(
+        "scripts.prototypes.runtime.cli.IdleTimerScheduler", RecordingScheduler
+    ), mock.patch(
+        "scripts.prototypes.runtime.cli.IndicatorController", RecordingIndicatorController
+    ):
+        final_state = run_session(
+            runner, input_stream=input_stream, output_stream=output_stream
+        )
+
+    assert final_state is SessionState.EXIT
+    assert fake_clock.calls >= 3
+
+    spinner_bytes, _ = runner.console.peek_block(
+        screen_address=ConsoleService._SPINNER_SCREEN_ADDRESS,
+        screen_length=1,
+    )
+    assert spinner_bytes is not None
+    assert spinner_bytes[0] == 0xAF
+
+    digit_values: list[int] = []
+    for address in ConsoleService._IDLE_TIMER_SCREEN_ADDRESSES:
+        digit_bytes, _ = runner.console.peek_block(
+            screen_address=address,
+            screen_length=1,
+        )
+        assert digit_bytes is not None
+        digit_values.append(digit_bytes[0])
+
+    assert digit_values == [0x30, 0x30, 0x32]
 
 
 def test_run_session_edits_existing_message_via_editor() -> None:
