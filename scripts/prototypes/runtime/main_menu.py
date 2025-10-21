@@ -12,7 +12,7 @@ from ..message_editor import MessageEditor
 from .file_transfers import FileTransfersModule
 from .sysop_options import SysopOptionsModule
 from ..session_kernel import SessionKernel, SessionModule, SessionState
-from .macro_rendering import render_macro_with_overlay_commit
+from .masked_pane_staging import MaskedPaneMacro, render_masked_macro
 
 
 class MenuState(Enum):
@@ -53,9 +53,21 @@ class MainMenuModule:
     _console: ConsoleService | None = field(init=False, default=None)
     _dispatcher: AmpersandDispatcher | None = field(init=False, default=None)
 
-    MENU_HEADER_SLOT = 0x04
-    MENU_PROMPT_SLOT = 0x09
-    INVALID_SELECTION_SLOT = 0x0D
+    MENU_HEADER_MACRO = MaskedPaneMacro.MAIN_MENU_HEADER
+    MENU_PROMPT_MACRO = MaskedPaneMacro.MAIN_MENU_PROMPT
+    INVALID_SELECTION_MACRO = MaskedPaneMacro.MAIN_MENU_INVALID
+
+    @property
+    def MENU_HEADER_SLOT(self) -> int:
+        return self._macro_slot(self.MENU_HEADER_MACRO)
+
+    @property
+    def MENU_PROMPT_SLOT(self) -> int:
+        return self._macro_slot(self.MENU_PROMPT_MACRO)
+
+    @property
+    def INVALID_SELECTION_SLOT(self) -> int:
+        return self._macro_slot(self.INVALID_SELECTION_MACRO)
 
     _COMMAND_TRANSITIONS: ClassVar[Mapping[MenuCommand, SessionState]] = {
         MenuCommand.MESSAGE_BASE: SessionState.MESSAGE_EDITOR,
@@ -133,7 +145,7 @@ class MainMenuModule:
                 return SessionState.MAIN_MENU
             command = self._parse_selection(selection)
             if command is MenuCommand.UNKNOWN:
-                self._render_macro(self.INVALID_SELECTION_SLOT)
+                self._render_macro(self.INVALID_SELECTION_MACRO)
                 return SessionState.MAIN_MENU
 
             next_state = self._COMMAND_TRANSITIONS.get(command, SessionState.MAIN_MENU)
@@ -164,24 +176,28 @@ class MainMenuModule:
             return MenuCommand.SYSOP
         return MenuCommand.UNKNOWN
 
-    def _render_macro(self, slot: int) -> None:
+    def _render_macro(self, macro: MaskedPaneMacro) -> None:
         if self.registry is None:
             raise RuntimeError("ampersand registry has not been initialised")
-        defaults = self.registry.defaults
-        if slot not in defaults.macros_by_slot:
-            raise KeyError(f"macro slot ${slot:02x} missing from defaults")
         if not isinstance(self._console, ConsoleService):  # pragma: no cover - guard
             raise RuntimeError("console service is unavailable")
-        render_macro_with_overlay_commit(
+        staging = self._console.masked_pane_staging_map
+        slot = staging.slot(macro)
+        render_masked_macro(
             console=self._console,
             dispatcher=self._dispatcher,
-            slot=slot,
+            macro=macro,
         )
         self.rendered_slots.append(slot)
 
     def _render_intro(self) -> None:
-        self._render_macro(self.MENU_HEADER_SLOT)
-        self._render_macro(self.MENU_PROMPT_SLOT)
+        self._render_macro(self.MENU_HEADER_MACRO)
+        self._render_macro(self.MENU_PROMPT_MACRO)
+
+    def _macro_slot(self, macro: MaskedPaneMacro) -> int:
+        if not isinstance(self._console, ConsoleService):  # pragma: no cover - guard
+            raise RuntimeError("console service is unavailable")
+        return self._console.masked_pane_staging_map.slot(macro)
 
 
 __all__ = [

@@ -33,7 +33,7 @@ def _expected_overlay(
             glyphs = tuple(run.rendered[:width])
             colours = tuple((console.screen_colour,) * len(glyphs))
         else:
-            fallback = SysopOptionsModule._FALLBACK_MACRO_STAGING.get(slot)
+            fallback = console.masked_pane_staging_map.fallback_overlay_for_slot(slot)
             if fallback is None:  # pragma: no cover - defensive guard
                 raise AssertionError(f"no glyph run for macro slot ${slot:02x}")
             glyphs, colours = fallback
@@ -98,7 +98,7 @@ def test_sysop_options_macros_stage_masked_pane_buffers() -> None:
     buffers = kernel.context.get_service("masked_pane_buffers")
 
     buffers.clear_staging()
-    module._render_macro(module.MENU_HEADER_SLOT)
+    module._render_macro(module.MENU_HEADER_MACRO)
     glyphs, colours = _expected_overlay(
         module, console_service, module.MENU_HEADER_SLOT
     )
@@ -109,7 +109,7 @@ def test_sysop_options_macros_stage_masked_pane_buffers() -> None:
     assert overlay_colour[:40] == colours
 
     buffers.clear_staging()
-    module._render_macro(module.MENU_PROMPT_SLOT)
+    module._render_macro(module.MENU_PROMPT_MACRO)
     glyphs, colours = _expected_overlay(
         module, console_service, module.MENU_PROMPT_SLOT
     )
@@ -120,7 +120,7 @@ def test_sysop_options_macros_stage_masked_pane_buffers() -> None:
     assert overlay_colour[:40] == colours
 
     buffers.clear_staging()
-    module._render_macro(module.INVALID_SELECTION_SLOT)
+    module._render_macro(module.INVALID_SELECTION_MACRO)
     glyphs, colours = _expected_overlay(
         module, console_service, module.INVALID_SELECTION_SLOT
     )
@@ -131,7 +131,7 @@ def test_sysop_options_macros_stage_masked_pane_buffers() -> None:
     assert overlay_colour[:40] == colours
 
     buffers.clear_staging()
-    module._render_macro(module.ABORT_SLOT)
+    module._render_macro(module.ABORT_MACRO)
     glyphs, colours = _expected_overlay(module, console_service, module.ABORT_SLOT)
     assert tuple(buffers.staged_screen[:40]) == glyphs
     assert tuple(buffers.staged_colour[:40]) == colours
