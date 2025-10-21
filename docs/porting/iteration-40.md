@@ -38,6 +38,10 @@ chat buffer swap
 4. `loopb94e` fires as part of the buffer-rotation path, restoring the preserved bottom overlay from `tempbott`/`$4050`, while simultaneously caching the just-written overlay into the same staging arrays for the next swap.【F:v1.2/source/ml-1_2-y2k.asm†L4091-L4107】
 5. `sub_adad` clears the `skipad3d` latch after each commit so repeated idle ticks do not duplicate stores, and restores the captured BASIC state via `sub_b9f7` once the host mask is stable.【F:v1.2/source/ml-1_2-y2k.asm†L2448-L2456】【F:v1.2/source/ml-1_2-y2k.asm†L4174-L4192】
 
+### Blink cadence detail
+- `ConsoleService.advance_masked_pane_blink()` delegates to `MaskedPaneBlinkScheduler`, which models the `lbl_adca` countdown by decrementing a five-phase register that wraps from `0` back to `4`. The scheduler reports reverse-video whenever the countdown retains bit `$02`, producing a `3 → 2 → 1 → 0 → 4` loop that only flips the glyph twice per cycle.【F:scripts/prototypes/device_context.py†L697-L715】
+- Running the harness shows the reverse phase holds for two 200 ms ticks (countdown values `3` and `2`), followed by three ticks of normal video (countdown values `1`, `0`, and `4`), yielding a one-second cadence that feels slower than a simple blink yet keeps the masked glyph legible during rapid key echoes.【F:docs/porting/blink-traces/authentic-five-phase.csv†L1-L7】
+
 ### Host abstraction recommendations
 - **Span-aware poke helper** – Continue using `ConsoleService.poke_block` (Iteration 39) for `$0770/$DB70` restores, but extend it to accept `length` so the same call can cover the 40-byte masked row or smaller chat-pane edits without slicing payloads manually.【F:docs/porting/iteration-39.md†L7-L33】
 - **Complementary peek helper** – Add `ConsoleService.peek_block(screen_address, length)` that returns both screen and colour bytes. Host code can then emulate the `tempbott`/`$4050` rotation by snapshotting `$0770/$DB70` before replacing them, matching the `loopb94e` staging semantics.【F:v1.2/source/ml-1_2-y2k.asm†L4091-L4107】
@@ -47,7 +51,7 @@ chat buffer swap
 
 ### Outstanding notes
 - The repository does not yet identify which routine repopulates `tempbott+40` and `var_4078` between swaps; confirming that producer will be necessary before wiring host callbacks that queue the “next” mask content.【F:v1.2/source/ml-1_2-y2k.asm†L3986-L4107】
-- The blink cadence relies on the countdown in `lbl_adca`, which resets to `4` and decrements every idle iteration. We should decide whether the host mirrors this exact 5-phase pattern or substitutes a UI-timer approximation before freezing the API contract.【F:v1.2/source/ml-1_2-y2k.asm†L2404-L2455】
+- The blink cadence relies on the countdown in `lbl_adca`, which resets to `4` and decrements every idle iteration. Stakeholders have since confirmed the port will retain the authentic five-phase pattern documented above, so host APIs should continue exposing the countdown unchanged.【F:v1.2/source/ml-1_2-y2k.asm†L2404-L2455】【F:docs/porting/host-ui-indicator-plan.md†L66-L78】
 
 ---
 
