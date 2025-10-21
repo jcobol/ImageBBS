@@ -10,6 +10,7 @@ from ..device_context import ModemTransport
 from ..message_editor import EditorState
 from ..session_kernel import SessionState
 from .session_runner import SessionRunner
+from .indicator_controller import IndicatorController
 
 
 SleepCallable = Callable[[float], Awaitable[object]]
@@ -227,12 +228,14 @@ class TelnetModemTransport(ModemTransport):
         *,
         encoding: str = "latin-1",
         poll_interval: float = 0.02,
+        indicator_controller: IndicatorController | None = None,
     ) -> None:
         self.runner = runner
         self.reader = reader
         self.writer = writer
         self.encoding = encoding
         self.poll_interval = poll_interval
+        self.indicator_controller = indicator_controller
 
         self._loop: asyncio.AbstractEventLoop | None = None
         self._close_event = asyncio.Event()
@@ -247,6 +250,8 @@ class TelnetModemTransport(ModemTransport):
         if self._loop is not None:
             return
         self._loop = asyncio.get_running_loop()
+        if self.indicator_controller is not None:
+            self.indicator_controller.set_carrier(True)
         initial = self.runner.read_output()
         if initial:
             self.send(initial)
@@ -299,6 +304,8 @@ class TelnetModemTransport(ModemTransport):
     def _mark_closed(self) -> None:
         if not self._close_event.is_set():
             self._close_event.set()
+        if self.indicator_controller is not None:
+            self.indicator_controller.set_carrier(False)
 
     def _track_task(self, task: asyncio.Task[None]) -> None:
         def _on_done(completed: asyncio.Task[None]) -> None:
@@ -328,9 +335,13 @@ class TelnetModemTransport(ModemTransport):
                     except ConnectionError:
                         self._mark_closed()
                         break
+                    if self.indicator_controller is not None:
+                        self.indicator_controller.on_idle_tick()
                     continue
                 if self.runner.state is SessionState.EXIT:
                     break
+                if self.indicator_controller is not None:
+                    self.indicator_controller.on_idle_tick()
                 await asyncio.sleep(self.poll_interval)
         finally:
             self._mark_closed()

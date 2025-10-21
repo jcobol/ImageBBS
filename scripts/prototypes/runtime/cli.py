@@ -20,6 +20,7 @@ from .message_store import MessageStore
 from .message_store_repository import load_message_store, save_message_store
 from .session_runner import SessionRunner
 from .transports import BaudLimitedTransport, TelnetModemTransport
+from .indicator_controller import IndicatorController
 
 
 def _parse_host_port(value: str) -> Tuple[str, int]:
@@ -167,7 +168,14 @@ async def run_stream_session(
     """Create a runner and bridge it to ``reader``/``writer``."""
 
     runner = create_runner(args)
-    telnet_transport = TelnetModemTransport(runner, reader, writer)
+    indicator_controller = IndicatorController(runner.console)
+    runner.set_indicator_controller(indicator_controller)
+    telnet_transport = TelnetModemTransport(
+        runner,
+        reader,
+        writer,
+        indicator_controller=indicator_controller,
+    )
     baud_limit = getattr(getattr(runner.defaults, "modem", None), "baud_limit", None)
     transport = (
         BaudLimitedTransport(telnet_transport, baud_limit)
@@ -309,6 +317,9 @@ def run_session(
     output_stream: IO[str] = sys.stdout,
 ) -> SessionState:
     """Drive ``runner`` using ``input_stream`` and ``output_stream``."""
+
+    indicator_controller = IndicatorController(runner.console)
+    runner.set_indicator_controller(indicator_controller)
 
     while True:
         flushed = runner.read_output()

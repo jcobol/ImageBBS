@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable, Mapping
+from typing import Iterable, Mapping, TYPE_CHECKING
 
 from ..device_context import ConsoleService
 from ..message_editor import EditorState, Event as MessageEditorEvent
@@ -15,6 +15,9 @@ from .file_transfers import FileTransferEvent
 from .main_menu import MainMenuModule, MainMenuEvent
 from .message_store import MessageStore
 from .sysop_options import SysopOptionsEvent
+
+if TYPE_CHECKING:  # pragma: no cover - imported for type checking only
+    from .indicator_controller import IndicatorController
 
 
 @dataclass(slots=True)
@@ -33,6 +36,9 @@ class SessionRunner:
     console: ConsoleService = field(init=False)
     _editor_context: SessionContext = field(init=False)
     _editor_module: MessageEditor | None = field(init=False, default=None)
+    _indicator_controller: "IndicatorController" | None = field(
+        init=False, default=None, repr=False
+    )
 
     _ENTER_EVENTS: Mapping[SessionState, object] = field(
         init=False,
@@ -134,6 +140,27 @@ class SessionRunner:
         while output:
             buffer.append(output.popleft())
         return "".join(buffer)
+
+    def set_indicator_controller(
+        self, controller: "IndicatorController" | None
+    ) -> None:
+        """Register ``controller`` to mirror pause/abort signals."""
+
+        self._indicator_controller = controller
+
+    def set_pause_indicator_state(self, active: bool) -> None:
+        """Forward pause state to the registered indicator controller."""
+
+        controller = self._indicator_controller
+        if controller is not None:
+            controller.set_pause(active)
+
+    def set_abort_indicator_state(self, active: bool) -> None:
+        """Forward abort state to the registered indicator controller."""
+
+        controller = self._indicator_controller
+        if controller is not None:
+            controller.set_abort(active)
 
     def send_command(self, text: str) -> SessionState:
         """Deliver ``text`` to the active module and propagate transitions."""

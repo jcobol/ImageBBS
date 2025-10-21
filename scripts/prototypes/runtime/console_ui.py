@@ -11,6 +11,7 @@ from ..device_context import ConsoleService
 from ..session_kernel import SessionState
 from ..petscii import translate_petscii
 from .session_runner import SessionRunner
+from .indicator_controller import IndicatorController
 
 
 @dataclass(slots=True)
@@ -56,6 +57,9 @@ class SysopConsoleApp:
         self.screen_height = getattr(screen, "height", self.SCREEN_HEIGHT)
         self._input_buffer: list[str] = []
         self._stop = False
+        self.indicator_controller = IndicatorController(console)
+        if self.runner is not None:
+            self.runner.set_indicator_controller(self.indicator_controller)
 
     # Frame capture helpers -------------------------------------------------
 
@@ -168,6 +172,7 @@ class SysopConsoleApp:
                     break
 
             self._poll_input(stdscr)
+            self.indicator_controller.on_idle_tick()
             time.sleep(self.refresh_interval)
 
         return state
