@@ -371,6 +371,66 @@ def test_commit_masked_pane_staging_swaps_live_buffers() -> None:
     assert tuple(buffers.staged_colour[: buffers.width]) == (
         fill_colour,
     ) * buffers.width
+    assert buffers.peek_pending_payload() is None
+
+
+def test_outscn_commits_cached_payload_once_per_swap() -> None:
+    module = FileTransfersModule()
+    kernel = SessionKernel(module=module)
+
+    console = kernel.services["console"]
+    assert isinstance(console, ConsoleService)
+    buffers = kernel.context.get_service("masked_pane_buffers")
+    assert isinstance(buffers, MaskedPaneBuffers)
+
+    kernel.step(FileTransferEvent.ENTER)
+    console.commit_masked_pane_staging()
+
+    width = buffers.width
+    screen_payload = bytes((0x71 + i) % 256 for i in range(width))
+    colour_payload = bytes(((i + 5) % 16) for i in range(width))
+
+    console.stage_masked_pane_overlay(screen_payload, colour_payload)
+
+    pending = buffers.peek_pending_payload()
+    assert pending is not None
+    assert pending[0] == screen_payload
+    assert pending[1] == colour_payload
+
+    kernel.dispatcher.dispatch("&,50")
+
+    screen_bytes, colour_bytes = console.peek_block(
+        screen_address=ConsoleService._MASKED_OVERLAY_SCREEN_BASE,
+        screen_length=width,
+        colour_address=ConsoleService._MASKED_OVERLAY_COLOUR_BASE,
+        colour_length=width,
+    )
+
+    palette = console.screen.palette
+    resolved_colour = bytes(
+        _resolve_palette_colour(value, palette) for value in colour_payload
+    )
+
+    assert screen_bytes == screen_payload
+    assert colour_bytes == resolved_colour
+    assert tuple(buffers.live_screen[: width]) == tuple(screen_payload)
+    assert tuple(buffers.live_colour[: width]) == tuple(colour_payload)
+
+    fill_colour = console.screen_colour & 0xFF
+    assert tuple(buffers.staged_screen[: width]) == (0x20,) * width
+    assert tuple(buffers.staged_colour[: width]) == (fill_colour,) * width
+    assert buffers.peek_pending_payload() is None
+
+    live_snapshot = tuple(buffers.live_screen[: width])
+    colour_snapshot = tuple(buffers.live_colour[: width])
+
+    kernel.dispatcher.dispatch("&,50")
+
+    assert tuple(buffers.live_screen[: width]) == live_snapshot
+    assert tuple(buffers.live_colour[: width]) == colour_snapshot
+    assert tuple(buffers.staged_screen[: width]) == (0x20,) * width
+    assert tuple(buffers.staged_colour[: width]) == (fill_colour,) * width
+    assert buffers.peek_pending_payload() is None
 
 
 def test_basic_poke_commits_masked_pane_payload_via_ampersand() -> None:
@@ -427,5 +487,6 @@ def test_basic_poke_commits_masked_pane_payload_via_ampersand() -> None:
     assert bytes(buffers.staged_screen) == bytes((0x20,) * buffers.width)
     assert bytes(buffers.staged_colour) == bytes((fill_colour,) * buffers.width)
     assert buffers.dirty is False
+    assert buffers.peek_pending_payload() is None
 
 

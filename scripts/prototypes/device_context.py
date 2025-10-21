@@ -616,6 +616,9 @@ class MaskedPaneBuffers:
     dirty: bool = field(default=False, init=False)
     staging_fill_glyph: int = field(init=False, repr=False)
     staging_fill_colour: int = field(init=False, repr=False)
+    _pending_screen: bytes | None = field(default=None, init=False, repr=False)
+    _pending_colour: bytes | None = field(default=None, init=False, repr=False)
+    _suppress_cache_once: bool = field(default=False, init=False, repr=False)
 
     def __post_init__(self) -> None:
         if self.width <= 0:
@@ -626,6 +629,7 @@ class MaskedPaneBuffers:
         self.colour_var_4078 = bytearray(self.width)
         self.clear_live()
         self.clear_staging()
+        self.clear_pending_payload()
 
     @property
     def live_screen(self) -> bytearray:
@@ -693,6 +697,59 @@ class MaskedPaneBuffers:
         screen_dirty = any(byte != glyph_fill for byte in self.tempbott_next)
         colour_dirty = any(byte != colour_fill for byte in self.colour_var_4078)
         self.dirty = screen_dirty or colour_dirty
+
+    def cache_pending_payload(
+        self,
+        screen_payload: Sequence[int] | bytes,
+        colour_payload: Sequence[int] | bytes,
+    ) -> None:
+        """Persist the next staged overlay spans until consumed."""
+
+        if self._suppress_cache_once:
+            self._suppress_cache_once = False
+            return
+
+        screen_bytes = bytes(screen_payload)[: self.width]
+        colour_bytes = bytes(colour_payload)[: self.width]
+        self._pending_screen = screen_bytes
+        self._pending_colour = colour_bytes
+
+    def has_pending_payload(self) -> bool:
+        """Return ``True`` if cached staging spans are waiting to be applied."""
+
+        return self._pending_screen is not None and self._pending_colour is not None
+
+    def peek_pending_payload(self) -> tuple[bytes, bytes] | None:
+        """Return the cached staging spans without consuming them."""
+
+        if not self.has_pending_payload():
+            return None
+        return (
+            bytes(self._pending_screen or b""),
+            bytes(self._pending_colour or b""),
+        )
+
+    def consume_pending_payload(self) -> tuple[bytes, bytes] | None:
+        """Return and clear the cached staging spans once."""
+
+        if not self.has_pending_payload():
+            return None
+
+        payload = (
+            bytes(self._pending_screen or b""),
+            bytes(self._pending_colour or b""),
+        )
+        self._pending_screen = None
+        self._pending_colour = None
+        self._suppress_cache_once = True
+        return payload
+
+    def clear_pending_payload(self) -> None:
+        """Discard any cached staging spans and reset suppression state."""
+
+        self._pending_screen = None
+        self._pending_colour = None
+        self._suppress_cache_once = False
 
 
 class MaskedPaneBlinkScheduler:
@@ -946,6 +1003,7 @@ class ConsoleService:
 
         buffers = self._masked_pane_buffers
         if buffers is not None:
+            buffers.cache_pending_payload(glyph_slice, colour_slice)
             buffers.preview_staging_payload(glyph_slice, colour_slice)
 
         self.poke_block(
@@ -1050,6 +1108,7 @@ class ConsoleService:
             fill_glyph=fill_glyph,
             fill_colour=fill_colour,
         )
+        buffers.clear_pending_payload()
 
         self.poke_block(
             screen_address=self._MASKED_OVERLAY_SCREEN_BASE,

@@ -106,13 +106,25 @@ def handle_outscn(context: AmpersandDispatchContext) -> AmpersandResult:
     if console is None or buffers is None:
         return result
 
+    pending_payload = buffers.consume_pending_payload()
+    if pending_payload is not None:
+        console.capture_masked_pane_buffers(buffers)
+        screen_payload, colour_payload = pending_payload
+        console.stage_masked_pane_overlay(screen_payload, colour_payload)
+
     fill_glyph = 0x20
     fill_colour = console.screen_colour & 0xFF
 
-    if _masked_pane_has_payload(buffers, fill_glyph, fill_colour):
+    has_payload = (pending_payload is not None) or _masked_pane_has_payload(
+        buffers, fill_glyph, fill_colour
+    )
+
+    if has_payload:
         console.commit_masked_pane_staging(
             fill_glyph=fill_glyph, fill_colour=fill_colour
         )
+
+    buffers.clear_pending_payload()
 
     return result
 
@@ -206,6 +218,8 @@ def _resolve_masked_pane_buffers(
 def _masked_pane_has_payload(
     buffers: MaskedPaneBuffers, fill_glyph: int, fill_colour: int
 ) -> bool:
+    if buffers.has_pending_payload():
+        return True
     if buffers.dirty:
         return True
     glyph_byte = int(fill_glyph) & 0xFF
