@@ -1,15 +1,11 @@
 from __future__ import annotations
-import sys
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Sequence
 
 import pytest
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
-
-from scripts.prototypes.device_context import Console, ConsoleService
-from scripts.prototypes.runtime.console_ui import (
+from imagebbs.device_context import Console, ConsoleService
+from imagebbs.runtime.console_ui import (
     IdleTimerScheduler,
     SysopConsoleApp,
     translate_petscii,

@@ -1,15 +1,12 @@
 """Integration coverage for the drive assignments CLI helper."""
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import pytest
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
-
-from scripts.prototypes import SetupDefaults  # noqa: E402
-from scripts.prototypes import drive_assignments_cli  # noqa: E402
+from imagebbs import SetupDefaults
+from imagebbs import drive_assignments_cli
 
 
 @pytest.fixture()

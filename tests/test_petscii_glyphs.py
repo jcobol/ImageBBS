@@ -1,11 +1,6 @@
-import sys
-from pathlib import Path
-
 import pytest
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
-
-from scripts.prototypes import petscii_glyphs
+from imagebbs import petscii_glyphs
 
 
 def _matrix(*rows: str) -> petscii_glyphs.GlyphMatrix:

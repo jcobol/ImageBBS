@@ -1,13 +1,8 @@
 import asyncio
-from pathlib import Path
 from typing import List, Tuple
 
-import sys
-
-sys.path.append(str(Path(__file__).resolve().parents[1]))
-
-from scripts.prototypes.device_context import LoopbackModemTransport  # noqa: E402
-from scripts.prototypes.runtime.transports import BaudLimitedTransport  # noqa: E402
+from imagebbs.device_context import LoopbackModemTransport
+from imagebbs.runtime.transports import BaudLimitedTransport
 
 
 class FakeClock:

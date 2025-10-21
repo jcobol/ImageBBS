@@ -1,13 +1,8 @@
 """Tests for direct screen/colour address helpers on the console."""
 
-import sys
-from pathlib import Path
-
 import pytest
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
-
-from scripts.prototypes.device_context import Console, ConsoleService
+from imagebbs.device_context import Console, ConsoleService
 
 
 def _resolve_palette_colour(value: int, palette: tuple[int, ...], *, default_index: int = 0) -> int:

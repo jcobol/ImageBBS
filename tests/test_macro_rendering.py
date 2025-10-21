@@ -1,16 +1,11 @@
 """Tests for ``render_macro_with_overlay_commit`` helper."""
 from __future__ import annotations
 
-import sys
-from pathlib import Path
 from typing import Any, Iterable, Sequence
 
 import pytest
 
-# Mirror the repository-root import shim used by other tests so ``scripts`` remains untouched.
-sys.path.append(str(Path(__file__).resolve().parents[1]))
-
-from scripts.prototypes.runtime.macro_rendering import render_macro_with_overlay_commit
+from imagebbs.runtime.macro_rendering import render_macro_with_overlay_commit
 
 
 class FakeConsoleService:

@@ -2,26 +2,22 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import sys
-
 import pytest
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
-
-from scripts.prototypes.ampersand_dispatcher import (
+from imagebbs.ampersand_dispatcher import (
     AmpersandDispatchContext,
     AmpersandDispatcher,
 )
-from scripts.prototypes.device_context import (
+from imagebbs.device_context import (
     ConsoleService,
     DriveAssignment,
     FilesystemDriveLocator,
     MaskedPaneBuffers,
     bootstrap_device_context,
 )
-from scripts.prototypes.message_editor import SessionContext
-from scripts.prototypes.runtime.ampersand_overrides import BUILTIN_AMPERSAND_OVERRIDES
-from scripts.prototypes.runtime.message_store import MessageStore
+from imagebbs.message_editor import SessionContext
+from imagebbs.runtime.ampersand_overrides import BUILTIN_AMPERSAND_OVERRIDES
+from imagebbs.runtime.message_store import MessageStore
 
 
 def _resolve_palette_colour(value: int, palette: tuple[int, ...], *, default_index: int = 0) -> int:

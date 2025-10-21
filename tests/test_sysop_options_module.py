@@ -1,11 +1,7 @@
 import sys
-from pathlib import Path
-
-sys.path.append(str(Path(__file__).resolve().parents[1]))
-
-from scripts.prototypes import SessionKernel, SessionState
-from scripts.prototypes.device_context import ConsoleService
-from scripts.prototypes.runtime.sysop_options import (
+from imagebbs import SessionKernel, SessionState
+from imagebbs.device_context import ConsoleService
+from imagebbs.runtime.sysop_options import (
     SysopOptionsEvent,
     SysopOptionsModule,
     SysopOptionsState,

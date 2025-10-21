@@ -1,5 +1,5 @@
-from scripts.prototypes.device_context import Console, ConsoleService
-from scripts.prototypes.runtime.indicator_controller import IndicatorController
+from imagebbs.device_context import Console, ConsoleService
+from imagebbs.runtime.indicator_controller import IndicatorController
 
 
 def test_indicator_controller_updates_indicators_without_transcript() -> None:

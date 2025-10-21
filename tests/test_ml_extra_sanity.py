@@ -3,16 +3,13 @@
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
 import pytest
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
-
-from scripts.prototypes import ml_extra_defaults
-from scripts.prototypes import ml_extra_reporting
-from scripts.prototypes import ml_extra_sanity
+from imagebbs import ml_extra_defaults
+from imagebbs import ml_extra_reporting
+from imagebbs import ml_extra_sanity
 
 
 @pytest.fixture(scope="module")

@@ -3,11 +3,9 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
-
-from scripts.prototypes.ampersand_registry import AmpersandRegistry, AmpersandResult
-from scripts.prototypes.device_context import ConsoleService, bootstrap_device_context
-from scripts.prototypes.message_editor import Event, MessageEditor, SessionContext
+from imagebbs.ampersand_registry import AmpersandRegistry, AmpersandResult
+from imagebbs.device_context import ConsoleService, bootstrap_device_context
+from imagebbs.message_editor import Event, MessageEditor, SessionContext
 
 
 def test_registry_default_dispatch_exposes_overlay_data() -> None:
@@ -63,8 +61,8 @@ def test_registry_loads_override_imports(tmp_path: Path) -> None:
 
     module_path = tmp_path / "custom_ampersand.py"
     module_path.write_text(
-        "from scripts.prototypes.ampersand_registry import AmpersandResult\n"
-        "from scripts.prototypes.ml_extra_defaults import MLExtraDefaults\n"
+        "from imagebbs.ampersand_registry import AmpersandResult\n"
+        "from imagebbs.ml_extra_defaults import MLExtraDefaults\n"
         f"FLAG_INDEX = {flag_index}\n"
         "_DEFAULTS = MLExtraDefaults.from_overlay()\n\n"
         "def intro_override(context):\n"

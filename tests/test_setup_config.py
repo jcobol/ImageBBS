@@ -1,26 +1,23 @@
 """Tests for loading modern drive configuration overlays."""
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import pytest
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
-
-from scripts.prototypes import (  # noqa: E402
+from imagebbs import (
     SetupDefaults,
     SetupConfig,
     bootstrap_device_context,
     derive_drive_inventory,
     load_drive_config,
 )
-from scripts.prototypes.setup_defaults import (  # noqa: E402
+from imagebbs.setup_defaults import (
     CommodoreDeviceDrive,
     DEFAULT_MODEM_BAUD_LIMIT,
     FilesystemDriveLocator,
 )
-from scripts.prototypes.device_context import DiskDrive  # noqa: E402
+from imagebbs.device_context import DiskDrive
 
 
 @pytest.fixture()

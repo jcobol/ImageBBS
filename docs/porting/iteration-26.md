@@ -6,7 +6,7 @@
 
 ## Findings
 - The `MLExtraDefaults` helper now exposes the overlay's lightbar defaults, underline metadata, editor palette, and macro pointer directory so host tooling can read the authoritative values without consulting the stub.【F:scripts/prototypes/ml_extra_defaults.py†L1-L149】
-- The helper remains part of the `scripts.prototypes` namespace, providing a single import path for downstream utilities and a centralised `default_overlay_path()` for reproducible ingestion.【F:scripts/prototypes/__init__.py†L1-L39】【F:scripts/prototypes/ml_extra_defaults.py†L141-L149】
+- The helper remains part of the `imagebbs` namespace, providing a single import path for downstream utilities and a centralised `default_overlay_path()` for reproducible ingestion.【F:src/imagebbs/__init__.py†L1-L16】【F:src/imagebbs/ml_extra_defaults.py†L1-L12】
 
 ## Next steps
 - Audit consumers of `MLExtraDefaults` to ensure they account for the newly exposed lightbar and palette fields.

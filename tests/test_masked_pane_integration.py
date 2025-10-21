@@ -1,36 +1,31 @@
 from __future__ import annotations
 
 import json
-import sys
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Dict, Iterator, Tuple
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
-
-from scripts.prototypes.ampersand_dispatcher import AmpersandDispatcher  # noqa: E402
-from scripts.prototypes.device_context import (  # noqa: E402
+from imagebbs.ampersand_dispatcher import AmpersandDispatcher
+from imagebbs.device_context import (
     ConsoleService,
     MaskedPaneBuffers,
     bootstrap_device_context,
 )
-from scripts.prototypes.runtime.file_transfers import (  # noqa: E402
+from imagebbs.runtime.ampersand_overrides import BUILTIN_AMPERSAND_OVERRIDES
+from imagebbs.runtime.file_transfers import (
     FileTransferEvent,
     FileTransfersModule,
 )
-from scripts.prototypes.runtime.main_menu import (  # noqa: E402
+from imagebbs.runtime.main_menu import (
     MainMenuEvent,
     MainMenuModule,
 )
-from scripts.prototypes.runtime.sysop_options import (  # noqa: E402
+from imagebbs.runtime.sysop_options import (
     SysopOptionsEvent,
     SysopOptionsModule,
 )
-from scripts.prototypes.session_kernel import SessionKernel  # noqa: E402
-from scripts.prototypes.runtime.ampersand_overrides import (  # noqa: E402
-    BUILTIN_AMPERSAND_OVERRIDES,
-)
+from imagebbs.session_kernel import SessionKernel
 
 
 def _resolve_palette_colour(value: int, palette: tuple[int, ...], *, default_index: int = 0) -> int:

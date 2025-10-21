@@ -1,15 +1,11 @@
 from __future__ import annotations
 
-import sys
-from pathlib import Path
 from types import SimpleNamespace
 from typing import Iterable, List, Mapping, MutableMapping, Tuple
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
-
-from scripts.prototypes.ampersand_registry import AmpersandResult
-from scripts.prototypes.message_editor import EditorState, Event, MessageEditor, SessionContext
-from scripts.prototypes.runtime.message_store import MessageStore
+from imagebbs.ampersand_registry import AmpersandResult
+from imagebbs.message_editor import EditorState, Event, MessageEditor, SessionContext
+from imagebbs.runtime.message_store import MessageStore
 
 
 class StubAmpersandRegistry:

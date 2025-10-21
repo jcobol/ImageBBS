@@ -5,22 +5,20 @@ from pathlib import Path
 
 import pytest
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
-
-from scripts.prototypes.ampersand_dispatcher import (  # noqa: E402
+from imagebbs.ampersand_dispatcher import (
     AmpersandDispatchContext,
     AmpersandDispatcher,
 )
-from scripts.prototypes.ampersand_registry import (  # noqa: E402
+from imagebbs.ampersand_registry import (
     AmpersandRegistry,
     AmpersandResult,
 )
-from scripts.prototypes.device_context import (  # noqa: E402
+from imagebbs.device_context import (
     ConsoleService,
     DeviceContext,
     bootstrap_device_context,
 )
-from scripts.prototypes.setup_config import load_drive_config  # noqa: E402
+from imagebbs.setup_config import load_drive_config
 
 
 def _registry_flag_index(dispatcher: AmpersandDispatcher) -> int:
@@ -49,7 +47,7 @@ def test_dispatcher_uses_configured_overrides(tmp_path: Path) -> None:
     flag_index = next(iter(AmpersandRegistry().available_flag_indices()))
     module_path = tmp_path / "amp_override.py"
     module_path.write_text(
-        "from scripts.prototypes.ampersand_registry import AmpersandResult\n"
+        "from imagebbs.ampersand_registry import AmpersandResult\n"
         "def handler(ctx):\n"
         "    assert ctx.invocation.argument_x == 1\n"
         "    assert ctx.invocation.argument_y == 2\n"
