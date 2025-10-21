@@ -9,6 +9,27 @@ __all__ = list(getattr(_prototypes, "__all__", ()))
 for _name in __all__:
     globals()[_name] = getattr(_prototypes, _name)
 
+from .runtime.main_menu import MainMenuEvent, MainMenuModule, MenuCommand, MenuState
+from .runtime.session_runner import SessionRunner
+
+globals().update(
+    MainMenuEvent=MainMenuEvent,
+    MainMenuModule=MainMenuModule,
+    MenuCommand=MenuCommand,
+    MenuState=MenuState,
+    SessionRunner=SessionRunner,
+)
+
+for _override in (
+    "MainMenuEvent",
+    "MainMenuModule",
+    "MenuCommand",
+    "MenuState",
+    "SessionRunner",
+):
+    if _override not in __all__:
+        __all__.append(_override)
+
 def __getattr__(name: str) -> Any:
     return getattr(_prototypes, name)
 
