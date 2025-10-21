@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
 from types import MappingProxyType
 from typing import Mapping, Optional, Tuple
 
 from ..device_context import ConsoleService
+from scripts.prototypes.runtime.masked_pane_staging import (
+    MaskedPaneMacro as PrototypeMaskedPaneMacro,
+)
 
 MaskOverlayPayload = Tuple[Tuple[int, ...], Tuple[int, ...]]
 
@@ -31,30 +33,7 @@ _SYSOP_FALLBACK_PAYLOADS: Mapping[int, MaskOverlayPayload] = MappingProxyType(
 )
 
 
-class MaskedPaneMacro(Enum):
-    """Named macro slots that feed ``tempbott+40``/``var_4078``."""
-
-    MAIN_MENU_HEADER = "main_menu.header"
-    MAIN_MENU_PROMPT = "main_menu.prompt"
-    MAIN_MENU_INVALID = "main_menu.invalid_selection"
-    FILE_TRANSFERS_HEADER = "file_transfers.header"
-    FILE_TRANSFERS_PROMPT = "file_transfers.prompt"
-    FILE_TRANSFERS_INVALID = "file_transfers.invalid_selection"
-    SYSOP_HEADER = "sysop.header"
-    SYSOP_PROMPT = "sysop.prompt"
-    SYSOP_SAYING_PREAMBLE = "sysop.saying_preamble"
-    SYSOP_SAYING_OUTPUT = "sysop.saying_output"
-    SYSOP_INVALID = "sysop.invalid_selection"
-    SYSOP_ABORT = "sysop.abort"
-    FLAG_MAIN_MENU_HEADER = "flag.main_menu.header"
-    FLAG_MAIN_MENU_PROMPT = "flag.main_menu.prompt"
-    FLAG_MAIN_MENU_INVALID = "flag.main_menu.invalid_selection"
-    FLAG_SAYINGS_ENABLE = "flag.sayings.enable"
-    FLAG_SAYINGS_DISABLE = "flag.sayings.disable"
-    FLAG_SAYINGS_PROMPT_ENABLE = "flag.sayings.prompt_enable"
-    FLAG_SAYINGS_PROMPT_DISABLE = "flag.sayings.prompt_disable"
-    FLAG_PROMPT_ENABLE = "flag.prompt.enable"
-    FLAG_PROMPT_DISABLE = "flag.prompt.disable"
+MaskedPaneMacro = PrototypeMaskedPaneMacro
 
 
 @dataclass(frozen=True)
