@@ -40,7 +40,7 @@ The event loop should treat each helper as a pure screen/colour RAM operation. D
 
 ### `update_idle_timer_digits`
 - **Trigger** – Runs whenever the host session scheduler increments the idle counter (every second).【F:docs/porting/iteration-40.md†L66-L72】
-- **State dependencies** – Needs the colon separator preserved; maintain a cached minutes/seconds tuple in host state to compute deltas without peeking the transcript.
+- **State dependencies** – Needs the colon separator preserved; maintain a cached minutes/seconds tuple in host state to compute deltas without peeking the transcript. The helper only touches `$04de/$04e0/$04e1`, leaving the colon at `$04df` untouched, and expects PETSCII digit glyphs (`$30-$39`) so the host scheduler can derive `M:SS` directly from elapsed seconds.【F:scripts/prototypes/device_context.py†L1312-L1332】
 - **Timing** – Apply after spinner updates on the same idle tick. Defer if a pane rotation is in flight and the host requires atomic screen updates; otherwise it can safely run before or after masked glyph commits because it touches unrelated addresses.
 
 ## Modern runtime signal sources
@@ -57,6 +57,11 @@ The runtime now provides a dedicated `IndicatorController` that caches the pause
 - **Carrier transitions** – The telnet bridge marks carrier up/down inside `open()` and `_mark_closed()`, ensuring the status cells toggle exactly when the socket comes and goes. The same code path re-enables the spinner whenever a caller connects.【F:scripts/prototypes/runtime/transports.py†L209-L272】
 - **Idle spinner cadence** – Both the telnet bridge and the curses sysop console invoke `on_idle_tick()` on every scheduler pass so the spinner frame advances even while output is flowing.【F:scripts/prototypes/runtime/transports.py†L244-L267】【F:scripts/prototypes/runtime/console_ui.py†L67-L105】
 - **Host wiring entry points** – The curses UI, CLI loop, and stream server each register a controller instance with the runner before entering their respective loops so pause/abort signals can target a shared cache irrespective of the front-end. The stream server also passes the controller into the modem transport so carrier callbacks share the same instance.【F:scripts/prototypes/runtime/console_ui.py†L49-L71】【F:scripts/prototypes/runtime/cli.py†L137-L192】
+
+## Host idle timer scheduler workflow
+- **Scheduler ownership** – The curses sysop console instantiates an `IdleTimerScheduler`, wiring it to `time.monotonic()` so the counter advances with real elapsed seconds regardless of frame rate. Each run loop resets the scheduler to zero before processing frames, ensuring a fresh `0:00` display for new sessions.【F:scripts/prototypes/runtime/console_ui.py†L39-L107】【F:scripts/prototypes/runtime/console_ui.py†L159-L166】
+- **Tick cadence** – After rendering each frame and spinning the other indicators, the loop calls `tick()` so the scheduler converts the accumulated seconds into PETSCII glyphs and feeds them into `ConsoleService.update_idle_timer_digits()` without disturbing the colon separator or transcript buffers.【F:scripts/prototypes/runtime/console_ui.py†L159-L176】
+- **Digit derivation** – The scheduler derives the display tuple from elapsed seconds (`minutes % 10`, `seconds // 10`, `seconds % 10`) and adds `$30` to each component so the host UI mirrors the C64 `M:SS` presentation exactly.【F:scripts/prototypes/runtime/console_ui.py†L72-L79】
 
 ## Unresolved questions for stakeholders
 1. **Blink cadence fidelity** – Should the host faithfully mirror the five-phase `lbl_adca` countdown, or can the port adopt a modern timer (e.g., 500 ms toggle) if it preserves the perceived blink rate?【F:docs/porting/iteration-40.md†L43-L55】

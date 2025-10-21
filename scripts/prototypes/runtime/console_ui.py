@@ -5,7 +5,7 @@ from __future__ import annotations
 import curses
 import time
 from dataclasses import dataclass
-from typing import Tuple
+from typing import Callable, Tuple
 
 from ..device_context import ConsoleService
 from ..session_kernel import SessionState
@@ -36,6 +36,50 @@ class ConsoleFrame:
     idle_timer_positions: Tuple[Tuple[int, int], ...]
 
 
+class IdleTimerScheduler:
+    """Track elapsed session time and refresh the idle timer digits."""
+
+    def __init__(
+        self,
+        console: ConsoleService,
+        *,
+        time_source: Callable[[], float] | None = None,
+    ) -> None:
+        self.console = console
+        self._time_source = time_source or time.monotonic
+        self._epoch: float | None = None
+        self._last_second: int | None = None
+
+    def reset(self) -> None:
+        """Clear cached timing state so a new session can start at ``0:00``."""
+
+        self._epoch = None
+        self._last_second = None
+
+    def tick(self) -> None:
+        """Advance the idle timer when the elapsed second changes."""
+
+        now = self._time_source()
+        if self._epoch is None:
+            self._epoch = now
+        elapsed_seconds = int(max(0.0, now - self._epoch))
+        if self._last_second == elapsed_seconds:
+            return
+        digits = self._format_digits(elapsed_seconds)
+        self.console.update_idle_timer_digits(digits)
+        self._last_second = elapsed_seconds
+
+    def _format_digits(self, elapsed_seconds: int) -> Tuple[int, int, int]:
+        minutes, seconds = divmod(max(0, elapsed_seconds), 60)
+        minutes_digit = minutes % 10
+        tens_digit, ones_digit = divmod(seconds, 10)
+        return (
+            0x30 + minutes_digit,
+            0x30 + tens_digit,
+            0x30 + ones_digit,
+        )
+
+
 class SysopConsoleApp:
     """Drive :class:`SessionRunner` inside a curses-based console window."""
 
@@ -58,6 +102,7 @@ class SysopConsoleApp:
         self._input_buffer: list[str] = []
         self._stop = False
         self.indicator_controller = IndicatorController(console)
+        self.idle_timer_scheduler = IdleTimerScheduler(console)
         if self.runner is not None:
             self.runner.set_indicator_controller(self.indicator_controller)
 
@@ -159,6 +204,7 @@ class SysopConsoleApp:
         curses.curs_set(0)
         stdscr.nodelay(True)
         stdscr.timeout(0)
+        self.idle_timer_scheduler.reset()
         state = SessionState.EXIT if self.runner is None else self.runner.state
 
         while not self._stop:
@@ -173,6 +219,7 @@ class SysopConsoleApp:
 
             self._poll_input(stdscr)
             self.indicator_controller.on_idle_tick()
+            self.idle_timer_scheduler.tick()
             time.sleep(self.refresh_interval)
 
         return state

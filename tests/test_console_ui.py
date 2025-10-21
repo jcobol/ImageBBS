@@ -2,13 +2,18 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Sequence
 
 import pytest
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from scripts.prototypes.device_context import ConsoleService
-from scripts.prototypes.runtime.console_ui import SysopConsoleApp, translate_petscii
+from scripts.prototypes.device_context import Console, ConsoleService
+from scripts.prototypes.runtime.console_ui import (
+    IdleTimerScheduler,
+    SysopConsoleApp,
+    translate_petscii,
+)
 
 
 @dataclass
@@ -221,3 +226,72 @@ def test_translate_petscii_maps_screen_codes(
     char, reverse = translate_petscii(code)
     assert char == expected_char
     assert reverse is expected_reverse
+
+
+class FakeMonotonic:
+    def __init__(self) -> None:
+        self._value = 0.0
+
+    def advance(self, seconds: float) -> None:
+        self._value += seconds
+
+    def __call__(self) -> float:
+        return self._value
+
+
+class RecordingConsoleService(ConsoleService):
+    def __init__(self) -> None:
+        super().__init__(Console())
+        self.digit_history: list[tuple[int, int, int]] = []
+
+    def update_idle_timer_digits(
+        self,
+        digits: Sequence[int],
+        *,
+        colours: Sequence[int] | None = None,
+    ) -> None:
+        digits_tuple = tuple(int(value) & 0xFF for value in digits)
+        self.digit_history.append(digits_tuple)
+        super().update_idle_timer_digits(digits_tuple, colours=colours)
+
+
+def _read_idle_digits(console: RecordingConsoleService) -> tuple[int, int, int]:
+    addresses = ConsoleService._IDLE_TIMER_SCREEN_ADDRESSES
+    return tuple(console.screen.peek_screen_address(address) for address in addresses)
+
+
+def test_idle_timer_scheduler_updates_digits_and_preserves_colon() -> None:
+    console = RecordingConsoleService()
+    console.device.poke_screen_byte(0x04DF, 0x3A)
+    timer_source = FakeMonotonic()
+    timer = IdleTimerScheduler(console, time_source=timer_source)
+
+    timer.tick()
+
+    assert _read_idle_digits(console) == (0x30, 0x30, 0x30)
+    assert console.screen.peek_screen_address(0x04DF) == 0x3A
+
+    timer_source.advance(65)
+    timer.tick()
+
+    assert _read_idle_digits(console) == (0x31, 0x30, 0x35)
+    assert console.screen.peek_screen_address(0x04DF) == 0x3A
+
+
+def test_idle_timer_scheduler_overwrites_digits_without_transcript() -> None:
+    console = RecordingConsoleService()
+    timer_source = FakeMonotonic()
+    timer = IdleTimerScheduler(console, time_source=timer_source)
+
+    timer.tick()
+    timer_source.advance(1.0)
+    timer.tick()
+    timer_source.advance(1.0)
+    timer.tick()
+
+    assert console.digit_history == [
+        (0x30, 0x30, 0x30),
+        (0x30, 0x30, 0x31),
+        (0x30, 0x30, 0x32),
+    ]
+    assert console.device.transcript_bytes == b""
