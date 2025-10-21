@@ -9,7 +9,7 @@ invoked directly to exercise the prototype runtime stack that wires the
 ### Usage
 
 ```bash
-python -m scripts.prototypes.runtime.cli [OPTIONS]
+python -m imagebbs.runtime.cli [OPTIONS]
 ```
 
 ### Options

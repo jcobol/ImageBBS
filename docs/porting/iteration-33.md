@@ -9,7 +9,7 @@
 - Missing configuration paths trigger a `SystemExit` guard so automation surfaces misconfigurations immediately instead of instantiating partial drive contexts.【F:scripts/prototypes/drive_assignments_cli.py†L50-L61】
 
 ## Workflow
-1. Run `python -m scripts.prototypes.drive_assignments_cli path/to/storage.toml` whenever storage overrides change. The CLI prints the merged Commodore and filesystem slots, letting sysops confirm that each `driveN` mount matches the intended host directory.【F:scripts/prototypes/drive_assignments_cli.py†L20-L61】
+1. Run `python -m imagebbs.drive_assignments_cli path/to/storage.toml` whenever storage overrides change. The CLI prints the merged Commodore and filesystem slots, letting sysops confirm that each `driveN` mount matches the intended host directory.【F:src/imagebbs/drive_assignments_cli.py†L1-L12】
 2. Keep the CLI output under test with `pytest tests/test_drive_assignments_cli.py` so filesystem slots continue to surface their resolved paths alongside the Commodore defaults tracked by the stubbed setup overlay.【F:tests/test_drive_assignments_cli.py†L27-L67】
 
 ## Next steps

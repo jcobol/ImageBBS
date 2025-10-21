@@ -5,24 +5,21 @@ import base64
 import gzip
 import io
 import json
-import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping
 
 import pytest
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
-
-from scripts.prototypes import ml_extra_defaults, ml_extra_extract, petscii_glyphs
-from scripts.prototypes.console_renderer import (
+from imagebbs import ml_extra_defaults, ml_extra_extract, petscii_glyphs
+from imagebbs.console_renderer import (
     GlyphCell,
     GlyphRun,
     PetsciiScreen,
     VicRegisterTimelineEntry,
     render_petscii_payload,
 )
-from scripts.prototypes.device_context import Console
-from scripts.prototypes.petscii import decode_petscii_for_cli
+from imagebbs.device_context import Console
+from imagebbs.petscii import decode_petscii_for_cli
 
 
 @pytest.fixture(scope="module")

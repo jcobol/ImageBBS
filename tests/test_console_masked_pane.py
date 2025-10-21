@@ -1,9 +1,4 @@
-import sys
-from pathlib import Path
-
-sys.path.append(str(Path(__file__).resolve().parents[1]))
-
-from scripts.prototypes.device_context import (  # noqa: E402
+from imagebbs.device_context import (
     Console,
     ConsoleService,
     MaskedPaneBuffers,

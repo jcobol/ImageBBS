@@ -1,14 +1,9 @@
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.append(str(Path(__file__).resolve().parents[1]))
-
-from scripts.prototypes import MessageEditor, SessionKernel, SessionState
-from scripts.prototypes.device_context import ConsoleService
-from scripts.prototypes.runtime.main_menu import MainMenuEvent, MainMenuModule
-from scripts.prototypes.runtime.sysop_options import SysopOptionsModule
+from imagebbs import MessageEditor, SessionKernel, SessionState
+from imagebbs.device_context import ConsoleService
+from imagebbs.runtime.main_menu import MainMenuEvent, MainMenuModule
+from imagebbs.runtime.sysop_options import SysopOptionsModule
 
 
 def _bootstrap_kernel() -> tuple[SessionKernel, MainMenuModule]:

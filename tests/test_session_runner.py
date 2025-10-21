@@ -1,15 +1,10 @@
-import sys
-from pathlib import Path
-
 import pytest
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
-
-from scripts.prototypes import SessionRunner, SessionState
-from scripts.prototypes.message_editor import EditorState, MessageEditor
-from scripts.prototypes.runtime.file_transfers import FileTransfersModule
-from scripts.prototypes.runtime.main_menu import MainMenuModule
-from scripts.prototypes.runtime.sysop_options import SysopOptionsModule
+from imagebbs import SessionRunner, SessionState
+from imagebbs.message_editor import EditorState, MessageEditor
+from imagebbs.runtime.file_transfers import FileTransfersModule
+from imagebbs.runtime.main_menu import MainMenuModule
+from imagebbs.runtime.sysop_options import SysopOptionsModule
 
 
 @pytest.fixture()

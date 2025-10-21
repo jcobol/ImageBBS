@@ -11,3 +11,7 @@ __doc__ = _TARGET.__doc__
 
 def __getattr__(name: str) -> Any:
     return getattr(_TARGET, name)
+
+
+if __name__ == "__main__":  # pragma: no cover - exercised via python -m
+    raise SystemExit(_TARGET.main())

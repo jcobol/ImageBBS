@@ -14,7 +14,7 @@
 - The new `ml_extra_refresh_pipeline` helper drives a full refresh cycle: it shells into the sanity checks, writes the exported snapshot to disk, and reports drift via the guard summary so humans and CI share the same gating path.【F:scripts/prototypes/ml_extra_refresh_pipeline.py†L1-L77】【F:tests/test_ml_extra_cli.py†L139-L267】
 
 ## Workflow
-1. Run `python -m scripts.prototypes.ml_extra_refresh_pipeline` after overlay updates to export a fresh snapshot, diff it against the committed baseline, and surface the guard summary plus CI-friendly exit status in one command.【F:scripts/prototypes/ml_extra_refresh_pipeline.py†L1-L77】【F:tests/test_ml_extra_cli.py†L139-L194】
+1. Run `python -m imagebbs.ml_extra_refresh_pipeline` after overlay updates to export a fresh snapshot, diff it against the committed baseline, and surface the guard summary plus CI-friendly exit status in one command.【F:src/imagebbs/ml_extra_refresh_pipeline.py†L1-L12】【F:tests/test_ml_extra_cli.py†L139-L194】
 2. When the baseline intentionally changes, rerun the guard with `--update-baseline` to overwrite the stored snapshot after confirming the diff, or pass `--json` to capture the structured payload in downstream automation.【F:scripts/prototypes/ml_extra_snapshot_guard.py†L24-L105】【F:tests/test_ml_extra_cli.py†L206-L267】
 3. Manual deep dives can still call `ml_extra_sanity --metadata-json` and `--baseline-metadata` directly, but both now feed the pipeline and guard so human review and automated gating observe identical metadata exports.【F:scripts/prototypes/ml_extra_sanity.py†L760-L812】【F:scripts/prototypes/ml_extra_refresh_pipeline.py†L1-L77】
 

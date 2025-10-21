@@ -1,11 +1,6 @@
 """Regression tests for ConsoleRegionBuffer swaps."""
 
-import sys
-from pathlib import Path
-
-sys.path.append(str(Path(__file__).resolve().parents[1]))
-
-from scripts.prototypes.device_context import (
+from imagebbs.device_context import (
     Console,
     ConsoleRegionBuffer,
     ConsoleService,

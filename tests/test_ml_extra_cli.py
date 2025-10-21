@@ -5,18 +5,17 @@ from __future__ import annotations
 import base64
 import gzip
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
-
-from scripts.prototypes import ml_extra_defaults
-from scripts.prototypes import ml_extra_disasm
-from scripts.prototypes import ml_extra_dump_macros
-from scripts.prototypes import ml_extra_reporting
+from imagebbs import ml_extra_defaults
+from imagebbs import ml_extra_disasm
+from imagebbs import ml_extra_dump_macros
+from imagebbs import ml_extra_reporting
 
 
 @pytest.fixture(scope="module")
@@ -108,7 +107,7 @@ def _run_snapshot_guard(args: list[str]) -> subprocess.CompletedProcess[str]:
     command = [
         sys.executable,
         "-m",
-        "scripts.prototypes.ml_extra_snapshot_guard",
+        "imagebbs.ml_extra_snapshot_guard",
         *args,
     ]
     return subprocess.run(
@@ -116,6 +115,7 @@ def _run_snapshot_guard(args: list[str]) -> subprocess.CompletedProcess[str]:
         check=False,
         capture_output=True,
         text=True,
+        env=_python_env(),
     )
 
 
@@ -123,7 +123,7 @@ def _run_refresh_pipeline(args: list[str]) -> subprocess.CompletedProcess[str]:
     command = [
         sys.executable,
         "-m",
-        "scripts.prototypes.ml_extra_refresh_pipeline",
+        "imagebbs.ml_extra_refresh_pipeline",
         *args,
     ]
     return subprocess.run(
@@ -131,7 +131,20 @@ def _run_refresh_pipeline(args: list[str]) -> subprocess.CompletedProcess[str]:
         check=False,
         capture_output=True,
         text=True,
+        env=_python_env(),
     )
+
+
+def _python_env() -> dict[str, str]:
+    env = os.environ.copy()
+    repo_root = Path(__file__).resolve().parents[1]
+    src_path = repo_root / "src"
+    entries = [str(src_path), str(repo_root)]
+    existing = env.get("PYTHONPATH")
+    if existing:
+        entries.append(existing)
+    env["PYTHONPATH"] = os.pathsep.join(entries)
+    return env
 
 
 def _baseline_path() -> Path:

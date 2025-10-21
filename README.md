@@ -28,7 +28,7 @@ Want to telnet to some Image BBSes? Our network has 13 nodes! Check out the [Com
 
 # Porting Research Tooling
 
-Repository-hosted tooling recovers the `ml.extra` overlay and validates that the checked-in stub matches the archival bytes. Run `python -m scripts.prototypes.ml_extra_refresh_pipeline` after any overlay rescan to export a fresh snapshot and diff it against `docs/porting/artifacts/ml-extra-overlay-metadata.json` in a single step (pass `--overlay`, `--metadata-json`, or `--baseline` to override defaults). For manual checks, `python -m scripts.prototypes.ml_extra_snapshot_guard --baseline docs/porting/artifacts/ml-extra-overlay-metadata.json` still emits the human-readable summary, while the new `--json` and `--update-baseline` options provide machine-readable diffs and opt-in baseline refreshes for CI workflows.【F:scripts/prototypes/ml_extra_refresh_pipeline.py†L1-L77】【F:scripts/prototypes/ml_extra_snapshot_guard.py†L24-L105】
+Repository-hosted tooling recovers the `ml.extra` overlay and validates that the checked-in stub matches the archival bytes. Run `python -m imagebbs.ml_extra_refresh_pipeline` after any overlay rescan to export a fresh snapshot and diff it against `docs/porting/artifacts/ml-extra-overlay-metadata.json` in a single step (pass `--overlay`, `--metadata-json`, or `--baseline` to override defaults). For manual checks, `python -m imagebbs.ml_extra_snapshot_guard --baseline docs/porting/artifacts/ml-extra-overlay-metadata.json` still emits the human-readable summary, while the new `--json` and `--update-baseline` options provide machine-readable diffs and opt-in baseline refreshes for CI workflows.【F:src/imagebbs/ml_extra_refresh_pipeline.py†L1-L12】【F:src/imagebbs/ml_extra_snapshot_guard.py†L1-L12】
 
 # Docker Build
 

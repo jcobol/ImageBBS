@@ -2,14 +2,10 @@
 
 from __future__ import annotations
 
-import sys
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import List, Tuple
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
-
-from scripts.prototypes import (
+from imagebbs import (
     ConsoleService,
     DeviceContext,
     MessageEditor,
@@ -18,7 +14,7 @@ from scripts.prototypes import (
     SessionState,
     SetupDefaults,
 )
-from scripts.prototypes.message_editor import Event
+from imagebbs.message_editor import Event
 
 
 @dataclass

@@ -3,13 +3,10 @@
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
-
-from scripts.prototypes.runtime.message_store import MessageStore
-from scripts.prototypes.runtime.message_store_repository import (
+from imagebbs.runtime.message_store import MessageStore
+from imagebbs.runtime.message_store_repository import (
     load_message_store,
     save_message_store,
 )

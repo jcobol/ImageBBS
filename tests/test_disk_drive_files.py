@@ -1,11 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-import sys
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
-
-from scripts.prototypes.device_context import (
+from imagebbs.device_context import (
     DeviceContext,
     DiskDrive,
     SequentialFileChannel,

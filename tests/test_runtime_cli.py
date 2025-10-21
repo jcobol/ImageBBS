@@ -1,18 +1,15 @@
 import asyncio
 import io
-import sys
 from pathlib import Path
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
-
-from scripts.prototypes.runtime.cli import (
+from imagebbs.runtime.cli import (
     create_runner,
     parse_args,
     run_session,
     start_session_server,
 )
-from scripts.prototypes.session_kernel import SessionState
-from scripts.prototypes.setup_defaults import (
+from imagebbs.session_kernel import SessionState
+from imagebbs.setup_defaults import (
     DEFAULT_MODEM_BAUD_LIMIT,
     FilesystemDriveLocator,
 )
@@ -58,7 +55,7 @@ def test_create_runner_applies_configuration_and_persistence(tmp_path: Path) -> 
                 "[slots]",
                 '1 = "."',
                 "[ampersand_overrides]",
-                '1 = "scripts.prototypes.runtime.ampersand_overrides:handle_chkflags"',
+                '1 = "imagebbs.runtime.ampersand_overrides:handle_chkflags"',
                 "[modem]",
                 "baud_limit = 2400",
                 "",
@@ -84,7 +81,7 @@ def test_create_runner_applies_configuration_and_persistence(tmp_path: Path) -> 
     assert isinstance(first_drive.locator, FilesystemDriveLocator)
     assert first_drive.locator.path == tmp_path.resolve()
     assert getattr(defaults, "ampersand_overrides") == {
-        1: "scripts.prototypes.runtime.ampersand_overrides:handle_chkflags"
+        1: "imagebbs.runtime.ampersand_overrides:handle_chkflags"
     }
     assert defaults.modem.baud_limit == 2400
 
