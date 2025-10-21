@@ -101,7 +101,7 @@ def test_main_menu_macros_stage_masked_pane_buffers() -> None:
     buffers = kernel.context.get_service("masked_pane_buffers")
 
     buffers.clear_staging()
-    module._render_macro(module.MENU_HEADER_SLOT)
+    module._render_macro(module.MENU_HEADER_MACRO)
     glyphs, colours = _expected_overlay(
         module, console_service, module.MENU_HEADER_SLOT
     )
@@ -112,7 +112,7 @@ def test_main_menu_macros_stage_masked_pane_buffers() -> None:
     assert overlay_colour[:40] == colours
 
     buffers.clear_staging()
-    module._render_macro(module.MENU_PROMPT_SLOT)
+    module._render_macro(module.MENU_PROMPT_MACRO)
     glyphs, colours = _expected_overlay(
         module, console_service, module.MENU_PROMPT_SLOT
     )

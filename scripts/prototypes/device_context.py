@@ -28,6 +28,7 @@ from typing import (
 if TYPE_CHECKING:
     from .ampersand_dispatcher import AmpersandDispatcher
     from .ampersand_registry import AmpersandRegistry
+    from .runtime.masked_pane_staging import MaskedPaneStagingMap
 
 from .setup_defaults import DriveAssignment, FilesystemDriveLocator
 from .console_renderer import (
@@ -759,6 +760,7 @@ class ConsoleService:
     def __post_init__(self) -> None:
         self._masked_pane_blink = MaskedPaneBlinkScheduler()
         self._masked_pane_buffers: MaskedPaneBuffers | None = None
+        self._masked_pane_staging_map: "MaskedPaneStagingMap" | None = None
 
     @property
     def defaults(self) -> ml_extra_defaults.MLExtraDefaults:
@@ -831,6 +833,18 @@ class ConsoleService:
         """Return rendered glyph metadata keyed by macro slot."""
 
         return self.device.macro_glyphs
+
+    @property
+    def masked_pane_staging_map(self) -> "MaskedPaneStagingMap":
+        """Return the derived staging plan for masked-pane producers."""
+
+        staging_map = self._masked_pane_staging_map
+        if staging_map is None:
+            from .runtime.masked_pane_staging import build_masked_pane_staging_map
+
+            staging_map = build_masked_pane_staging_map(self)
+            self._masked_pane_staging_map = staging_map
+        return staging_map
 
     def advance_masked_pane_blink(self) -> MaskedPaneBlinkState:
         """Simulate ``lbl_adca`` and return the active blink state."""
@@ -1416,14 +1430,19 @@ class ConsoleService:
                 if slot in self._MASKED_OVERLAY_FLAG_SLOTS:
                     run = self.stage_macro_slot(slot)
                     if run is None:
-                        fallback = self.glyph_lookup.macros_by_slot.get(slot)
-                        if fallback is not None:
-                            glyph_slice, colour_slice = self._macro_slot_overlay_spans(
-                                slot,
-                                fallback,
-                                fill_colour=None,
-                            )
-                            self.stage_masked_pane_overlay(glyph_slice, colour_slice)
+                        fallback_overlay = self.masked_pane_staging_map.fallback_overlay_for_slot(slot)
+                        if fallback_overlay is not None:
+                            glyphs, colours = fallback_overlay
+                            self.stage_masked_pane_overlay(glyphs, colours)
+                        else:
+                            fallback = self.glyph_lookup.macros_by_slot.get(slot)
+                            if fallback is not None:
+                                glyph_slice, colour_slice = self._macro_slot_overlay_spans(
+                                    slot,
+                                    fallback,
+                                    fill_colour=None,
+                                )
+                                self.stage_masked_pane_overlay(glyph_slice, colour_slice)
                 return self.push_macro_slot(slot)
         return None
 

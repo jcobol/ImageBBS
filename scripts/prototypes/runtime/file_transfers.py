@@ -10,6 +10,7 @@ from ..ampersand_dispatcher import AmpersandDispatcher
 from ..ampersand_registry import AmpersandRegistry
 from ..device_context import ConsoleService
 from ..session_kernel import SessionKernel, SessionState
+from .masked_pane_staging import MaskedPaneMacro, render_masked_macro
 
 
 class FileTransferMenuState(Enum):
@@ -40,9 +41,21 @@ class FileTransfersModule:
     # The BASIC source initialises the menu with ``&,28`` before prompting for a
     # command.  Slot ``$28`` mirrors that macro while ``$29`` and ``$2a`` track
     # the prompt loop and the ``?`` error shown for invalid selections.
-    MENU_HEADER_SLOT = 0x28
-    MENU_PROMPT_SLOT = 0x29
-    INVALID_SELECTION_SLOT = 0x2A
+    MENU_HEADER_MACRO = MaskedPaneMacro.FILE_TRANSFERS_HEADER
+    MENU_PROMPT_MACRO = MaskedPaneMacro.FILE_TRANSFERS_PROMPT
+    INVALID_SELECTION_MACRO = MaskedPaneMacro.FILE_TRANSFERS_INVALID
+
+    @property
+    def MENU_HEADER_SLOT(self) -> int:
+        return self._macro_slot(self.MENU_HEADER_MACRO)
+
+    @property
+    def MENU_PROMPT_SLOT(self) -> int:
+        return self._macro_slot(self.MENU_PROMPT_MACRO)
+
+    @property
+    def INVALID_SELECTION_SLOT(self) -> int:
+        return self._macro_slot(self.INVALID_SELECTION_MACRO)
 
     # Command groups recovered from ``im.txt`` lines 1812-1889.  The dispatcher
     # reduces selections to their first two characters (``left$(an$,2)``) while
@@ -149,7 +162,7 @@ class FileTransfersModule:
                 self._render_prompt()
                 return SessionState.FILE_TRANSFERS
 
-            self._render_macro(self.INVALID_SELECTION_SLOT)
+            self._render_macro(self.INVALID_SELECTION_MACRO)
             self._render_prompt()
             return SessionState.FILE_TRANSFERS
 
@@ -158,32 +171,30 @@ class FileTransfersModule:
     # Internal helpers -----------------------------------------------------
 
     def _render_intro(self) -> None:
-        self._render_macro(self.MENU_HEADER_SLOT)
+        self._render_macro(self.MENU_HEADER_MACRO)
         self._render_prompt()
 
     def _render_prompt(self) -> None:
-        self._render_macro(self.MENU_PROMPT_SLOT)
+        self._render_macro(self.MENU_PROMPT_MACRO)
 
-    def _render_macro(self, slot: int) -> None:
+    def _render_macro(self, macro: MaskedPaneMacro) -> None:
         if self.registry is None:
             raise RuntimeError("ampersand registry has not been initialised")
-        defaults = self.registry.defaults
-        if slot not in defaults.macros_by_slot:
-            raise KeyError(f"macro slot ${slot:02x} missing from defaults")
         if not isinstance(self._console, ConsoleService):  # pragma: no cover - guard
             raise RuntimeError("console service is unavailable")
-        staged = self._console.stage_macro_slot(slot)
-        if staged is None:
-            raise RuntimeError(f"console failed to stage macro slot ${slot:02x}")
-        if slot == self.MENU_PROMPT_SLOT:
-            self._commit_masked_overlay()
-            restaged = self._console.stage_macro_slot(slot)
-            if restaged is None:  # pragma: no cover - defensive guard
-                raise RuntimeError(
-                    f"console failed to restage macro slot ${slot:02x}"
-                )
-        self._console.push_macro_slot(slot)
+        staging = self._console.masked_pane_staging_map
+        slot = staging.slot(macro)
+        render_masked_macro(
+            console=self._console,
+            dispatcher=self._dispatcher,
+            macro=macro,
+        )
         self.rendered_slots.append(slot)
+
+    def _macro_slot(self, macro: MaskedPaneMacro) -> int:
+        if not isinstance(self._console, ConsoleService):  # pragma: no cover - guard
+            raise RuntimeError("console service is unavailable")
+        return self._console.masked_pane_staging_map.slot(macro)
 
     @staticmethod
     def _normalise_command(selection: Optional[str]) -> str:
@@ -201,16 +212,6 @@ class FileTransfersModule:
                 return prefix
             return token
         return text[:2]
-
-    def _commit_masked_overlay(self) -> None:
-        dispatcher = self._dispatcher
-        if dispatcher is not None:
-            dispatcher.dispatch("&,50")
-            return
-        if isinstance(self._console, ConsoleService):  # pragma: no cover - guard
-            self._console.commit_masked_pane_staging()
-            return
-        raise RuntimeError("console service is unavailable")
 
 
 __all__ = [

@@ -89,13 +89,12 @@ def _capture_macro_staging(
 
 def _expected_macro_span(
     slot: int,
-    module,
     console: ConsoleService,
 ) -> Tuple[Tuple[int, ...], Tuple[int, ...]]:
     """Return 40-byte glyph/colour spans mirrored from defaults or fallbacks."""
 
     width = 40
-    defaults = module.registry.defaults  # type: ignore[attr-defined]
+    defaults = console.defaults
     entry = defaults.macros_by_slot.get(slot)
 
     glyphs: Tuple[int, ...] | None = None
@@ -111,7 +110,7 @@ def _expected_macro_span(
             fill = console.screen_colour & 0xFF
             colours = tuple((fill,) * min(len(glyphs), width))
         else:
-            fallback = getattr(module, "_FALLBACK_MACRO_STAGING", {}).get(slot)
+            fallback = console.masked_pane_staging_map.fallback_overlay_for_slot(slot)
             if fallback is not None:
                 glyphs = tuple(fallback[0][:width])
                 colours = tuple(fallback[1][:width])
@@ -175,11 +174,6 @@ def test_ampersand_dispatcher_stages_masked_pane_flag_entries() -> None:
     expected_staging_slots = {slot for _, slot in metadata_pairs if slot in masked_slots}
     assert expected_staging_slots == masked_slots
 
-    module = SimpleNamespace(
-        registry=SimpleNamespace(defaults=console.defaults),
-        _FALLBACK_MACRO_STAGING={},
-    )
-
     last_staged_slot: int | None = None
     with _capture_macro_staging(console, buffers) as captured:
         assert buffers.dirty is False
@@ -194,9 +188,7 @@ def test_ampersand_dispatcher_stages_masked_pane_flag_entries() -> None:
                 last_staged_slot = slot
                 assert set(captured) == before_keys | {slot}
                 glyphs, colours = captured[slot]
-                expected_glyphs, expected_colours = _expected_macro_span(
-                    slot, module, console
-                )
+                expected_glyphs, expected_colours = _expected_macro_span(slot, console)
                 assert glyphs == expected_glyphs
                 assert colours == expected_colours
                 assert tuple(buffers.staged_screen) == glyphs
@@ -264,16 +256,17 @@ def test_main_menu_macro_staging_sequences() -> None:
         kernel.step(MainMenuEvent.ENTER)
         kernel.step(MainMenuEvent.SELECTION, "??")
 
+    staging = console.masked_pane_staging_map
     expected_slots = {
-        module.MENU_HEADER_SLOT,
-        module.MENU_PROMPT_SLOT,
-        module.INVALID_SELECTION_SLOT,
+        staging.slot(module.MENU_HEADER_MACRO),
+        staging.slot(module.MENU_PROMPT_MACRO),
+        staging.slot(module.INVALID_SELECTION_MACRO),
     }
 
     assert expected_slots <= captured.keys()
 
     for slot in expected_slots:
-        expected = _expected_macro_span(slot, module, console)
+        expected = _expected_macro_span(slot, console)
         staged = captured[slot]
         assert staged[0] == expected[0]
         assert staged[1] == expected[1]
@@ -294,19 +287,20 @@ def test_sysop_options_macro_staging_sequences() -> None:
         kernel.step(SysopOptionsEvent.COMMAND, "SY")
         kernel.step(SysopOptionsEvent.COMMAND, "A")
 
+    staging = console.masked_pane_staging_map
     expected_slots = {
-        module.MENU_HEADER_SLOT,
-        module.MENU_PROMPT_SLOT,
-        module.SAYING_PREAMBLE_SLOT,
-        module.SAYING_OUTPUT_SLOT,
-        module.INVALID_SELECTION_SLOT,
-        module.ABORT_SLOT,
+        staging.slot(module.MENU_HEADER_MACRO),
+        staging.slot(module.MENU_PROMPT_MACRO),
+        staging.slot(module.SAYING_PREAMBLE_MACRO),
+        staging.slot(module.SAYING_OUTPUT_MACRO),
+        staging.slot(module.INVALID_SELECTION_MACRO),
+        staging.slot(module.ABORT_MACRO),
     }
 
     assert expected_slots <= captured.keys()
 
     for slot in expected_slots:
-        expected = _expected_macro_span(slot, module, console)
+        expected = _expected_macro_span(slot, console)
         staged = captured[slot]
         assert staged[0] == expected[0]
         assert staged[1] == expected[1]
@@ -325,16 +319,17 @@ def test_file_transfers_macro_staging_sequences() -> None:
         kernel.step(FileTransferEvent.ENTER)
         kernel.step(FileTransferEvent.COMMAND, "??")
 
+    staging = console.masked_pane_staging_map
     expected_slots = {
-        module.MENU_HEADER_SLOT,
-        module.MENU_PROMPT_SLOT,
-        module.INVALID_SELECTION_SLOT,
+        staging.slot(module.MENU_HEADER_MACRO),
+        staging.slot(module.MENU_PROMPT_MACRO),
+        staging.slot(module.INVALID_SELECTION_MACRO),
     }
 
     assert expected_slots <= captured.keys()
 
     for slot in expected_slots:
-        expected = _expected_macro_span(slot, module, console)
+        expected = _expected_macro_span(slot, console)
         staged = captured[slot]
         assert staged[0] == expected[0]
         assert staged[1] == expected[1]

@@ -3,13 +3,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import ClassVar, Optional, Sequence
+from typing import Optional, Sequence
 
 from ..ampersand_dispatcher import AmpersandDispatcher
 from ..ampersand_registry import AmpersandRegistry
 from ..device_context import ConsoleService
 from ..session_kernel import SessionKernel, SessionModule, SessionState
-from .macro_rendering import render_macro_with_overlay_commit
+from .masked_pane_staging import MaskedPaneMacro, render_masked_macro
 
 
 class SysopOptionsState(Enum):
@@ -47,33 +47,41 @@ class SysopOptionsModule:
     _dispatcher: AmpersandDispatcher | None = field(init=False, default=None)
     _saying_index: int = field(init=False, default=0)
 
-    MENU_HEADER_SLOT = 0x20
-    MENU_PROMPT_SLOT = 0x21
-    SAYING_PREAMBLE_SLOT = 0x22
-    SAYING_OUTPUT_SLOT = 0x23
-    INVALID_SELECTION_SLOT = 0x24
-    ABORT_SLOT = 0x25
+    MENU_HEADER_MACRO = MaskedPaneMacro.SYSOP_HEADER
+    MENU_PROMPT_MACRO = MaskedPaneMacro.SYSOP_PROMPT
+    SAYING_PREAMBLE_MACRO = MaskedPaneMacro.SYSOP_SAYING_PREAMBLE
+    SAYING_OUTPUT_MACRO = MaskedPaneMacro.SYSOP_SAYING_OUTPUT
+    INVALID_SELECTION_MACRO = MaskedPaneMacro.SYSOP_INVALID
+    ABORT_MACRO = MaskedPaneMacro.SYSOP_ABORT
+
+    @property
+    def MENU_HEADER_SLOT(self) -> int:
+        return self._macro_slot(self.MENU_HEADER_MACRO)
+
+    @property
+    def MENU_PROMPT_SLOT(self) -> int:
+        return self._macro_slot(self.MENU_PROMPT_MACRO)
+
+    @property
+    def SAYING_PREAMBLE_SLOT(self) -> int:
+        return self._macro_slot(self.SAYING_PREAMBLE_MACRO)
+
+    @property
+    def SAYING_OUTPUT_SLOT(self) -> int:
+        return self._macro_slot(self.SAYING_OUTPUT_MACRO)
+
+    @property
+    def INVALID_SELECTION_SLOT(self) -> int:
+        return self._macro_slot(self.INVALID_SELECTION_MACRO)
+
+    @property
+    def ABORT_SLOT(self) -> int:
+        return self._macro_slot(self.ABORT_MACRO)
 
     _SAYING_COMMANDS = frozenset({"SY", "S"})
     _MAIN_MENU_COMMANDS = frozenset({"Q"})
     _ABORT_COMMANDS = frozenset({"A"})
     _EXIT_COMMANDS = frozenset({"EX"})
-
-    _FALLBACK_MACRO_STAGING: ClassVar[
-        dict[int, tuple[tuple[int, ...], tuple[int, ...]]]
-    ] = {
-        0x20: (
-            (0x68, 0xC3, 0x85, 0x06, 0xE2, 0xC1, 0xA0, 0x00)
-            + (0x20,) * 32,
-            (0x0A, 0x0A, 0x0A, 0x0A, 0x0A, 0x0A, 0x0A, 0x00)
-            + (0x0A,) * 32,
-        ),
-        0x21: ((0x00,) + (0x20,) * 39, (0x00,) + (0x0A,) * 39),
-        0x22: ((0x00,) + (0x20,) * 39, (0x00,) + (0x0A,) * 39),
-        0x23: ((0x00,) + (0x20,) * 39, (0x00,) + (0x0A,) * 39),
-        0x24: ((0x00,) + (0x20,) * 39, (0x00,) + (0x0A,) * 39),
-        0x25: ((0x00,) + (0x20,) * 39, (0x00,) + (0x0A,) * 39),
-    }
 
     def start(self, kernel: SessionKernel) -> SessionState:
         """Bind runtime services and render the introductory macros."""
@@ -123,7 +131,7 @@ class SysopOptionsModule:
 
             if command in self._ABORT_COMMANDS:
                 self.last_command = command
-                self._render_macro(self.ABORT_SLOT)
+                self._render_macro(self.ABORT_MACRO)
                 return SessionState.MAIN_MENU
 
             if command in self._MAIN_MENU_COMMANDS:
@@ -135,7 +143,7 @@ class SysopOptionsModule:
                 return SessionState.EXIT
 
             self.last_command = command
-            self._render_macro(self.INVALID_SELECTION_SLOT)
+            self._render_macro(self.INVALID_SELECTION_MACRO)
             self._render_prompt()
             return SessionState.SYSOP_OPTIONS
 
@@ -144,39 +152,37 @@ class SysopOptionsModule:
     # Internal helpers -----------------------------------------------------
 
     def _render_intro(self) -> None:
-        self._render_macro(self.MENU_HEADER_SLOT)
+        self._render_macro(self.MENU_HEADER_MACRO)
         self._render_prompt()
 
     def _render_prompt(self) -> None:
-        self._render_macro(self.MENU_PROMPT_SLOT)
+        self._render_macro(self.MENU_PROMPT_MACRO)
 
     def _render_saying(self) -> None:
-        self._render_macro(self.SAYING_PREAMBLE_SLOT)
+        self._render_macro(self.SAYING_PREAMBLE_MACRO)
         saying = self._next_saying()
         self._write_saying(saying)
-        self._render_macro(self.SAYING_OUTPUT_SLOT)
+        self._render_macro(self.SAYING_OUTPUT_MACRO)
         self._render_prompt()
 
-    def _render_macro(self, slot: int) -> None:
+    def _render_macro(self, macro: MaskedPaneMacro) -> None:
         if self.registry is None:
             raise RuntimeError("ampersand registry has not been initialised")
         if not isinstance(self._console, ConsoleService):  # pragma: no cover - guard
             raise RuntimeError("console service is unavailable")
-        defaults = self.registry.defaults
-        lookup = self._console.glyph_lookup.macros_by_slot
-        if (
-            slot not in defaults.macros_by_slot
-            and slot not in lookup
-            and slot not in self._FALLBACK_MACRO_STAGING
-        ):
-            raise KeyError(f"macro slot ${slot:02x} missing from defaults")
-        render_macro_with_overlay_commit(
+        staging = self._console.masked_pane_staging_map
+        slot = staging.slot(macro)
+        render_masked_macro(
             console=self._console,
             dispatcher=self._dispatcher,
-            slot=slot,
-            fallback_overlay=self._FALLBACK_MACRO_STAGING.get(slot),
+            macro=macro,
         )
         self.rendered_slots.append(slot)
+
+    def _macro_slot(self, macro: MaskedPaneMacro) -> int:
+        if not isinstance(self._console, ConsoleService):  # pragma: no cover - guard
+            raise RuntimeError("console service is unavailable")
+        return self._console.masked_pane_staging_map.slot(macro)
 
     def _next_saying(self) -> str:
         if not self.sayings:
