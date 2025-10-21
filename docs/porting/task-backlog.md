@@ -61,7 +61,7 @@ Outstanding runtime wiring details are collected in [host-ui-indicator-plan.md](
 - [ ] Wire the `ConsoleService` indicator helpers (`set_pause_indicator`, `set_abort_indicator`, `set_spinner_glyph`, `set_carrier_indicator`) into the modern runtime once the host UI event loop is available so status toggles reuse the documented API.【F:docs/porting/iteration-40.md†L56-L75】
 - [ ] Route the host idle timer refresh through `update_idle_timer_digits` when session scheduling lands, ensuring the colon at `$04df` remains untouched as noted in iteration 40's rationale.【F:docs/porting/iteration-40.md†L66-L72】
 - [x] Trace which routine fills `tempbott+40` and `var_4078` between buffer swaps so the host can request the same payloads before rotating overlays.【F:docs/porting/iteration-41.md†L1-L32】
-- [ ] Decide whether the host UI should mirror the five-phase `lbl_adca` blink cadence or substitute a standard timer before finalising the masked-pane API.【F:docs/porting/iteration-40.md†L49-L50】
+- [x] Decide whether the host UI should mirror the five-phase `lbl_adca` blink cadence or substitute a standard timer before finalising the masked-pane API. *(Stakeholders approved retaining the authentic countdown; see the blink cadence decision log for implementation guidance.)*【F:docs/porting/host-ui-indicator-plan.md†L66-L78】
 - [x] Replace the manual chat/sysop block swap loops with a `ConsoleRegionBuffer`
       helper so 240-byte screen spans and 80-byte colour spans travel through
       `ConsoleService.swap_region`, keeping transcript handling centralised.【F:docs/porting/iteration-40.md†L8-L16】【F:scripts/prototypes/device_context.py†L360-L470】

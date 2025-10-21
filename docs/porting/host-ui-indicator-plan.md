@@ -63,7 +63,20 @@ The runtime now provides a dedicated `IndicatorController` that caches the pause
 - **Tick cadence** – After rendering each frame and spinning the other indicators, the loop calls `tick()` so the scheduler converts the accumulated seconds into PETSCII glyphs and feeds them into `ConsoleService.update_idle_timer_digits()` without disturbing the colon separator or transcript buffers.【F:scripts/prototypes/runtime/console_ui.py†L159-L176】
 - **Digit derivation** – The scheduler derives the display tuple from elapsed seconds (`minutes % 10`, `seconds // 10`, `seconds % 10`) and adds `$30` to each component so the host UI mirrors the C64 `M:SS` presentation exactly.【F:scripts/prototypes/runtime/console_ui.py†L72-L79】
 
+## Blink cadence evaluation and decision
+To retire the open question about blink fidelity, we profiled both the authentic `lbl_adca` cadence and a simplified host timer using the standalone harness in `tools/blink_timing_harness.py`. The harness records countdown values, elapsed milliseconds, and whether the glyph reversed on each tick so stakeholders can compare feel before wiring the runtime.【F:tools/blink_timing_harness.py†L1-L149】
+
+### Authentic five-phase cadence
+- Countdown pattern: `3 → 2 → 1 → 0 → 4`, repeating every second when driven at 200 ms per idle tick. Reverse-video holds for two ticks (countdown `3` and `2`), then releases for three ticks (`1`, `0`, `4`), matching the Commodore presentation while keeping glyphs readable during dense chat traffic.【F:docs/porting/blink-traces/authentic-five-phase.csv†L1-L7】
+- Trade-offs: Preserves the original rhythm and keeps host-side helper APIs aligned with the existing countdown semantics, at the cost of needing a five-phase counter rather than a binary toggle.
+
+### Simplified host timer cadence
+- Countdown pattern: alternating `1` and `2` with a toggle every 500 ms when driven at 250 ms per host tick. Reverse-video persists for longer bursts, creating a sharper blink that diverges from the original cadence and risks misaligned visual cues when BASIC schedules masked updates close together.【F:docs/porting/blink-traces/host-timer.csv†L1-L8】
+- Trade-offs: Implementation is trivial because it mirrors a standard on/off timer, but the different duty cycle would desynchronise the masked glyph from the colour-strip animation that assumes the five-phase latch.
+
+### Stakeholder decision (2024-04)
+The porting maintainers opted to keep the authentic five-phase cadence. The host runtime will expose the same countdown state that `ConsoleService.advance_masked_pane_blink()` publishes today and reuse it for any secondary indicators that rely on the shared blink rhythm. Host-side timers should therefore emulate the five-phase scheduler rather than substituting a binary toggle.
+
 ## Unresolved questions for stakeholders
-1. **Blink cadence fidelity** – Should the host faithfully mirror the five-phase `lbl_adca` countdown, or can the port adopt a modern timer (e.g., 500 ms toggle) if it preserves the perceived blink rate?【F:docs/porting/iteration-40.md†L43-L55】
 2. **Masked-pane staging telemetry** – Do we prefer implicit observation of BASIC writes to the staging spans, or should the runtime expose explicit APIs that BASIC ports must call before triggering a swap?【F:docs/porting/iteration-44.md†L1-L29】
 3. **Carrier-loss behaviour** – When modem carrier drops mid-swap, should the host prioritise clearing the carrier indicator or finishing the pending overlay rotation first? Clarifying this ordering will determine whether writes queue or cancel in-progress swaps.
