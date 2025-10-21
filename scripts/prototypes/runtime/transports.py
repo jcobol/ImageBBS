@@ -9,6 +9,7 @@ from typing import Awaitable, Callable, Coroutine, Deque, Iterable, Optional
 from ..device_context import ModemTransport
 from ..message_editor import EditorState
 from ..session_kernel import SessionState
+from .console_ui import IdleTimerScheduler
 from .session_runner import SessionRunner
 from .indicator_controller import IndicatorController
 
@@ -243,6 +244,7 @@ class TelnetModemTransport(ModemTransport):
         self._inbound: Deque[str] = deque()
         self._outbound: Deque[str] = deque()
         self._closing = False
+        self._idle_timer_scheduler: IdleTimerScheduler | None = None
 
     # ModemTransport API -------------------------------------------------
 
@@ -255,6 +257,10 @@ class TelnetModemTransport(ModemTransport):
         initial = self.runner.read_output()
         if initial:
             self.send(initial)
+        console = getattr(self.runner, "console", None)
+        if console is not None:
+            self._idle_timer_scheduler = IdleTimerScheduler(console)
+            self._idle_timer_scheduler.reset()
         self._create_task(self._pump_console())
         self._create_task(self._pump_reader())
 
@@ -335,16 +341,21 @@ class TelnetModemTransport(ModemTransport):
                     except ConnectionError:
                         self._mark_closed()
                         break
-                    if self.indicator_controller is not None:
-                        self.indicator_controller.on_idle_tick()
+                    self._on_idle_cycle()
                     continue
                 if self.runner.state is SessionState.EXIT:
                     break
-                if self.indicator_controller is not None:
-                    self.indicator_controller.on_idle_tick()
+                self._on_idle_cycle()
                 await asyncio.sleep(self.poll_interval)
         finally:
             self._mark_closed()
+
+    def _on_idle_cycle(self) -> None:
+        if self.indicator_controller is not None:
+            self.indicator_controller.on_idle_tick()
+        scheduler = self._idle_timer_scheduler
+        if scheduler is not None:
+            scheduler.tick()
 
     async def _pump_reader(self) -> None:
         try:
