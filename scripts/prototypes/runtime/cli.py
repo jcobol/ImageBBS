@@ -14,7 +14,7 @@ from ..message_editor import EditorState, MessageEditor, SessionContext
 from ..session_kernel import SessionState
 from ..setup_config import load_drive_config
 from ..setup_defaults import ModemDefaults, SetupDefaults
-from .console_ui import SysopConsoleApp
+from .console_ui import IdleTimerScheduler, SysopConsoleApp
 from .main_menu import MainMenuModule
 from .message_store import MessageStore
 from .message_store_repository import load_message_store, save_message_store
@@ -320,8 +320,13 @@ def run_session(
 
     indicator_controller = IndicatorController(runner.console)
     runner.set_indicator_controller(indicator_controller)
+    idle_timer_scheduler = IdleTimerScheduler(runner.console)
+    idle_timer_scheduler.reset()
 
     while True:
+        indicator_controller.on_idle_tick()
+        idle_timer_scheduler.tick()
+
         flushed = runner.read_output()
         if flushed:
             output_stream.write(flushed)
@@ -346,6 +351,8 @@ def run_session(
             return runner.state
 
         runner.send_command(line.rstrip("\r\n"))
+        if runner.state is SessionState.EXIT:
+            return SessionState.EXIT
 
 
 def main(argv: Sequence[str] | None = None) -> int:
