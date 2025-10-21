@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+import json
 import sys
 from contextlib import contextmanager
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Dict, Iterator, Tuple
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
+from scripts.prototypes.ampersand_dispatcher import AmpersandDispatcher  # noqa: E402
 from scripts.prototypes.device_context import (  # noqa: E402
     ConsoleService,
     MaskedPaneBuffers,
+    bootstrap_device_context,
 )
 from scripts.prototypes.runtime.file_transfers import (  # noqa: E402
     FileTransferEvent,
@@ -24,6 +28,9 @@ from scripts.prototypes.runtime.sysop_options import (  # noqa: E402
     SysopOptionsModule,
 )
 from scripts.prototypes.session_kernel import SessionKernel  # noqa: E402
+from scripts.prototypes.runtime.ampersand_overrides import (  # noqa: E402
+    BUILTIN_AMPERSAND_OVERRIDES,
+)
 
 
 def _resolve_palette_colour(value: int, palette: tuple[int, ...], *, default_index: int = 0) -> int:
@@ -119,6 +126,129 @@ def _expected_macro_span(
         colours = colours + (fill,) * (width - len(colours))
 
     return glyphs[:width], colours[:width]
+
+
+def _parse_overlay_hex(value: str) -> int:
+    value = value.strip()
+    if value.startswith("$"):
+        return int(value[1:], 16)
+    if value.lower().startswith("0x"):
+        return int(value, 16)
+    return int(value, 10)
+
+
+def test_ampersand_dispatcher_stages_masked_pane_flag_entries() -> None:
+    metadata_path = (
+        Path(__file__).resolve().parents[1]
+        / "docs"
+        / "porting"
+        / "artifacts"
+        / "ml-extra-overlay-metadata.json"
+    )
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata_entries = metadata["flag_dispatch"]["entries"]
+
+    context = bootstrap_device_context(
+        assignments=(), ampersand_overrides=BUILTIN_AMPERSAND_OVERRIDES
+    )
+    console = context.get_service("console")
+    assert isinstance(console, ConsoleService)
+    buffers = context.get_service("masked_pane_buffers")
+    assert isinstance(buffers, MaskedPaneBuffers)
+    dispatcher = context.get_service("ampersand")
+    assert isinstance(dispatcher, AmpersandDispatcher)
+
+    masked_slots = set(console._MASKED_OVERLAY_FLAG_SLOTS)
+    metadata_pairs = [
+        (
+            _parse_overlay_hex(entry["flag_index"]),
+            _parse_overlay_hex(entry["slot"]),
+        )
+        for entry in metadata_entries
+    ]
+    actual_pairs = [
+        (entry.flag_index, entry.slot)
+        for entry in console.device.flag_dispatch.entries
+    ]
+    assert actual_pairs == metadata_pairs
+
+    expected_staging_slots = {slot for _, slot in metadata_pairs if slot in masked_slots}
+    assert expected_staging_slots == masked_slots
+
+    module = SimpleNamespace(
+        registry=SimpleNamespace(defaults=console.defaults),
+        _FALLBACK_MACRO_STAGING={},
+    )
+
+    last_staged_slot: int | None = None
+    with _capture_macro_staging(console, buffers) as captured:
+        assert buffers.dirty is False
+        for flag_index, slot in metadata_pairs:
+            before_keys = set(captured)
+            staged_screen_snapshot = tuple(buffers.staged_screen)
+            staged_colour_snapshot = tuple(buffers.staged_colour)
+
+            dispatcher.dispatch(f"&,{flag_index}")
+
+            if slot in masked_slots:
+                last_staged_slot = slot
+                assert set(captured) == before_keys | {slot}
+                glyphs, colours = captured[slot]
+                expected_glyphs, expected_colours = _expected_macro_span(
+                    slot, module, console
+                )
+                assert glyphs == expected_glyphs
+                assert colours == expected_colours
+                assert tuple(buffers.staged_screen) == glyphs
+                assert tuple(buffers.staged_colour) == expected_colours
+            else:
+                assert set(captured) == before_keys
+                assert tuple(buffers.staged_screen) == staged_screen_snapshot
+                assert tuple(buffers.staged_colour) == staged_colour_snapshot
+
+        assert set(captured) == masked_slots
+        assert last_staged_slot is not None
+        loop_last_screen = tuple(buffers.staged_screen)
+        loop_last_colour = tuple(buffers.staged_colour)
+
+    assert last_staged_slot is not None
+    assert loop_last_screen == captured[last_staged_slot][0]
+    assert loop_last_colour == captured[last_staged_slot][1]
+
+    fill_glyph = 0x20
+    fill_colour = console.screen_colour & 0xFF
+    populated_flag: int | None = None
+    populated_slot: int | None = None
+    for flag_index, slot in metadata_pairs:
+        payload = captured.get(slot)
+        if payload is None:
+            continue
+        glyphs, colours = payload
+        if any(byte != fill_glyph for byte in glyphs) or any(
+            byte != fill_colour for byte in colours
+        ):
+            populated_flag = flag_index
+            populated_slot = slot
+            break
+
+    assert populated_flag is not None
+    assert populated_slot is not None
+
+    dispatcher.dispatch(f"&,{populated_flag}")
+
+    assert buffers.dirty is True
+    final_staged_screen = tuple(buffers.staged_screen)
+    final_staged_colour = tuple(buffers.staged_colour)
+    assert final_staged_screen == captured[populated_slot][0]
+    assert final_staged_colour == captured[populated_slot][1]
+
+    dispatcher.dispatch("&,50")
+
+    assert buffers.dirty is False
+    assert tuple(buffers.live_screen) == final_staged_screen
+    assert tuple(buffers.live_colour) == final_staged_colour
+    assert tuple(buffers.staged_screen) == (0x20,) * buffers.width
+    assert tuple(buffers.staged_colour) == (fill_colour,) * buffers.width
 
 
 def test_main_menu_macro_staging_sequences() -> None:
