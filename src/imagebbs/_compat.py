@@ -23,5 +23,19 @@ def mirror_module(globals_dict: dict[str, Any], target: str) -> ModuleType:
 
     for name in exports:
         globals_dict[name] = getattr(module, name)
-    globals_dict["__all__"] = list(exports)
+
+    exports_list = list(exports)
+    globals_dict["__all__"] = exports_list
+    globals_dict["__doc__"] = module.__doc__
+
+    def _forward_getattr(name: str) -> Any:
+        return getattr(module, name)
+
+    def _forward_dir() -> list[str]:
+        combined = set(exports_list)
+        combined.update(dir(module))
+        return sorted(combined)
+
+    globals_dict["__getattr__"] = _forward_getattr
+    globals_dict["__dir__"] = _forward_dir
     return module
