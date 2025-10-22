@@ -22,6 +22,9 @@ from imagebbs.device_context import Console
 from imagebbs.petscii import decode_petscii_for_cli
 
 
+from scripts.prototypes.runtime import cli as runtime_cli
+
+
 @pytest.fixture(scope="module")
 def editor_defaults() -> ml_extra_defaults.MLExtraDefaults:
     return ml_extra_defaults.MLExtraDefaults.from_overlay()
@@ -1320,3 +1323,15 @@ def test_spinner_direct_pokes_preserve_reverse_behaviour() -> None:
 
     resolved = screen.resolved_colour_matrix[row][column]
     assert resolved == (screen.background_colour, updated_colour)
+
+
+def test_session_runner_cli_boot_banner_uses_ascii() -> None:
+    args = runtime_cli.parse_args([])
+    runner = runtime_cli.create_runner(args)
+    _ = runner.read_output()
+    runner.console.push_macro_slot(0x28)
+    output = runner.read_output()
+    assert "FILE TRANSFER MENU" in output
+    assert "UPLOAD FILES" in output
+    assert "{CBM-" not in output
+
