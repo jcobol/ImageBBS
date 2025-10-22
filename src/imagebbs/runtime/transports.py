@@ -8,6 +8,7 @@ from .editor_submission import AsyncEditorIO, EditorSubmissionHandler
 from .session_instrumentation import SessionInstrumentation
 
 _prototype = import_module("scripts.prototypes.runtime.transports")
+SessionState = getattr(_prototype, "SessionState")
 
 
 class BaudLimitedTransport(_prototype.BaudLimitedTransport):
@@ -39,6 +40,8 @@ class _TelnetEditorIO(AsyncEditorIO):
 class TelnetModemTransport(_prototype.TelnetModemTransport):
     """Override the editor submission path to reuse :class:`EditorSubmissionHandler`."""
 
+    _PAUSE_TOKENS: dict[int, bool] = {0x13: True, 0x11: False}
+
     def __init__(
         self,
         runner,
@@ -59,6 +62,31 @@ class TelnetModemTransport(_prototype.TelnetModemTransport):
             indicator_controller=indicator_controller,
             **kwargs,
         )
+
+    def _update_pause_indicator(self, active: bool) -> None:
+        runner = getattr(self, "runner", None)
+        if runner is None:
+            return
+        if self._instrumentation is not None:
+            self._instrumentation.ensure_indicator_controller()
+        try:
+            runner.set_pause_indicator_state(active)
+        except AttributeError:
+            controller = getattr(self, "indicator_controller", None)
+            if controller is not None:
+                controller.set_pause(active)
+
+    def _strip_pause_tokens(self, payload: bytes) -> bytes:
+        if not payload:
+            return payload
+        filtered = bytearray()
+        tokens = self._PAUSE_TOKENS
+        for byte in payload:
+            if byte in tokens:
+                self._update_pause_indicator(tokens[byte])
+                continue
+            filtered.append(byte)
+        return bytes(filtered)
 
     def open(self) -> None:
         if self._instrumentation is None:
@@ -85,6 +113,32 @@ class TelnetModemTransport(_prototype.TelnetModemTransport):
         except ConnectionError:
             self._mark_closed()
             return True
+
+    async def _pump_reader(self) -> None:
+        try:
+            while not self._close_event.is_set():
+                if await self._maybe_collect_editor_submission():
+                    continue
+                try:
+                    data = await self.reader.readline()
+                except ConnectionError:
+                    self._mark_closed()
+                    break
+                if data == b"":
+                    self._mark_closed()
+                    break
+                filtered = self._strip_pause_tokens(data)
+                if not filtered:
+                    continue
+                text = filtered.decode(self.encoding, errors="ignore")
+                self.feed(text)
+                command = text.rstrip("\r\n")
+                if command or text:
+                    state = self.runner.send_command(command)
+                    if state is SessionState.EXIT:
+                        break
+        finally:
+            self._mark_closed()
 
 
 __all__ = ["BaudLimitedTransport", "TelnetModemTransport"]

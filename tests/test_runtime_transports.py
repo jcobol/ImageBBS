@@ -1,9 +1,10 @@
 import asyncio
-from typing import Coroutine
+from typing import Coroutine, Optional
 from unittest import mock
 
 from imagebbs.device_context import ConsoleService
 from imagebbs.runtime.console_ui import IdleTimerScheduler
+from imagebbs.runtime.session_instrumentation import SessionInstrumentation
 from imagebbs.runtime.transports import TelnetModemTransport
 from imagebbs.session_kernel import SessionState
 
@@ -135,3 +136,91 @@ def test_telnet_transport_pump_console_updates_idle_timer() -> None:
         assert indicator.tick_count >= len(fake_clock.values)
 
     asyncio.run(_exercise())
+
+
+def test_telnet_transport_toggles_pause_indicator_from_control_tokens() -> None:
+    class RecordingIndicator:
+        def __init__(self, console: object) -> None:
+            self.console = console
+            self.pause_states: list[bool] = []
+
+        def set_pause(self, active: bool) -> None:
+            self.pause_states.append(active)
+
+        def set_carrier(self, active: bool) -> None:  # pragma: no cover - not used
+            pass
+
+        def on_idle_tick(self) -> None:  # pragma: no cover - not used
+            pass
+
+    class ScriptedReader:
+        def __init__(self, payloads: list[bytes]):
+            self._payloads = list(payloads)
+
+        async def readline(self) -> bytes:
+            await asyncio.sleep(0)
+            if self._payloads:
+                return self._payloads.pop(0)
+            return b""
+
+    class RecordingRunner:
+        def __init__(self) -> None:
+            self.console = object()
+            self.state = SessionState.MAIN_MENU
+            self.commands: list[str] = []
+            self.pause_states: list[bool] = []
+            self.indicator_controller: Optional[RecordingIndicator] = None
+
+        def read_output(self) -> str:
+            return ""
+
+        def send_command(self, text: str) -> SessionState:
+            self.commands.append(text)
+            if text == "EX":
+                self.state = SessionState.EXIT
+            return self.state
+
+        def set_indicator_controller(self, controller: Optional[RecordingIndicator]) -> None:
+            self.indicator_controller = controller
+
+        def set_pause_indicator_state(self, active: bool) -> None:
+            self.pause_states.append(active)
+            if self.indicator_controller is not None:
+                self.indicator_controller.set_pause(active)
+
+    async def _exercise() -> RecordingRunner:
+        runner = RecordingRunner()
+        instrumentation = SessionInstrumentation(
+            runner,
+            indicator_controller_cls=RecordingIndicator,
+            idle_timer_scheduler_cls=None,
+        )
+        reader = ScriptedReader([b"\x13HELLO\r\n", b"\x11EX\r\n"])
+        writer = FakeWriter()
+        transport = RecordingTelnetTransport(
+            runner,
+            reader,
+            writer,
+            instrumentation=instrumentation,
+            poll_interval=0.0,
+        )
+
+        transport.open()
+        assert len(transport.scheduled_coroutines) >= 2
+        pump_reader = transport.scheduled_coroutines[1]
+        try:
+            await asyncio.wait_for(pump_reader, timeout=0.1)
+        finally:
+            transport.close()
+            for coro in transport.scheduled_coroutines:
+                if coro is not pump_reader:
+                    coro.close()
+        return runner
+
+    runner = asyncio.run(_exercise())
+
+    assert runner.commands == ["HELLO", "EX"]
+    indicator = runner.indicator_controller
+    assert indicator is not None
+    assert indicator.pause_states == [True, False]
+    assert runner.pause_states == [True, False]

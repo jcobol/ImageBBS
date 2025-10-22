@@ -255,6 +255,52 @@ def test_run_session_advances_spinner_and_idle_timer() -> None:
     assert digit_values == [0x30, 0x30, 0x32]
 
 
+def test_run_session_toggles_pause_indicator_from_control_tokens() -> None:
+    args = parse_args([])
+    runner = create_runner(args)
+
+    class RecordingIndicator:
+        instance: "RecordingIndicator | None" = None
+
+        def __init__(self, console: ConsoleService) -> None:
+            self.console = console
+            self.pause_states: list[bool] = []
+            RecordingIndicator.instance = self
+
+        def set_pause(self, active: bool) -> None:
+            self.pause_states.append(active)
+
+        def set_carrier(self, active: bool) -> None:  # pragma: no cover - not used
+            pass
+
+        def on_idle_tick(self) -> None:  # pragma: no cover - not used
+            pass
+
+        def set_spinner_enabled(self, active: bool) -> None:  # pragma: no cover - not used
+            pass
+
+        def set_abort(self, active: bool) -> None:  # pragma: no cover - not used
+            pass
+
+    RecordingIndicator.instance = None
+    input_stream = io.StringIO("\x13\r\n\x11EX\r\n")
+    output_stream = io.StringIO()
+
+    with mock.patch(
+        "imagebbs.runtime.cli.IndicatorController", RecordingIndicator
+    ), mock.patch(
+        "scripts.prototypes.runtime.cli.IndicatorController", RecordingIndicator
+    ):
+        final_state = run_session(
+            runner, input_stream=input_stream, output_stream=output_stream
+        )
+
+    assert final_state is SessionState.EXIT
+    indicator = RecordingIndicator.instance
+    assert indicator is not None
+    assert indicator.pause_states == [True, False]
+
+
 def test_run_session_edits_existing_message_via_editor() -> None:
     args = parse_args([])
     runner = create_runner(args)
