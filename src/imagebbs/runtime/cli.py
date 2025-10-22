@@ -7,21 +7,21 @@ import asyncio
 import contextlib
 import importlib
 import sys
-from dataclasses import replace
 from pathlib import Path
-from typing import IO, Sequence, Tuple
+from typing import IO, Callable, Sequence, Tuple
 
-from ..message_editor import MessageEditor, SessionContext
+from ..message_editor import SessionContext
 from ..session_kernel import SessionState
-from ..setup_config import load_drive_config
-from ..setup_defaults import ModemDefaults, SetupDefaults
+from ..setup_defaults import SetupDefaults
 from .console_ui import IdleTimerScheduler, SysopConsoleApp
 from .editor_submission import EditorSubmissionHandler, SyncEditorIO
 from .indicator_controller import IndicatorController
-from .main_menu import MainMenuModule
 from .message_store import MessageStore
-from .message_store_repository import load_message_store, save_message_store
 from .session_runner import SessionRunner
+from .session_factory import (
+    DEFAULT_RUNTIME_SESSION_FACTORY,
+    RuntimeSessionFactory,
+)
 from .transports import BaudLimitedTransport, TelnetModemTransport
 
 
@@ -94,36 +94,24 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _build_defaults(args: argparse.Namespace) -> SetupDefaults:
-    defaults = SetupDefaults.stub()
-
-    config_path: Path | None = args.drive_config
-    if config_path is None:
-        baud_override = args.baud_limit
-        if baud_override is not None:
-            defaults = replace(defaults, modem=ModemDefaults(baud_limit=baud_override))
-        return defaults
-
-    if not config_path.exists():
-        raise SystemExit(f"drive configuration not found: {config_path}")
-
-    config = load_drive_config(config_path)
-    defaults = replace(defaults, drives=config.drives)
-    ampersand_overrides = dict(config.ampersand_overrides)
-    modem_override = config.modem_baud_limit
-    if args.baud_limit is not None:
-        modem_override = args.baud_limit
-    if modem_override is not None:
-        defaults = replace(defaults, modem=ModemDefaults(baud_limit=modem_override))
-    object.__setattr__(defaults, "ampersand_overrides", ampersand_overrides)
-    return defaults
+def _ensure_factory(factory: RuntimeSessionFactory | None) -> RuntimeSessionFactory:
+    if factory is None:
+        return DEFAULT_RUNTIME_SESSION_FACTORY
+    return factory
 
 
-def _build_message_store(args: argparse.Namespace) -> MessageStore:
-    messages_path: Path | None = args.messages_path
-    if messages_path is None:
-        return MessageStore()
-    return load_message_store(messages_path)
+def _build_defaults(
+    args: argparse.Namespace, *, factory: RuntimeSessionFactory | None = None
+) -> SetupDefaults:
+    runtime_factory = _ensure_factory(factory)
+    return runtime_factory.build_defaults(args)
+
+
+def _build_message_store(
+    args: argparse.Namespace, *, factory: RuntimeSessionFactory | None = None
+) -> MessageStore:
+    runtime_factory = _ensure_factory(factory)
+    return runtime_factory.build_message_store(args)
 
 
 def _build_session_context(
@@ -131,37 +119,21 @@ def _build_session_context(
     *,
     store: MessageStore,
     messages_path: Path | None,
+    factory: RuntimeSessionFactory | None = None,
 ) -> SessionContext:
-    board_id = getattr(defaults, "board_identifier", None) or "main"
-    sysop = getattr(defaults, "sysop", None)
-    user_id = getattr(sysop, "login_id", None) or "sysop"
-
-    context = SessionContext(board_id=board_id, user_id=user_id, store=store)
-    services = dict(context.services or {})
-    if messages_path is not None:
-        services["message_store_persistence"] = {"path": messages_path}
-    context.services = services
-    return context
-
-
-def create_runner(args: argparse.Namespace) -> SessionRunner:
-    """Instantiate :class:`SessionRunner` according to ``args``."""
-
-    defaults = _build_defaults(args)
-    store = _build_message_store(args)
-    messages_path: Path | None = args.messages_path
-    session_context = _build_session_context(
+    runtime_factory = _ensure_factory(factory)
+    return runtime_factory.build_session_context(
         defaults, store=store, messages_path=messages_path
     )
-    return SessionRunner(
-        defaults=defaults,
-        main_menu_module=MainMenuModule(
-            message_editor_factory=lambda: MessageEditor(store=store)
-        ),
-        session_context=session_context,
-        message_store=store,
-        message_store_path=messages_path,
-    )
+
+
+def create_runner(
+    args: argparse.Namespace, *, factory: RuntimeSessionFactory | None = None
+) -> SessionRunner:
+    """Instantiate :class:`SessionRunner` according to ``args``."""
+
+    runtime_factory = _ensure_factory(factory)
+    return runtime_factory.create_runner(args)
 
 
 def _resolve_indicator_controller_cls() -> type[IndicatorController]:
@@ -176,36 +148,60 @@ def _resolve_idle_timer_scheduler_cls() -> type[IdleTimerScheduler]:
     return getattr(_LEGACY_RUNTIME_CLI, "IdleTimerScheduler", IdleTimerScheduler)
 
 
-def _persist_messages(args: argparse.Namespace, runner: SessionRunner) -> None:
-    path: Path | None = args.messages_path
-    if path is None:
-        return
-    save_message_store(runner.message_store, path)
+def _persist_messages(
+    args: argparse.Namespace,
+    runner: SessionRunner,
+    *,
+    factory: RuntimeSessionFactory | None = None,
+) -> None:
+    runtime_factory = _ensure_factory(factory)
+    runtime_factory.persist_messages(args, runner)
 
 
 async def run_stream_session(
     args: argparse.Namespace,
     reader: asyncio.StreamReader,
     writer: asyncio.StreamWriter,
+    *,
+    factory: RuntimeSessionFactory | None = None,
+    telnet_transport_factory: Callable[
+        [SessionRunner, asyncio.StreamReader, asyncio.StreamWriter, IndicatorController],
+        TelnetModemTransport,
+    ]
+    | None = None,
+    baud_limited_transport_factory: Callable[
+        [TelnetModemTransport, int], BaudLimitedTransport
+    ]
+    | None = None,
 ) -> None:
     """Create a runner and bridge it to ``reader``/``writer``."""
 
-    runner = create_runner(args)
+    runtime_factory = _ensure_factory(factory)
+    runner = create_runner(args, factory=runtime_factory)
     indicator_cls = _resolve_indicator_controller_cls()
     indicator_controller = indicator_cls(runner.console)
     runner.set_indicator_controller(indicator_controller)
-    telnet_transport = TelnetModemTransport(
-        runner,
-        reader,
-        writer,
-        indicator_controller=indicator_controller,
+    if telnet_transport_factory is None:
+        telnet_transport_factory = (
+            lambda runner, reader, writer, indicator_controller: TelnetModemTransport(
+                runner,
+                reader,
+                writer,
+                indicator_controller=indicator_controller,
+            )
+        )
+    telnet_transport = telnet_transport_factory(
+        runner, reader, writer, indicator_controller
     )
     baud_limit = getattr(getattr(runner.defaults, "modem", None), "baud_limit", None)
-    transport = (
-        BaudLimitedTransport(telnet_transport, baud_limit)
-        if baud_limit is not None
-        else telnet_transport
-    )
+    if baud_limit is not None:
+        if baud_limited_transport_factory is None:
+            baud_limited_transport_factory = (
+                lambda transport, limit: BaudLimitedTransport(transport, limit)
+            )
+        transport = baud_limited_transport_factory(telnet_transport, baud_limit)
+    else:
+        transport = telnet_transport
     context = runner.kernel.context
     context.register_modem_device(transport=transport)
     transport.open()
@@ -218,7 +214,7 @@ async def run_stream_session(
             await writer.wait_closed()
         except ConnectionError:
             pass
-        _persist_messages(args, runner)
+        _persist_messages(args, runner, factory=runtime_factory)
 
 
 async def start_session_server(
@@ -347,13 +343,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         host, port = args.connect
         asyncio.run(run_connect(args, host, port))
         return 0
-    runner = create_runner(args)
+    runtime_factory = DEFAULT_RUNTIME_SESSION_FACTORY
+    runner = create_runner(args, factory=runtime_factory)
     if args.curses_ui:
         app = SysopConsoleApp(runner.console, runner=runner)
         app.run()
     else:
         run_session(runner)
-    _persist_messages(args, runner)
+    _persist_messages(args, runner, factory=runtime_factory)
     return 0
 
 
