@@ -1,6 +1,7 @@
 """PETSCII translation helpers shared across runtime components."""
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import Final, Iterable
 
 from . import petscii_glyphs
@@ -172,6 +173,156 @@ _PRINTABLE_ASCII: Final[set[int]] = set(range(0x20, 0x7F))
 _PRINTABLE_EXTRA: Final[dict[int, str]] = {0x0D: "\n", 0x8D: "\n"}
 
 
+@dataclass
+class PetsciiStreamDecoder:
+    """Incrementally decode PETSCII payloads into ASCII text."""
+
+    width: int = 40
+    _cursor_x: int = 0
+    _cursor_y: int = 0
+    _lowercase_mode: bool = False
+    _reverse_mode: bool = False
+    _current_line: list[str] = field(default_factory=list)
+    _line_emitted_length: int = 0
+    _pending: list[str] = field(default_factory=list)
+
+    def decode(self, payload: Iterable[int]) -> str:
+        for raw in payload:
+            byte = int(raw) & 0xFF
+            if self._handle_control(byte):
+                continue
+            self._write_character(byte)
+        output = "".join(self._pending)
+        self._pending.clear()
+        return output
+
+    def _handle_control(self, byte: int) -> bool:
+        if byte == 0x93:  # clear
+            self._line_break(reset_x=True, force=True)
+            self._cursor_y = 0
+            return True
+        if byte == 0x13:  # home
+            self._line_break(reset_x=True, force=True)
+            self._cursor_y = 0
+            return True
+        if byte == 0x0D:  # carriage return
+            self._line_break(reset_x=True, force=True)
+            return True
+        if byte == 0x0A:  # line feed
+            self._line_break(reset_x=False, force=True)
+            return True
+        if byte == 0x11:  # cursor down
+            self._line_break(reset_x=False, force=True)
+            return True
+        if byte == 0x91:  # cursor up
+            if self._cursor_y > 0:
+                self._cursor_y -= 1
+            return True
+        if byte == 0x1D:  # cursor right
+            if self._cursor_x < self.width - 1:
+                self._cursor_x += 1
+            else:
+                self._cursor_x = 0
+                self._line_break(reset_x=True, force=True)
+            return True
+        if byte == 0x9D:  # cursor left
+            if self._cursor_x > 0:
+                self._cursor_x -= 1
+            return True
+        if byte == 0x14:  # delete/backspace
+            if self._cursor_x > 0:
+                self._cursor_x -= 1
+            self._write_at_cursor(" ")
+            return True
+        if byte == 0x12:  # reverse on
+            self._reverse_mode = True
+            return True
+        if byte == 0x92:  # reverse off
+            self._reverse_mode = False
+            return True
+        if byte == 0x0E:  # lowercase on
+            self._lowercase_mode = True
+            return True
+        if byte == 0x8E:  # lowercase off
+            self._lowercase_mode = False
+            return True
+        return False
+
+    def _line_break(self, *, reset_x: bool, force: bool) -> None:
+        if not force and self._line_emitted_length == 0 and not self._current_line:
+            return
+        if self._line_emitted_length < len(self._current_line):
+            tail = "".join(self._current_line[self._line_emitted_length :])
+            if tail:
+                self._pending.append(tail)
+            self._line_emitted_length = len(self._current_line)
+        self._pending.append("\n")
+        self._current_line = []
+        self._line_emitted_length = 0
+        if reset_x:
+            self._cursor_x = 0
+        self._cursor_y += 1
+
+    def _write_character(self, byte: int) -> None:
+        char = self._translate_character(byte)
+        self._write_at_cursor(char)
+        self._cursor_x += 1
+        if self._cursor_x >= self.width:
+            self._cursor_x = 0
+            self._line_break(reset_x=True, force=True)
+
+    def _write_at_cursor(self, char: str) -> None:
+        if self._cursor_x > len(self._current_line):
+            self._current_line.extend(
+                " " for _ in range(self._cursor_x - len(self._current_line))
+            )
+        if self._cursor_x == len(self._current_line):
+            self._current_line.append(char)
+        else:
+            self._current_line[self._cursor_x] = char
+
+        current_length = len(self._current_line)
+        if self._cursor_x < self._line_emitted_length:
+            self._pending.append("\r")
+            self._pending.append("".join(self._current_line[: self._line_emitted_length]))
+        else:
+            gap = self._cursor_x - self._line_emitted_length
+            if gap > 0:
+                self._pending.append(" " * gap)
+                self._line_emitted_length += gap
+            self._pending.append(char)
+            self._line_emitted_length += 1
+
+        if self._line_emitted_length < current_length:
+            self._line_emitted_length = current_length
+
+    def _translate_character(self, byte: int) -> str:
+        if byte == 0xA0:
+            char = " "
+        elif 0x20 <= byte <= 0x7E:
+            char = chr(byte)
+        elif 0xA0 <= byte <= 0xBF:
+            char = chr(byte - 0x20)
+        elif 0xC0 <= byte <= 0xDA:
+            char = chr(byte - 0x80)
+        elif 0xE0 <= byte <= 0xFA:
+            base = chr(byte - 0xA0)
+            char = base if self._lowercase_mode else base.upper()
+        else:
+            glyph, _ = translate_petscii(byte)
+            char = glyph
+        if not char.isascii():
+            char = petscii_to_cli_glyph(byte)
+        return char
+
+
+def decode_petscii_stream(payload: Iterable[int], *, width: int = 40) -> str:
+    """Decode ``payload`` into ASCII text using PETSCII screen semantics."""
+
+    decoder = PetsciiStreamDecoder(width=width)
+    return decoder.decode(payload)
+
+
 def petscii_to_cli_glyph(byte: int) -> str:
     """Map ``byte`` to a printable glyph suitable for CLI output."""
 
@@ -191,11 +342,13 @@ def petscii_to_cli_glyph(byte: int) -> str:
 def decode_petscii_for_cli(payload: Iterable[int]) -> str:
     """Translate ``payload`` into the CLI's printable text representation."""
 
-    return "".join(petscii_to_cli_glyph(byte) for byte in payload)
+    return decode_petscii_stream(payload)
 
 
 __all__ = [
     "translate_petscii",
     "petscii_to_cli_glyph",
+    "PetsciiStreamDecoder",
+    "decode_petscii_stream",
     "decode_petscii_for_cli",
 ]

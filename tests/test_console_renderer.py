@@ -533,7 +533,6 @@ def test_console_macro_screens_match_artifacts(
             )
             assert glyph_index == expected_index
             assert glyph_bitmap == expected_glyph
-
             if lowercase:
                 assert glyph_index == petscii_glyphs.get_glyph_index(
                     code, lowercase=True
@@ -548,6 +547,30 @@ def test_console_macro_screens_match_artifacts(
                 assert glyph_bitmap == petscii_glyphs.get_glyph(
                     code, lowercase=False
                 )
+
+
+def test_console_cli_decoder_tracks_cursor_state() -> None:
+    console = Console()
+    console.write(b"HELLO")
+    console.write(b"\x9D")
+    console.write(b"X")
+
+    assert console.transcript == "HELLO\rHELLX"
+    assert console.transcript_bytes == b"HELLO\x9dX"
+
+
+def test_decode_petscii_for_cli_emits_readable_macro_text() -> None:
+    console = Console()
+    payload = bytes(console.macro_glyphs[0x28].payload)
+
+    decoded = decode_petscii_for_cli(payload)
+    assert "FILE TRANSFER MENU" in decoded
+    assert "{CBM-" not in decoded
+    assert all(ch.isprintable() or ch in "\n\r" for ch in decoded)
+
+    console.write(payload)
+    assert "FILE TRANSFER MENU" in console.transcript
+    assert "{CBM-" not in console.transcript
 
 
 def test_macro_screen_artifacts_are_normalised(
