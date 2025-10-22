@@ -310,6 +310,21 @@ def run_session(
     instrumentation.ensure_indicator_controller()
     instrumentation.reset_idle_timer()
 
+    def _strip_pause_tokens(text: str) -> str:
+        if not text:
+            return text
+        filtered: list[str] = []
+        for char in text:
+            code = ord(char)
+            if code == 0x13:
+                runner.set_pause_indicator_state(True)
+                continue
+            if code == 0x11:
+                runner.set_pause_indicator_state(False)
+                continue
+            filtered.append(char)
+        return "".join(filtered)
+
     while True:
         instrumentation.on_idle_cycle()
 
@@ -327,15 +342,18 @@ def run_session(
             continue
 
         try:
-            line = input_stream.readline()
+            raw_line = input_stream.readline()
         except KeyboardInterrupt:  # pragma: no cover - user interrupt
             output_stream.write("\n")
             output_stream.flush()
             return runner.state
 
-        if line == "":  # EOF
+        if raw_line == "":  # EOF
             return runner.state
 
+        line = _strip_pause_tokens(raw_line)
+        if not line:
+            continue
         runner.send_command(line.rstrip("\r\n"))
         if runner.state is SessionState.EXIT:
             return SessionState.EXIT
