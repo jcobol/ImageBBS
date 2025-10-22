@@ -40,7 +40,7 @@ from .console_renderer import (
     build_overlay_glyph_lookup,
 )
 from . import ml_extra_defaults
-from .petscii import decode_petscii_for_cli
+from .petscii import PetsciiStreamDecoder
 
 
 class DeviceError(RuntimeError):
@@ -278,6 +278,7 @@ class Console(Device):
         self._glyph_lookup: OverlayGlyphLookup = build_overlay_glyph_lookup(
             self._defaults
         )
+        self._cli_decoder = PetsciiStreamDecoder()
 
     def open(self, descriptor: ChannelDescriptor) -> LogicalChannel:
         return ConsoleChannel(descriptor, self)
@@ -287,7 +288,7 @@ class Console(Device):
             payload = data
         else:
             payload = data.encode("latin-1", errors="replace")
-        text = decode_petscii_for_cli(payload)
+        text = self._cli_decoder.decode(payload)
         self.output.append(text)
         self._transcript.extend(payload)
         self._screen.write(payload)
