@@ -562,6 +562,15 @@ def test_console_cli_decoder_tracks_cursor_state() -> None:
     assert console.transcript_bytes == b"HELLO\x9dX"
 
 
+def test_console_preserves_latin1_cli_text() -> None:
+    console = Console()
+
+    console.write("café\n")
+
+    assert console.transcript == "café\n"
+    assert console.transcript_bytes == "café\n".encode("latin-1")
+
+
 def test_decode_petscii_for_cli_emits_readable_macro_text() -> None:
     console = Console()
     payload = bytes(console.macro_glyphs[0x28].payload)
