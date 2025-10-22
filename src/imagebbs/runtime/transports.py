@@ -1,9 +1,11 @@
 """Runtime transports that extend the prototype implementations."""
 from __future__ import annotations
 
+import asyncio
 from importlib import import_module
 
 from .editor_submission import AsyncEditorIO, EditorSubmissionHandler
+from .session_instrumentation import SessionInstrumentation
 
 _prototype = import_module("scripts.prototypes.runtime.transports")
 
@@ -36,6 +38,44 @@ class _TelnetEditorIO(AsyncEditorIO):
 
 class TelnetModemTransport(_prototype.TelnetModemTransport):
     """Override the editor submission path to reuse :class:`EditorSubmissionHandler`."""
+
+    def __init__(
+        self,
+        runner,
+        reader,
+        writer,
+        *,
+        instrumentation: SessionInstrumentation | None = None,
+        **kwargs,
+    ) -> None:
+        indicator_controller = kwargs.pop("indicator_controller", None)
+        self._instrumentation = instrumentation
+        if instrumentation is not None:
+            indicator_controller = instrumentation.ensure_indicator_controller()
+        super().__init__(
+            runner,
+            reader,
+            writer,
+            indicator_controller=indicator_controller,
+            **kwargs,
+        )
+
+    def open(self) -> None:
+        if self._instrumentation is None:
+            super().open()
+            return
+        if self._loop is not None:
+            return
+        self._loop = asyncio.get_running_loop()
+        self._instrumentation.set_carrier(True)
+        initial = self.runner.read_output()
+        if initial:
+            self.send(initial)
+        scheduler = self._instrumentation.ensure_idle_timer_scheduler()
+        self._idle_timer_scheduler = scheduler
+        self._instrumentation.reset_idle_timer()
+        self._create_task(self._pump_console())
+        self._create_task(self._pump_reader())
 
     async def _maybe_collect_editor_submission(self) -> bool:
         handler = EditorSubmissionHandler(self.runner)

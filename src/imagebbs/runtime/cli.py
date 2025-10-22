@@ -17,11 +17,12 @@ from .console_ui import IdleTimerScheduler, SysopConsoleApp
 from .editor_submission import EditorSubmissionHandler, SyncEditorIO
 from .indicator_controller import IndicatorController
 from .message_store import MessageStore
-from .session_runner import SessionRunner
 from .session_factory import (
     DEFAULT_RUNTIME_SESSION_FACTORY,
     RuntimeSessionFactory,
 )
+from .session_instrumentation import SessionInstrumentation
+from .session_runner import SessionRunner
 from .transports import BaudLimitedTransport, TelnetModemTransport
 
 
@@ -165,7 +166,12 @@ async def run_stream_session(
     *,
     factory: RuntimeSessionFactory | None = None,
     telnet_transport_factory: Callable[
-        [SessionRunner, asyncio.StreamReader, asyncio.StreamWriter, IndicatorController],
+        [
+            SessionRunner,
+            asyncio.StreamReader,
+            asyncio.StreamWriter,
+            SessionInstrumentation,
+        ],
         TelnetModemTransport,
     ]
     | None = None,
@@ -178,20 +184,26 @@ async def run_stream_session(
 
     runtime_factory = _ensure_factory(factory)
     runner = create_runner(args, factory=runtime_factory)
-    indicator_cls = _resolve_indicator_controller_cls()
-    indicator_controller = indicator_cls(runner.console)
-    runner.set_indicator_controller(indicator_controller)
+    instrumentation = SessionInstrumentation(
+        runner,
+        indicator_controller_cls=_resolve_indicator_controller_cls(),
+        idle_timer_scheduler_cls=_resolve_idle_timer_scheduler_cls(),
+    )
+    instrumentation.ensure_indicator_controller()
     if telnet_transport_factory is None:
         telnet_transport_factory = (
-            lambda runner, reader, writer, indicator_controller: TelnetModemTransport(
+            lambda runner, reader, writer, instrumentation: TelnetModemTransport(
                 runner,
                 reader,
                 writer,
-                indicator_controller=indicator_controller,
+                instrumentation=instrumentation,
             )
         )
     telnet_transport = telnet_transport_factory(
-        runner, reader, writer, indicator_controller
+        runner,
+        reader,
+        writer,
+        instrumentation,
     )
     baud_limit = getattr(getattr(runner.defaults, "modem", None), "baud_limit", None)
     if baud_limit is not None:
@@ -290,16 +302,16 @@ def run_session(
 ) -> SessionState:
     """Drive ``runner`` using ``input_stream`` and ``output_stream``."""
 
-    indicator_cls = _resolve_indicator_controller_cls()
-    indicator_controller = indicator_cls(runner.console)
-    runner.set_indicator_controller(indicator_controller)
-    idle_timer_cls = _resolve_idle_timer_scheduler_cls()
-    idle_timer_scheduler = idle_timer_cls(runner.console)
-    idle_timer_scheduler.reset()
+    instrumentation = SessionInstrumentation(
+        runner,
+        indicator_controller_cls=_resolve_indicator_controller_cls(),
+        idle_timer_scheduler_cls=_resolve_idle_timer_scheduler_cls(),
+    )
+    instrumentation.ensure_indicator_controller()
+    instrumentation.reset_idle_timer()
 
     while True:
-        indicator_controller.on_idle_tick()
-        idle_timer_scheduler.tick()
+        instrumentation.on_idle_cycle()
 
         flushed = runner.read_output()
         if flushed:
