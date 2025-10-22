@@ -11,11 +11,12 @@ from dataclasses import replace
 from pathlib import Path
 from typing import IO, Sequence, Tuple
 
-from ..message_editor import EditorState, MessageEditor, SessionContext
+from ..message_editor import MessageEditor, SessionContext
 from ..session_kernel import SessionState
 from ..setup_config import load_drive_config
 from ..setup_defaults import ModemDefaults, SetupDefaults
 from .console_ui import IdleTimerScheduler, SysopConsoleApp
+from .editor_submission import EditorSubmissionHandler, SyncEditorIO
 from .indicator_controller import IndicatorController
 from .main_menu import MainMenuModule
 from .message_store import MessageStore
@@ -255,10 +256,6 @@ async def run_connect(args: argparse.Namespace, host: str, port: int) -> None:
     await run_stream_session(args, reader, writer)
 
 
-_EDITOR_ABORT_COMMAND = "/abort"
-_EDITOR_SUBMIT_COMMAND = "/send"
-
-
 def _write_and_flush(stream: IO[str], text: str) -> None:
     stream.write(text)
     stream.flush()
@@ -267,70 +264,26 @@ def _write_and_flush(stream: IO[str], text: str) -> None:
 def _maybe_collect_editor_submission(
     runner: SessionRunner, *, input_stream: IO[str], output_stream: IO[str]
 ) -> bool:
-    if runner.state is not SessionState.MESSAGE_EDITOR:
-        return False
-    if not runner.requires_editor_submission():
-        return False
+    class _StreamEditorIO:
+        def __init__(self, input_stream: IO[str], output_stream: IO[str]) -> None:
+            self._input = input_stream
+            self._output = output_stream
 
-    context = runner.editor_context
-    editor_state = runner.get_editor_state()
-    existing_subject = context.current_message if editor_state is not None else ""
-    existing_lines = list(context.draft_buffer)
+        def write_line(self, text: str = "") -> None:
+            _write_and_flush(self._output, text + "\n")
 
-    def _readline(prompt: str | None = None) -> str | None:
-        if prompt is not None:
-            _write_and_flush(output_stream, prompt)
-        line = input_stream.readline()
-        if line == "":
-            return None
-        return line.rstrip("\r\n")
+        def write_prompt(self, prompt: str) -> None:
+            _write_and_flush(self._output, prompt)
 
-    _write_and_flush(
-        output_stream,
-        "\n-- Message Editor --\n"
-        f"Type {_EDITOR_SUBMIT_COMMAND} to save or {_EDITOR_ABORT_COMMAND} to cancel.\n",
-    )
+        def readline(self) -> str | None:
+            line = self._input.readline()
+            if line == "":
+                return None
+            return line.rstrip("\r\n")
 
-    subject_text = existing_subject
-    if editor_state is EditorState.POST_MESSAGE:
-        prompt = "Subject"
-        if existing_subject:
-            prompt += f" [{existing_subject}]"
-        prompt += ": "
-        subject_line = _readline(prompt)
-        if subject_line is None:
-            runner.abort_editor()
-            return True
-        if subject_line.strip().lower() == _EDITOR_ABORT_COMMAND:
-            runner.abort_editor()
-            return True
-        if subject_line:
-            subject_text = subject_line
-
-    if editor_state is EditorState.EDIT_DRAFT and existing_lines:
-        _write_and_flush(output_stream, "Current message lines:\n")
-        for line in existing_lines:
-            _write_and_flush(output_stream, f"> {line}\n")
-
-    _write_and_flush(output_stream, "Enter message body.\n")
-    lines: list[str] = []
-    while True:
-        line = _readline("> ")
-        if line is None:
-            runner.abort_editor()
-            return True
-        command = line.strip().lower()
-        if command == _EDITOR_ABORT_COMMAND:
-            runner.abort_editor()
-            return True
-        if command == _EDITOR_SUBMIT_COMMAND:
-            final_lines = lines if lines else existing_lines
-            if editor_state is EditorState.POST_MESSAGE:
-                runner.submit_editor_draft(subject=subject_text, lines=final_lines)
-            else:
-                runner.submit_editor_draft(subject=None, lines=final_lines)
-            return True
-        lines.append(line)
+    handler = EditorSubmissionHandler(runner)
+    stream_io: SyncEditorIO = _StreamEditorIO(input_stream, output_stream)
+    return handler.collect_sync(stream_io)
 
 
 def run_session(
