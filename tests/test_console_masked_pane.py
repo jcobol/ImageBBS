@@ -1,8 +1,14 @@
+import pytest
+
 from imagebbs.device_context import (
     Console,
     ConsoleService,
     MaskedPaneBuffers,
     bootstrap_device_context,
+)
+from imagebbs.runtime.masked_pane_staging import (
+    MaskedPaneStagingMap,
+    build_masked_pane_staging_map,
 )
 
 
@@ -29,6 +35,41 @@ def _read_colour(service: ConsoleService, address: int, length: int) -> bytes:
     return bytes(
         screen.peek_colour_address(address + offset) for offset in range(length)
     )
+
+
+def test_masked_pane_staging_map_uses_runtime_builder(monkeypatch: pytest.MonkeyPatch) -> None:
+    console = Console()
+    service = ConsoleService(console)
+
+    calls: list[ConsoleService] = []
+    sentinel = object()
+
+    def fake_builder(argument: ConsoleService) -> object:
+        calls.append(argument)
+        return sentinel
+
+    monkeypatch.setattr(
+        "imagebbs.runtime.masked_pane_staging.build_masked_pane_staging_map",
+        fake_builder,
+    )
+
+    result = service.masked_pane_staging_map
+    assert result is sentinel
+    assert calls == [service]
+
+    result_again = service.masked_pane_staging_map
+    assert result_again is sentinel
+    assert calls == [service]
+
+
+def test_masked_pane_staging_map_matches_native_runtime() -> None:
+    console = Console()
+    service = ConsoleService(console)
+
+    staging_map = service.masked_pane_staging_map
+
+    assert isinstance(staging_map, MaskedPaneStagingMap)
+    assert staging_map == build_masked_pane_staging_map(service)
 
 
 def test_masked_pane_buffers_expose_staging_views() -> None:
