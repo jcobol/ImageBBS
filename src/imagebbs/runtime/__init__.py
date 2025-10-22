@@ -13,6 +13,7 @@ from . import main_menu as _main_menu
 from . import masked_pane_staging as _masked_pane_staging
 from . import message_store as _message_store
 from . import message_store_repository as _message_store_repository
+from . import session_instrumentation as _session_instrumentation
 from . import session_runner as _session_runner
 from . import sysop_options as _sysop_options
 from . import transports as _transports
@@ -28,6 +29,7 @@ _modules = [
     _masked_pane_staging,
     _message_store,
     _message_store_repository,
+    _session_instrumentation,
     _session_runner,
     _sysop_options,
     _transports,
