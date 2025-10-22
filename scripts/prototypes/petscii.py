@@ -173,6 +173,9 @@ _PRINTABLE_ASCII: Final[set[int]] = set(range(0x20, 0x7F))
 _PRINTABLE_EXTRA: Final[dict[int, str]] = {0x0D: "\n", 0x8D: "\n"}
 
 
+_IGNORED_EDITOR_CONTROL_BYTES: Final[frozenset[int]] = frozenset({0x03, 0x04, 0x05, 0x06, 0x07})
+
+
 @dataclass
 class PetsciiStreamDecoder:
     """Incrementally decode PETSCII payloads into ASCII text."""
@@ -246,6 +249,10 @@ class PetsciiStreamDecoder:
         if byte == 0x8E:  # lowercase off
             self._lowercase_mode = False
             return True
+        if byte in _IGNORED_EDITOR_CONTROL_BYTES:
+            return True
+        if 0x90 <= byte <= 0x9F:
+            return True
         return False
 
     def _line_break(self, *, reset_x: bool, force: bool) -> None:
@@ -265,6 +272,8 @@ class PetsciiStreamDecoder:
 
     def _write_character(self, byte: int) -> None:
         char = self._translate_character(byte)
+        if char is None:
+            return
         self._write_at_cursor(char)
         self._cursor_x += 1
         if self._cursor_x >= self.width:
@@ -296,23 +305,31 @@ class PetsciiStreamDecoder:
         if self._line_emitted_length < current_length:
             self._line_emitted_length = current_length
 
-    def _translate_character(self, byte: int) -> str:
-        if byte == 0xA0:
+    def _translate_character(self, byte: int) -> str | None:
+        raw = int(byte) & 0xFF
+        if raw == 0x00:
+            return None
+        if raw == 0xA0:
             char = " "
-        elif 0x20 <= byte <= 0x7E:
-            char = chr(byte)
-        elif 0xA0 <= byte <= 0xBF:
-            char = chr(byte - 0x20)
-        elif 0xC0 <= byte <= 0xDA:
-            char = chr(byte - 0x80)
-        elif 0xE0 <= byte <= 0xFA:
-            base = chr(byte - 0xA0)
+        elif 0x20 <= raw <= 0x7E:
+            char = chr(raw)
+        elif 0xA0 <= raw <= 0xBF:
+            char = chr(raw - 0x20)
+        elif 0xC0 <= raw <= 0xDA:
+            char = chr(raw - 0x80)
+        elif 0xE0 <= raw <= 0xFA:
+            base = chr(raw - 0xA0)
             char = base if self._lowercase_mode else base.upper()
         else:
-            glyph, _ = translate_petscii(byte)
-            char = glyph
+            glyph = petscii_to_cli_glyph(raw)
+            if glyph.startswith("{CBM-") and glyph.endswith("}"):
+                return None
+            return glyph if glyph else None
         if not char.isascii():
-            char = petscii_to_cli_glyph(byte)
+            glyph = petscii_to_cli_glyph(raw)
+            if glyph.startswith("{CBM-") and glyph.endswith("}"):
+                return None
+            return glyph if glyph else None
         return char
 
 
