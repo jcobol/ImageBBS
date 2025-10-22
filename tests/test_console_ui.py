@@ -10,6 +10,8 @@ from imagebbs.runtime.console_ui import (
     SysopConsoleApp,
     translate_petscii,
 )
+from imagebbs.runtime.session_instrumentation import SessionInstrumentation
+from imagebbs.session_kernel import SessionState
 
 
 @dataclass
@@ -256,6 +258,26 @@ def _read_idle_digits(console: RecordingConsoleService) -> tuple[int, int, int]:
     return tuple(console.screen.peek_screen_address(address) for address in addresses)
 
 
+class DummyRunner:
+    def __init__(self, console: ConsoleService) -> None:
+        self.console = console
+        self.state = SessionState.MAIN_MENU
+        self._indicator_controller = None
+
+    def set_indicator_controller(self, controller) -> None:
+        self._indicator_controller = controller
+
+    def read_output(self) -> str:
+        return ""
+
+    def send_command(self, command: str) -> None:
+        pass
+
+    def set_pause_indicator_state(self, active: bool) -> None:
+        if self._indicator_controller is not None:
+            self._indicator_controller.set_pause(active)
+
+
 def test_idle_timer_scheduler_updates_digits_and_preserves_colon() -> None:
     console = RecordingConsoleService()
     console.device.poke_screen_byte(0x04DF, 0x3A)
@@ -291,3 +313,67 @@ def test_idle_timer_scheduler_overwrites_digits_without_transcript() -> None:
         (0x30, 0x30, 0x32),
     ]
     assert console.device.transcript_bytes == b""
+
+
+def test_sysop_console_app_reuses_instrumentation_instances() -> None:
+    console = RecordingConsoleService()
+    runner = DummyRunner(console)
+    instrumentation = SessionInstrumentation(runner)
+    instrumentation.ensure_indicator_controller()
+    instrumentation.reset_idle_timer()
+
+    app = SysopConsoleApp(
+        console,
+        runner=runner,
+        instrumentation=instrumentation,
+    )
+
+    assert app.indicator_controller is instrumentation.indicator_controller
+    assert app.idle_timer_scheduler is instrumentation.idle_timer_scheduler
+
+
+def test_sysop_console_app_idle_cycle_uses_instrumentation(monkeypatch) -> None:
+    console = RecordingConsoleService()
+    runner = DummyRunner(console)
+    instrumentation = SessionInstrumentation(runner)
+    instrumentation.ensure_indicator_controller()
+    instrumentation.reset_idle_timer()
+
+    app = SysopConsoleApp(
+        console,
+        runner=runner,
+        instrumentation=instrumentation,
+    )
+
+    calls: list[str] = []
+
+    def _record_idle_cycle() -> None:
+        calls.append("idle")
+
+    monkeypatch.setattr(instrumentation, "on_idle_cycle", _record_idle_cycle)
+
+    app._run_idle_cycle()
+
+    assert calls == ["idle"]
+
+
+def test_sysop_console_app_shares_pause_indicator_with_instrumentation() -> None:
+    console = RecordingConsoleService()
+    runner = DummyRunner(console)
+    instrumentation = SessionInstrumentation(runner)
+    instrumentation.ensure_indicator_controller()
+    instrumentation.reset_idle_timer()
+
+    app = SysopConsoleApp(
+        console,
+        runner=runner,
+        instrumentation=instrumentation,
+    )
+
+    runner.set_pause_indicator_state(True)
+    frame = app.capture_frame()
+    assert frame.pause_active is True
+
+    runner.set_pause_indicator_state(False)
+    frame = app.capture_frame()
+    assert frame.pause_active is False

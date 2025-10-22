@@ -376,7 +376,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     runtime_factory = DEFAULT_RUNTIME_SESSION_FACTORY
     runner = create_runner(args, factory=runtime_factory)
     if args.curses_ui:
-        app = SysopConsoleApp(runner.console, runner=runner)
+        instrumentation = SessionInstrumentation(
+            runner,
+            indicator_controller_cls=_resolve_indicator_controller_cls(),
+            idle_timer_scheduler_cls=_resolve_idle_timer_scheduler_cls(),
+        )
+        instrumentation.ensure_indicator_controller()
+        instrumentation.reset_idle_timer()
+        app = SysopConsoleApp(
+            runner.console,
+            runner=runner,
+            instrumentation=instrumentation,
+        )
         app.run()
     else:
         run_session(runner)
