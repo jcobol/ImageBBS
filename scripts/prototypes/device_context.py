@@ -283,13 +283,33 @@ class Console(Device):
     def open(self, descriptor: ChannelDescriptor) -> LogicalChannel:
         return ConsoleChannel(descriptor, self)
 
+    @staticmethod
+    def _payload_looks_ascii(text: str) -> bool:
+        try:
+            payload = text.encode("latin-1", errors="strict")
+        except UnicodeEncodeError:
+            return False
+        allowed_control = {0x09, 0x0A, 0x0D}
+        for byte in payload:
+            if byte in allowed_control:
+                continue
+            if 0x20 <= byte <= 0x7E or 0xA0 <= byte <= 0xFF:
+                continue
+            return False
+        return True
+
     def write(self, data: str | bytes) -> None:
         if isinstance(data, bytes):
             payload = data
+            original_text: str | None = None
         else:
             payload = data.encode("latin-1", errors="replace")
+            original_text = data
         text = self._cli_decoder.decode(payload)
-        self.output.append(text)
+        if original_text is not None and self._payload_looks_ascii(original_text):
+            self.output.append(original_text)
+        else:
+            self.output.append(text)
         self._transcript.extend(payload)
         self._screen.write(payload)
 
