@@ -11,9 +11,6 @@ from ..device_context import ConsoleService
 from ..session_kernel import SessionKernel, SessionModule, SessionState
 from .macro_rendering import render_macro_with_overlay_commit
 from .masked_pane_staging import MaskedPaneMacro
-from scripts.prototypes.runtime.masked_pane_staging import (
-    MaskedPaneMacro as PrototypeMaskedPaneMacro,
-)
 from scripts.prototypes.runtime.sysop_options import (
     SysopOptionsEvent as PrototypeSysopOptionsEvent,
 )
@@ -187,9 +184,8 @@ class SysopOptionsModule:
         if not isinstance(self._console, ConsoleService):  # pragma: no cover - guard
             raise RuntimeError("console service is unavailable")
         staging_map = self._console.masked_pane_staging_map
-        proto_macro = self._to_console_macro(macro)
         try:
-            spec = staging_map.spec(proto_macro)
+            spec = staging_map.spec(macro)
         except KeyError:
             slot = self._DEFAULT_MACRO_SLOTS[macro]
             fallback_overlay = staging_map.fallback_overlay_for_slot(slot)
@@ -209,9 +205,8 @@ class SysopOptionsModule:
         if not isinstance(self._console, ConsoleService):  # pragma: no cover - guard
             raise RuntimeError("console service is unavailable")
         staging_map = self._console.masked_pane_staging_map
-        proto_macro = self._to_console_macro(macro)
         try:
-            return staging_map.slot(proto_macro)
+            return staging_map.slot(macro)
         except KeyError:
             return self._DEFAULT_MACRO_SLOTS[macro]
 
@@ -228,9 +223,6 @@ class SysopOptionsModule:
         if not isinstance(self._console, ConsoleService):  # pragma: no cover - guard
             raise RuntimeError("console service is unavailable")
         self._console.device.write(f"{text}\r")
-
-    def _to_console_macro(self, macro: MaskedPaneMacro) -> PrototypeMaskedPaneMacro:
-        return PrototypeMaskedPaneMacro[macro.name]
 
     @staticmethod
     def _normalise_command(selection: Optional[str]) -> str:
