@@ -7,6 +7,7 @@ from imagebbs.device_context import (
     bootstrap_device_context,
 )
 from imagebbs.runtime.masked_pane_staging import (
+    MaskedPaneMacro,
     MaskedPaneStagingMap,
     build_masked_pane_staging_map,
 )
@@ -349,6 +350,99 @@ def test_commit_masked_pane_staging_flushes_overlay_and_resets_buffers() -> None
     assert buffers.dirty is False
     assert buffers.peek_pending_payload() is None
 
+
+def test_masked_pane_staging_map_ampersand_sequences_align_with_defaults() -> None:
+    context = bootstrap_device_context(assignments=())
+    console = context.get_service("console")
+    assert isinstance(console, ConsoleService)
+
+    staging = console.masked_pane_staging_map
+    defaults = console.defaults.macros_by_slot
+
+    header_spec, prompt_spec = staging.ampersand_sequence("&,28")
+    assert header_spec.macro is MaskedPaneMacro.FILE_TRANSFERS_HEADER
+    assert header_spec.slot == 0x28
+    assert defaults[0x28].slot == header_spec.slot
+
+    assert prompt_spec.macro is MaskedPaneMacro.FILE_TRANSFERS_PROMPT
+    assert prompt_spec.slot == 0x29
+    assert defaults[0x29].slot == prompt_spec.slot
+
+    (invalid_spec,) = staging.ampersand_sequence("&,28,invalid")
+    assert invalid_spec.macro is MaskedPaneMacro.FILE_TRANSFERS_INVALID
+    assert invalid_spec.slot == 0x2A
+    assert defaults[0x2A].slot == invalid_spec.slot
+
+    expected_fallbacks = {
+        MaskedPaneMacro.SYSOP_HEADER: (
+            (0x68, 0xC3, 0x85, 0x06, 0xE2, 0xC1, 0xA0, 0x00)
+            + (0x20,) * 32,
+            (0x0A, 0x0A, 0x0A, 0x0A, 0x0A, 0x0A, 0x0A, 0x00)
+            + (0x0A,) * 32,
+        ),
+        MaskedPaneMacro.SYSOP_PROMPT: ((0x00,) + (0x20,) * 39, (0x00,) + (0x0A,) * 39),
+        MaskedPaneMacro.SYSOP_SAYING_PREAMBLE: (
+            (0x00,) + (0x20,) * 39,
+            (0x00,) + (0x0A,) * 39,
+        ),
+        MaskedPaneMacro.SYSOP_SAYING_OUTPUT: (
+            (0x00,) + (0x20,) * 39,
+            (0x00,) + (0x0A,) * 39,
+        ),
+        MaskedPaneMacro.SYSOP_INVALID: (
+            (0x00,) + (0x20,) * 39,
+            (0x00,) + (0x0A,) * 39,
+        ),
+        MaskedPaneMacro.SYSOP_ABORT: ((0x00,) + (0x20,) * 39, (0x00,) + (0x0A,) * 39),
+    }
+
+    for macro, expected in expected_fallbacks.items():
+        spec = staging.spec(macro)
+        assert spec.slot not in defaults
+        fallback = spec.fallback_overlay
+        assert fallback is not None
+        assert fallback == expected
+        assert len(fallback[0]) == 40
+        assert len(fallback[1]) == 40
+
+    device_entries = list(console.device.flag_dispatch.entries)
+    default_entries = list(console.defaults.flag_dispatch.entries)
+    assert [
+        (entry.flag_index, entry.slot, entry.handler_address)
+        for entry in device_entries
+    ] == [
+        (entry.flag_index, entry.slot, entry.handler_address)
+        for entry in default_entries
+    ]
+
+    masked_entries = [
+        entry
+        for entry in device_entries
+        if entry.slot in console._MASKED_OVERLAY_FLAG_SLOTS
+    ]
+
+    flag_specs = staging.ampersand_sequence("&,52")
+    assert tuple(spec.macro for spec in flag_specs) == (
+        MaskedPaneMacro.MAIN_MENU_HEADER,
+        MaskedPaneMacro.MAIN_MENU_PROMPT,
+        MaskedPaneMacro.MAIN_MENU_INVALID,
+        MaskedPaneMacro.FLAG_SAYINGS_ENABLE,
+        MaskedPaneMacro.FLAG_SAYINGS_DISABLE,
+        MaskedPaneMacro.FLAG_SAYINGS_PROMPT_ENABLE,
+        MaskedPaneMacro.FLAG_SAYINGS_PROMPT_DISABLE,
+        MaskedPaneMacro.FLAG_PROMPT_ENABLE,
+        MaskedPaneMacro.FLAG_PROMPT_DISABLE,
+    )
+
+    assert len(flag_specs) == len(masked_entries)
+    assert set(staging.flag_slots) == {entry.flag_index for entry in masked_entries}
+
+    for spec, entry in zip(flag_specs, masked_entries):
+        assert spec.slot == entry.slot
+        assert staging.flag_slots[entry.flag_index] is spec
+        default_entry = defaults.get(entry.slot)
+        assert default_entry is not None
+        assert default_entry.slot == spec.slot
 
 def test_stage_masked_pane_overlay_normalises_payloads_and_defers_commit() -> None:
     console = Console()
