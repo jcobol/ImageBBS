@@ -13,9 +13,6 @@ from ..session_kernel import SessionKernel, SessionModule, SessionState
 from .file_transfers import FileTransfersModule
 from .macro_rendering import render_macro_with_overlay_commit
 from .masked_pane_staging import MaskedPaneMacro
-from scripts.prototypes.runtime.masked_pane_staging import (
-    MaskedPaneMacro as PrototypeMaskedPaneMacro,
-)
 from .sysop_options import SysopOptionsModule
 
 
@@ -210,9 +207,8 @@ class MainMenuModule:
         if not isinstance(self._console, ConsoleService):  # pragma: no cover - guard
             raise RuntimeError("console service is unavailable")
         staging_map = self._console.masked_pane_staging_map
-        proto_macro = self._to_console_macro(macro)
         try:
-            spec = staging_map.spec(proto_macro)
+            spec = staging_map.spec(macro)
         except KeyError:
             slot = self._DEFAULT_MACRO_SLOTS[macro]
             fallback_overlay = staging_map.fallback_overlay_for_slot(slot)
@@ -240,14 +236,10 @@ class MainMenuModule:
         if not isinstance(self._console, ConsoleService):  # pragma: no cover - guard
             raise RuntimeError("console service is unavailable")
         staging_map = self._console.masked_pane_staging_map
-        proto_macro = self._to_console_macro(macro)
         try:
-            return staging_map.slot(proto_macro)
+            return staging_map.slot(macro)
         except KeyError:
             return self._DEFAULT_MACRO_SLOTS[macro]
-
-    def _to_console_macro(self, macro: MaskedPaneMacro) -> PrototypeMaskedPaneMacro:
-        return PrototypeMaskedPaneMacro[macro.name]
 
 
 __all__ = [
