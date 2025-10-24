@@ -50,7 +50,14 @@ class SessionInstrumentation:
         if console is None:
             return None
         controller = controller_cls(console)
+        sync_from_console = getattr(controller, "sync_from_console", None)
+        if callable(sync_from_console):
+            sync_from_console()
         self.runner.set_indicator_controller(controller)
+        context = getattr(getattr(self.runner, "kernel", None), "context", None)
+        register_service = getattr(context, "register_service", None)
+        if callable(register_service):
+            register_service("indicator_controller", controller)
         self._indicator_controller = controller
         return controller
 

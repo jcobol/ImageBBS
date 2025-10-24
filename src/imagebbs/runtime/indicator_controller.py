@@ -35,6 +35,41 @@ class IndicatorController:
     _spinner_enabled: bool = field(init=False, default=False)
     _spinner_index: int = field(init=False, default=0)
 
+    def sync_from_console(self) -> None:
+        """Refresh cached indicator state from the console without mutating it."""
+
+        pause_value = self._peek_screen_byte(self.console._PAUSE_SCREEN_ADDRESS)
+        if pause_value is not None:
+            self._pause_active = bool(pause_value == _PAUSE_GLYPH)
+
+        abort_value = self._peek_screen_byte(self.console._ABORT_SCREEN_ADDRESS)
+        if abort_value is not None:
+            self._abort_active = bool(abort_value == _ABORT_GLYPH)
+
+        carrier_value = self._peek_screen_byte(
+            self.console._CARRIER_INDICATOR_SCREEN_ADDRESS
+        )
+        if carrier_value is not None:
+            self._carrier_active = bool(carrier_value != _SPACE_GLYPH)
+
+        spinner_value = self._peek_screen_byte(self.console._SPINNER_SCREEN_ADDRESS)
+        frames = tuple(int(code) & 0xFF for code in self.spinner_frames)
+        if spinner_value is None or spinner_value == _SPACE_GLYPH:
+            self._spinner_enabled = False
+            self._spinner_index = 0
+        else:
+            self._spinner_enabled = True
+            if frames:
+                try:
+                    self._spinner_index = next(
+                        index for index, glyph in enumerate(frames)
+                        if glyph == spinner_value
+                    )
+                except StopIteration:
+                    self._spinner_index = 0
+            else:
+                self._spinner_index = 0
+
     def set_pause(self, active: bool) -> None:
         """Flip the pause indicator if ``active`` changed."""
 
@@ -102,6 +137,12 @@ class IndicatorController:
         if not frames:
             return _SPACE_GLYPH
         return frames[self._spinner_index % len(frames)]
+
+    def _peek_screen_byte(self, address: int) -> int | None:
+        screen, _ = self.console.peek_block(screen_address=address, screen_length=1)
+        if not screen:
+            return None
+        return screen[0]
 
 
 __all__ = ["IndicatorController"]
