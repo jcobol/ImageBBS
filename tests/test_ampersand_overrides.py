@@ -17,6 +17,7 @@ from imagebbs.device_context import (
 )
 from imagebbs.message_editor import SessionContext
 from imagebbs.runtime.ampersand_overrides import BUILTIN_AMPERSAND_OVERRIDES
+from imagebbs.runtime.indicator_controller import IndicatorController
 from imagebbs.runtime.message_store import MessageStore
 
 
@@ -38,6 +39,14 @@ def _build_dispatcher() -> AmpersandDispatcher:
     dispatcher = context.get_service("ampersand")
     assert isinstance(dispatcher, AmpersandDispatcher)
     return dispatcher
+
+
+def _register_indicator_controller(registry) -> IndicatorController:
+    console_service = registry.services["console"]
+    assert isinstance(console_service, ConsoleService)
+    controller = IndicatorController(console_service)
+    registry.register_service("indicator_controller", controller)
+    return controller
 
 
 @pytest.fixture()
@@ -65,6 +74,8 @@ def test_chkflags_updates_pause_indicator() -> None:
     console_service = registry.services["console"]
     assert isinstance(console_service, ConsoleService)
 
+    controller = _register_indicator_controller(registry)
+
     pause_address = 0x041E
     colour_address = 0xD81E
     before = console_service.device.screen.peek_screen_address(pause_address)
@@ -77,6 +88,10 @@ def test_chkflags_updates_pause_indicator() -> None:
     assert after != before
     assert after == 0xD0
     assert colour != before_colour
+
+    controller.set_pause(False)
+    cleared = console_service.device.screen.peek_screen_address(pause_address)
+    assert cleared == 0x20
 
 
 @pytest.mark.parametrize(
@@ -115,11 +130,22 @@ def test_chkflags_updates_spinner_and_carrier(
     console_service = registry.services["console"]
     assert isinstance(console_service, ConsoleService)
 
+    controller = _register_indicator_controller(registry)
+
     prepare_spinner(console_service)
     spinner_before = console_service.device.screen.peek_screen_address(0x049C)
     dispatcher.dispatch(f"&,52,2,{operation}")
     spinner_after = console_service.device.screen.peek_screen_address(0x049C)
     assert spinner_after != spinner_before
+
+    frames = tuple(int(code) & 0xFF for code in controller.spinner_frames)
+    controller.on_idle_tick()
+    spinner_tick = console_service.device.screen.peek_screen_address(0x049C)
+    if spinner_after in frames:
+        expected_index = (frames.index(spinner_after) + 1) % len(frames)
+        assert spinner_tick == frames[expected_index]
+    else:
+        assert spinner_tick == spinner_after
 
     prepare_carrier(console_service)
     leading_before = console_service.device.screen.peek_screen_address(0x0400)
@@ -129,6 +155,27 @@ def test_chkflags_updates_spinner_and_carrier(
     indicator_after = console_service.device.screen.peek_screen_address(0x0427)
     assert leading_after != leading_before
     assert indicator_after != indicator_before
+
+    carrier_active = bool(
+        (leading_after is not None and leading_after != 0x20)
+        or (indicator_after is not None and indicator_after != 0x20)
+    )
+    if carrier_active:
+        controller.set_carrier(False)
+        leading_cleared = console_service.device.screen.peek_screen_address(0x0400)
+        indicator_cleared = console_service.device.screen.peek_screen_address(0x0427)
+        spinner_cleared = console_service.device.screen.peek_screen_address(0x049C)
+        assert leading_cleared == 0x20
+        assert indicator_cleared == 0x20
+        assert spinner_cleared == 0x20
+    else:
+        controller.set_carrier(True)
+        leading_set = console_service.device.screen.peek_screen_address(0x0400)
+        indicator_set = console_service.device.screen.peek_screen_address(0x0427)
+        spinner_set = console_service.device.screen.peek_screen_address(0x049C)
+        assert leading_set == 0xA0
+        assert indicator_set == 0xFA
+        assert spinner_set != 0x20
 
 
 def test_read0_appends_session_message() -> None:
@@ -178,6 +225,8 @@ def test_dispatcher_injects_registry_and_services_into_payload() -> None:
     console_service = registry.services["console"]
     assert isinstance(console_service, ConsoleService)
 
+    controller = _register_indicator_controller(registry)
+
     pause_address = 0x041E
     colour_address = 0xD81E
     before = console_service.device.screen.peek_screen_address(pause_address)
@@ -189,6 +238,10 @@ def test_dispatcher_injects_registry_and_services_into_payload() -> None:
     colour = console_service.device.screen.peek_colour_address(colour_address)
     assert after != before
     assert colour != before_colour
+
+    controller.set_pause(False)
+    cleared = console_service.device.screen.peek_screen_address(pause_address)
+    assert cleared == 0x20
 
     store = MessageStore()
     registry.register_service("message_store", store)

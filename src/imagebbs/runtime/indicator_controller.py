@@ -35,40 +35,73 @@ class IndicatorController:
     _spinner_enabled: bool = field(init=False, default=False)
     _spinner_index: int = field(init=False, default=0)
 
-    def sync_from_console(self) -> None:
+    def sync_from_console(
+        self,
+        *,
+        pause_active: bool | None = None,
+        abort_active: bool | None = None,
+        spinner_enabled: bool | None = None,
+        spinner_glyph: int | None = None,
+        carrier_active: bool | None = None,
+    ) -> None:
         """Refresh cached indicator state from the console without mutating it."""
 
-        pause_value = self._peek_screen_byte(self.console._PAUSE_SCREEN_ADDRESS)
-        if pause_value is not None:
-            self._pause_active = bool(pause_value == _PAUSE_GLYPH)
+        if pause_active is None:
+            pause_value = self._peek_screen_byte(self.console._PAUSE_SCREEN_ADDRESS)
+            if pause_value is not None:
+                pause_active = bool(pause_value == _PAUSE_GLYPH)
+        if pause_active is not None:
+            self._pause_active = pause_active
 
-        abort_value = self._peek_screen_byte(self.console._ABORT_SCREEN_ADDRESS)
-        if abort_value is not None:
-            self._abort_active = bool(abort_value == _ABORT_GLYPH)
+        if abort_active is None:
+            abort_value = self._peek_screen_byte(self.console._ABORT_SCREEN_ADDRESS)
+            if abort_value is not None:
+                abort_active = bool(abort_value == _ABORT_GLYPH)
+        if abort_active is not None:
+            self._abort_active = abort_active
 
-        carrier_value = self._peek_screen_byte(
-            self.console._CARRIER_INDICATOR_SCREEN_ADDRESS
-        )
-        if carrier_value is not None:
-            self._carrier_active = bool(carrier_value != _SPACE_GLYPH)
-
-        spinner_value = self._peek_screen_byte(self.console._SPINNER_SCREEN_ADDRESS)
-        frames = tuple(int(code) & 0xFF for code in self.spinner_frames)
-        if spinner_value is None or spinner_value == _SPACE_GLYPH:
-            self._spinner_enabled = False
-            self._spinner_index = 0
+        if spinner_glyph is None:
+            spinner_value = self._peek_screen_byte(
+                self.console._SPINNER_SCREEN_ADDRESS
+            )
         else:
-            self._spinner_enabled = True
-            if frames:
-                try:
-                    self._spinner_index = next(
-                        index for index, glyph in enumerate(frames)
-                        if glyph == spinner_value
-                    )
-                except StopIteration:
-                    self._spinner_index = 0
-            else:
+            spinner_value = int(spinner_glyph) & 0xFF
+        if spinner_enabled is None:
+            spinner_enabled = bool(
+                spinner_value is not None and spinner_value != _SPACE_GLYPH
+            )
+        if spinner_enabled is not None:
+            self._spinner_enabled = spinner_enabled
+            frames = tuple(int(code) & 0xFF for code in self.spinner_frames)
+            if not spinner_enabled:
                 self._spinner_index = 0
+            else:
+                if spinner_value is None or spinner_value == _SPACE_GLYPH:
+                    self._spinner_index = 0
+                elif frames:
+                    try:
+                        self._spinner_index = next(
+                            index for index, glyph in enumerate(frames)
+                            if glyph == spinner_value
+                        )
+                    except StopIteration:
+                        self._spinner_index = 0
+                else:
+                    self._spinner_index = 0
+
+        if carrier_active is None:
+            leading_value = self._peek_screen_byte(
+                self.console._CARRIER_LEADING_SCREEN_ADDRESS
+            )
+            indicator_value = self._peek_screen_byte(
+                self.console._CARRIER_INDICATOR_SCREEN_ADDRESS
+            )
+            carrier_active = bool(
+                (leading_value is not None and leading_value != _SPACE_GLYPH)
+                or (indicator_value is not None and indicator_value != _SPACE_GLYPH)
+            )
+        if carrier_active is not None:
+            self._carrier_active = carrier_active
 
     def set_pause(self, active: bool) -> None:
         """Flip the pause indicator if ``active`` changed."""
