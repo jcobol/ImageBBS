@@ -302,6 +302,24 @@ def run_session(
     instrumentation.ensure_indicator_controller()
     instrumentation.reset_idle_timer()
 
+    paused = False
+    pause_buffer: list[str] = []
+
+    def _flush_pause_buffer() -> None:
+        if not pause_buffer:
+            return
+        _write_and_flush(output_stream, "".join(pause_buffer))
+        pause_buffer.clear()
+
+    def _set_paused(active: bool) -> None:
+        nonlocal paused
+        runner.set_pause_indicator_state(active)
+        if paused == active:
+            return
+        paused = active
+        if not active:
+            _flush_pause_buffer()
+
     def _strip_pause_tokens(text: str) -> str:
         if not text:
             return text
@@ -309,10 +327,10 @@ def run_session(
         for char in text:
             code = ord(char)
             if code == 0x13:
-                runner.set_pause_indicator_state(True)
+                _set_paused(True)
                 continue
             if code == 0x11:
-                runner.set_pause_indicator_state(False)
+                _set_paused(False)
                 continue
             filtered.append(char)
         return "".join(filtered)
@@ -322,8 +340,10 @@ def run_session(
 
         flushed = runner.read_output()
         if flushed:
-            output_stream.write(flushed)
-            output_stream.flush()
+            if paused:
+                pause_buffer.append(flushed)
+            else:
+                _write_and_flush(output_stream, flushed)
 
         if runner.state is SessionState.EXIT:
             return SessionState.EXIT
