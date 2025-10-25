@@ -238,6 +238,77 @@ def test_ampersand_dispatcher_stages_masked_pane_flag_entries() -> None:
     assert tuple(buffers.staged_colour) == (fill_colour,) * buffers.width
 
 
+def test_ampersand_28_sequence_stages_and_commits_once() -> None:
+    context = bootstrap_device_context(
+        assignments=(), ampersand_overrides=BUILTIN_AMPERSAND_OVERRIDES
+    )
+    console = context.get_service("console")
+    assert isinstance(console, ConsoleService)
+    buffers = context.get_service("masked_pane_buffers")
+    assert isinstance(buffers, MaskedPaneBuffers)
+    dispatcher = context.get_service("ampersand")
+    assert isinstance(dispatcher, AmpersandDispatcher)
+
+    staging = console.masked_pane_staging_map
+    sequence = staging.ampersand_sequence("&,28")
+    assert sequence
+
+    with _capture_macro_staging(console, buffers) as captured:
+        dispatcher.dispatch("&,28")
+
+    expected_slots = {spec.slot for spec in sequence}
+    assert expected_slots <= captured.keys()
+
+    for spec in sequence:
+        expected_glyphs, expected_colours = _expected_macro_span(spec.slot, console)
+        staged_glyphs, staged_colours = captured[spec.slot]
+        assert staged_glyphs == expected_glyphs
+        assert staged_colours == expected_colours
+
+    last_spec = sequence[-1]
+    expected_last = _expected_macro_span(last_spec.slot, console)
+    expected_screen_bytes = bytes(expected_last[0])
+    expected_colour_bytes = bytes(expected_last[1])
+
+    pending = buffers.peek_pending_payload()
+    assert pending is not None
+    assert pending[0] == expected_screen_bytes
+    assert pending[1] == expected_colour_bytes
+    assert buffers.dirty is True
+
+    dispatcher.dispatch("&,50")
+
+    assert buffers.peek_pending_payload() is None
+    assert buffers.dirty is False
+    assert tuple(buffers.live_screen) == expected_last[0]
+    assert tuple(buffers.live_colour) == expected_last[1]
+    fill_colour = console.screen_colour & 0xFF
+    assert tuple(buffers.staged_screen) == (0x20,) * buffers.width
+    assert tuple(buffers.staged_colour) == (fill_colour,) * buffers.width
+
+    screen_bytes, colour_bytes = console.peek_block(
+        screen_address=ConsoleService._MASKED_OVERLAY_SCREEN_BASE,
+        screen_length=buffers.width,
+        colour_address=ConsoleService._MASKED_OVERLAY_COLOUR_BASE,
+        colour_length=buffers.width,
+    )
+
+    assert screen_bytes == expected_screen_bytes
+    assert colour_bytes == expected_colour_bytes
+
+    dispatcher.dispatch("&,50")
+
+    assert buffers.peek_pending_payload() is None
+    screen_bytes_again, colour_bytes_again = console.peek_block(
+        screen_address=ConsoleService._MASKED_OVERLAY_SCREEN_BASE,
+        screen_length=buffers.width,
+        colour_address=ConsoleService._MASKED_OVERLAY_COLOUR_BASE,
+        colour_length=buffers.width,
+    )
+    assert screen_bytes_again == expected_screen_bytes
+    assert colour_bytes_again == expected_colour_bytes
+
+
 def test_main_menu_macro_staging_sequences() -> None:
     module = MainMenuModule()
     kernel = SessionKernel(module=module)

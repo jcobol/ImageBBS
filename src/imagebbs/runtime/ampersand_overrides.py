@@ -9,6 +9,7 @@ _TARGET = mirror_module(globals(), "scripts.prototypes.runtime.ampersand_overrid
 
 _PROTOTYPE_HANDLE_CHKFLAGS = _TARGET.handle_chkflags
 BUILTIN_AMPERSAND_OVERRIDES = dict(_TARGET.BUILTIN_AMPERSAND_OVERRIDES)
+BUILTIN_AMPERSAND_OVERRIDES[0x1C] = f"{__name__}:handle_file_transfer_sequence"
 BUILTIN_AMPERSAND_OVERRIDES[0x34] = f"{__name__}:handle_chkflags"
 
 
@@ -69,3 +70,42 @@ def handle_chkflags(context: _TARGET.AmpersandDispatchContext):
         )
 
     return result
+
+
+def handle_file_transfer_sequence(
+    context: _TARGET.AmpersandDispatchContext,
+):
+    """Stage masked-pane macros for the ``&,28`` ampersand family."""
+
+    registry = _TARGET._require_registry(context)
+    services = _TARGET._resolve_services(context, registry)
+    console = _TARGET._resolve_console_service(services)
+
+    if console is not None:
+        staging_map = console.masked_pane_staging_map
+        sequence_key = _normalise_ampersand_sequence_key(context.invocation)
+        specs = staging_map.ampersand_sequence(sequence_key)
+        if specs:
+            for spec in specs:
+                staging_map.stage_macro(console, spec.macro)
+
+    return registry.dispatch(
+        context.invocation.routine, context, use_default=True
+    )
+
+
+def _normalise_ampersand_sequence_key(
+    invocation: _TARGET.AmpersandInvocation,
+) -> str:
+    expression = "".join(invocation.expression.split())
+    if expression:
+        if expression.startswith("&"):
+            return expression
+        return f"&,{expression}"
+
+    parts = [f"&,{invocation.routine}"]
+    if invocation.argument_x or invocation.argument_y:
+        parts.append(str(invocation.argument_x))
+        if invocation.argument_y:
+            parts.append(str(invocation.argument_y))
+    return ",".join(parts)
