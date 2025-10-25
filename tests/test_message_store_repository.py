@@ -5,9 +5,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from imagebbs.runtime.message_store import MessageStore
 from imagebbs.runtime.message_store_repository import (
     load_message_store,
+    load_records,
     save_message_store,
 )
 
@@ -40,4 +43,26 @@ def test_save_and_load_round_trip(tmp_path: Path) -> None:
     reloaded = load_message_store(path)
     assert reloaded.list("main") == store.list("main")
     assert reloaded.list("tech") == store.list("tech")
+
+
+def test_load_message_store_rejects_non_mapping_payload(tmp_path: Path) -> None:
+    path = tmp_path / "invalid.json"
+    path.write_text(json.dumps(["not", "a", "mapping"]), encoding="utf-8")
+
+    with pytest.raises(TypeError, match="payload must be a mapping"):
+        load_message_store(path)
+
+
+def test_load_message_store_rejects_non_iterable_records(tmp_path: Path) -> None:
+    path = tmp_path / "invalid_records.json"
+    payload = {"version": 1, "records": 42}
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(TypeError, match="records payload must be iterable"):
+        load_message_store(path)
+
+
+def test_load_records_rejects_non_mapping_entries() -> None:
+    with pytest.raises(TypeError, match="record payload must be a mapping"):
+        load_records([{"message_id": 1, "board_id": "main"}, "invalid"])
 

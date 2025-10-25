@@ -24,8 +24,11 @@ def record_to_dict(record: MessageRecord) -> dict[str, Any]:
     }
 
 
-def record_from_dict(payload: Mapping[str, Any]) -> MessageRecord:
+def record_from_dict(payload: Mapping[str, Any] | Any) -> MessageRecord:
     """Reconstruct a :class:`MessageRecord` from ``payload``."""
+
+    if not isinstance(payload, Mapping):
+        raise TypeError("message record payload must be a mapping")
 
     return MessageRecord(
         message_id=int(payload["message_id"]),
@@ -44,8 +47,11 @@ def dump_records(store: MessageStore) -> list[dict[str, Any]]:
     return [record_to_dict(record) for record in store.iter_records()]
 
 
-def load_records(records: Iterable[Mapping[str, Any]]) -> list[MessageRecord]:
+def load_records(records: Iterable[Mapping[str, Any]] | Any) -> list[MessageRecord]:
     """Convert persisted mappings into :class:`MessageRecord` objects."""
+
+    if not isinstance(records, Iterable):
+        raise TypeError("message store records payload must be iterable")
 
     return [record_from_dict(record) for record in records]
 
@@ -65,9 +71,6 @@ def load_message_store(path: Path) -> MessageStore:
         records = payload.get("records", [])
     else:
         raise TypeError("message store payload must be a mapping")
-
-    if not isinstance(records, Iterable):
-        raise TypeError("message store records payload must be iterable")
 
     return MessageStore(records=load_records(records))
 
