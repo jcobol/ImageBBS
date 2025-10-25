@@ -17,8 +17,11 @@ from imagebbs.device_context import (
 )
 from imagebbs.message_editor import SessionContext
 from imagebbs.runtime.ampersand_overrides import BUILTIN_AMPERSAND_OVERRIDES
+from imagebbs.runtime.ampersand_overrides import handle_chkflags
 from imagebbs.runtime.indicator_controller import IndicatorController
 from imagebbs.runtime.message_store import MessageStore
+from imagebbs.runtime.session_instrumentation import SessionInstrumentation
+from imagebbs.runtime.session_runner import SessionRunner
 
 
 def _resolve_palette_colour(value: int, palette: tuple[int, ...], *, default_index: int = 0) -> int:
@@ -47,6 +50,45 @@ def _register_indicator_controller(registry) -> IndicatorController:
     controller = IndicatorController(console_service)
     registry.register_service("indicator_controller", controller)
     return controller
+
+
+def test_chkflags_syncs_indicator_controller_with_session_runtime() -> None:
+    runner = SessionRunner()
+    instrumentation = SessionInstrumentation(runner)
+    ensured = instrumentation.ensure_indicator_controller()
+    assert isinstance(ensured, IndicatorController)
+
+    context = runner.kernel.context
+    dispatcher = context.get_service("ampersand")
+    assert isinstance(dispatcher, AmpersandDispatcher)
+    dispatcher.registry.register_handler(0x34, handle_chkflags)
+    controller = dispatcher.registry.services.get("indicator_controller")
+    assert controller is ensured
+
+    console = runner.console
+    ensured.set_spinner_enabled(False)
+    console.set_pause_indicator(0x20)
+    spinner_frames = tuple(int(code) & 0xFF for code in ensured.spinner_frames)
+    if spinner_frames:
+        seed_index = 1 if len(spinner_frames) > 1 else 0
+        console.set_spinner_glyph(spinner_frames[seed_index])
+    else:
+        console.set_spinner_glyph(0xAE)
+    console.set_pause_indicator(0xD0)
+
+    dispatcher.dispatch("&,52,2,1")
+    dispatcher.dispatch("&,52,16,1")
+
+    spinner_address = ConsoleService._SPINNER_SCREEN_ADDRESS
+    pause_address = ConsoleService._PAUSE_SCREEN_ADDRESS
+    assert console.screen.peek_screen_address(spinner_address) == 0xB0
+    assert console.screen.peek_screen_address(pause_address) == 0xD0
+
+    ensured.set_spinner_enabled(False)
+    assert console.screen.peek_screen_address(spinner_address) == 0x20
+
+    ensured.set_pause(False)
+    assert console.screen.peek_screen_address(pause_address) == 0x20
 
 
 @pytest.fixture()
