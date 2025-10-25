@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
-import importlib
 import sys
 from pathlib import Path
 from typing import IO, Callable, Sequence, Tuple
@@ -24,15 +23,6 @@ from .session_factory import (
 from .session_instrumentation import SessionInstrumentation
 from .session_runner import SessionRunner
 from .transports import BaudLimitedTransport, TelnetModemTransport
-
-
-try:  # pragma: no cover - optional compatibility layer
-    _LEGACY_RUNTIME_CLI = importlib.import_module("scripts.prototypes.runtime.cli")
-except ModuleNotFoundError:  # pragma: no cover - legacy module absent
-    _LEGACY_RUNTIME_CLI = None
-else:  # pragma: no cover - exercised indirectly via monkeypatching tests
-    setattr(_LEGACY_RUNTIME_CLI, "IdleTimerScheduler", IdleTimerScheduler)
-    setattr(_LEGACY_RUNTIME_CLI, "IndicatorController", IndicatorController)
 
 
 def _parse_host_port(value: str) -> Tuple[str, int]:
@@ -138,15 +128,17 @@ def create_runner(
 
 
 def _resolve_indicator_controller_cls() -> type[IndicatorController]:
-    if _LEGACY_RUNTIME_CLI is None:
-        return IndicatorController
-    return getattr(_LEGACY_RUNTIME_CLI, "IndicatorController", IndicatorController)
+    legacy_module = sys.modules.get("scripts.prototypes.runtime.cli")
+    if legacy_module is not None:
+        return getattr(legacy_module, "IndicatorController", IndicatorController)
+    return IndicatorController
 
 
 def _resolve_idle_timer_scheduler_cls() -> type[IdleTimerScheduler]:
-    if _LEGACY_RUNTIME_CLI is None:
-        return IdleTimerScheduler
-    return getattr(_LEGACY_RUNTIME_CLI, "IdleTimerScheduler", IdleTimerScheduler)
+    legacy_module = sys.modules.get("scripts.prototypes.runtime.cli")
+    if legacy_module is not None:
+        return getattr(legacy_module, "IdleTimerScheduler", IdleTimerScheduler)
+    return IdleTimerScheduler
 
 
 def _persist_messages(
