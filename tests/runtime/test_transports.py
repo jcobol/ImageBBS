@@ -211,6 +211,67 @@ def test_telnet_transport_filters_pause_tokens_and_updates_indicator() -> None:
     assert controller.carrier_states == [True, False]
 
 
+def test_telnet_transport_handles_negotiation_sequences() -> None:
+    class NegotiationReader:
+        def __init__(self, payloads: list[bytes]):
+            self._payloads = list(payloads)
+
+        async def readline(self) -> bytes:
+            await asyncio.sleep(0)
+            if self._payloads:
+                return self._payloads.pop(0)
+            return b""
+
+    class NegotiationRunner:
+        def __init__(self) -> None:
+            self.console = object()
+            self.state = SessionState.MAIN_MENU
+            self.commands: list[str] = []
+
+        def read_output(self) -> str:
+            return ""
+
+        def send_command(self, text: str) -> SessionState:
+            self.commands.append(text)
+            if text == "BYE":
+                self.state = SessionState.EXIT
+            return self.state
+
+        def requires_editor_submission(self) -> bool:
+            return False
+
+    async def _exercise() -> tuple[NegotiationRunner, FakeWriter]:
+        reader = NegotiationReader(
+            [
+                b"\xff\xfb\x01\xff\xfd\x03HELLO\r\n",
+                b"\xff\xfe\x23\xff\xfc\x05BYE\r\n",
+            ]
+        )
+        runner = NegotiationRunner()
+        writer = FakeWriter()
+        transport = RecordingTelnetTransport(
+            runner,
+            reader,  # type: ignore[arg-type]
+            writer,  # type: ignore[arg-type]
+            poll_interval=0.0,
+        )
+
+        transport.open()
+        pump_reader = transport.scheduled_coroutines[1]
+        await asyncio.wait_for(pump_reader, timeout=0.1)
+        transport.scheduled_coroutines[0].close()
+        return runner, writer
+
+    runner, writer = asyncio.run(_exercise())
+    assert runner.commands == ["HELLO", "BYE"]
+    assert writer.buffer == [
+        b"\xff\xfe\x01",
+        b"\xff\xfc\x03",
+        b"\xff\xfc\x23",
+        b"\xff\xfe\x05",
+    ]
+
+
 def test_telnet_transport_handles_empty_editor_cycles_gracefully() -> None:
     class EmptyReader:
         async def readline(self) -> bytes:
