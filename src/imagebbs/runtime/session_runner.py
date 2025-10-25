@@ -1,22 +1,296 @@
 """Runtime session runner that integrates the concrete main-menu module."""
+
 from __future__ import annotations
 
-from ..session_kernel import SessionState
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Iterable, Mapping, TYPE_CHECKING
+
+from ..device_context import ConsoleService
+from ..message_editor import EditorState, Event as MessageEditorEvent
+from ..message_editor import MessageEditor, SessionContext
+from ..session_kernel import SessionKernel, SessionState
+from ..setup_defaults import SetupDefaults
+from .file_transfers import FileTransferEvent
 from .main_menu import MainMenuEvent, MainMenuModule
-from scripts.prototypes.runtime.session_runner import SessionRunner as _PrototypeSessionRunner
+from .message_store import MessageStore
+from .sysop_options import SysopOptionsEvent
+
+if TYPE_CHECKING:  # pragma: no cover - imported for type checking only
+    from .indicator_controller import IndicatorController
 
 
-class SessionRunner(_PrototypeSessionRunner):
-    """Adapter around the prototype runner that injects local modules."""
+@dataclass(slots=True)
+class SessionRunner:
+    """Wrapper that feeds textual input into :class:`SessionKernel`."""
+
+    defaults: SetupDefaults = field(default_factory=SetupDefaults.stub)
+    main_menu_module: MainMenuModule = field(default_factory=MainMenuModule)
+    board_id: str = "main"
+    user_id: str = "sysop"
+    session_context: SessionContext | None = None
+    message_store: MessageStore = field(default_factory=MessageStore)
+    message_store_path: Path | None = None
+
+    kernel: SessionKernel = field(init=False)
+    console: ConsoleService = field(init=False)
+    _editor_context: SessionContext = field(init=False)
+    _editor_module: MessageEditor | None = field(init=False, default=None)
+    _indicator_controller: "IndicatorController" | None = field(
+        init=False, default=None, repr=False
+    )
+
+    _ENTER_EVENTS: Mapping[SessionState, object] = field(
+        init=False,
+        default_factory=lambda: {
+            SessionState.MAIN_MENU: MainMenuEvent.ENTER,
+            SessionState.FILE_TRANSFERS: FileTransferEvent.ENTER,
+            SessionState.SYSOP_OPTIONS: SysopOptionsEvent.ENTER,
+            SessionState.MESSAGE_EDITOR: MessageEditorEvent.ENTER,
+        },
+    )
+    _COMMAND_EVENTS: Mapping[SessionState, object] = field(
+        init=False,
+        default_factory=lambda: {
+            SessionState.MAIN_MENU: MainMenuEvent.SELECTION,
+            SessionState.FILE_TRANSFERS: FileTransferEvent.COMMAND,
+            SessionState.SYSOP_OPTIONS: SysopOptionsEvent.COMMAND,
+            SessionState.MESSAGE_EDITOR: MessageEditorEvent.COMMAND_SELECTED,
+        },
+    )
 
     def __post_init__(self) -> None:
-        self._ENTER_EVENTS = dict(self._ENTER_EVENTS)
-        self._ENTER_EVENTS[SessionState.MAIN_MENU] = MainMenuEvent.ENTER
-        self._COMMAND_EVENTS = dict(self._COMMAND_EVENTS)
-        self._COMMAND_EVENTS[SessionState.MAIN_MENU] = MainMenuEvent.SELECTION
-        if not isinstance(self.main_menu_module, MainMenuModule):
-            self.main_menu_module = MainMenuModule()
-        super().__post_init__()
+        if (
+            getattr(self.main_menu_module, "message_editor_factory", None)
+            is MessageEditor
+        ):
+            self.main_menu_module.message_editor_factory = (
+                lambda store=self.message_store: MessageEditor(store=store)
+            )
+        self.kernel = SessionKernel(module=self.main_menu_module, defaults=self.defaults)
+        console = self.kernel.services.get("console")
+        if not isinstance(console, ConsoleService):
+            raise TypeError("console service missing from session kernel")
+        self.console = console
+        self._editor_context = (
+            self.session_context
+            if isinstance(self.session_context, SessionContext)
+            else SessionContext(board_id=self.board_id, user_id=self.user_id)
+        )
+        self._editor_context.store = self.message_store
+        self._enter_state(self.kernel.state)
+
+    # Public API ---------------------------------------------------------
+
+    @property
+    def state(self) -> SessionState:
+        """Return the kernel's active :class:`SessionState`."""
+
+        return self.kernel.state
+
+    @property
+    def editor_context(self) -> SessionContext:
+        """Expose the persistent :class:`SessionContext` used by the editor."""
+
+        return self._editor_context
+
+    def get_editor_state(self) -> EditorState | None:
+        """Return the active :class:`EditorState` when the editor is loaded."""
+
+        editor = self._get_message_editor()
+        if editor is None:
+            return None
+        return editor.state
+
+    def requires_editor_submission(self) -> bool:
+        """Return ``True`` when the editor expects a draft submission."""
+
+        state = self.get_editor_state()
+        if state is None:
+            return False
+        if state is EditorState.POST_MESSAGE:
+            return True
+        if state is EditorState.EDIT_DRAFT:
+            return self._editor_context.selected_message_id is not None
+        return False
+
+    def submit_editor_draft(
+        self,
+        *,
+        subject: str | None = None,
+        lines: Iterable[str] | None = None,
+    ) -> SessionState:
+        """Populate the editor context and dispatch ``DRAFT_SUBMITTED``."""
+
+        editor = self._get_message_editor()
+        if editor is None:
+            raise RuntimeError("message editor module is unavailable")
+        context = self._editor_context
+        if subject is not None:
+            context.current_message = subject
+        if lines is not None:
+            context.draft_buffer = list(lines)
+        return self._dispatch(MessageEditorEvent.DRAFT_SUBMITTED, context)
+
+    def read_output(self) -> str:
+        """Flush buffered console output and return it as a string."""
+
+        buffer: list[str] = []
+        output = self.console.device.output
+        while output:
+            buffer.append(output.popleft())
+        return "".join(buffer)
+
+    def set_indicator_controller(
+        self, controller: "IndicatorController" | None
+    ) -> None:
+        """Register ``controller`` to mirror pause/abort signals."""
+
+        self._indicator_controller = controller
+
+    def set_pause_indicator_state(self, active: bool) -> None:
+        """Forward pause state to the registered indicator controller."""
+
+        controller = self._indicator_controller
+        if controller is not None:
+            controller.set_pause(active)
+
+    def set_abort_indicator_state(self, active: bool) -> None:
+        """Forward abort state to the registered indicator controller."""
+
+        controller = self._indicator_controller
+        if controller is not None:
+            controller.set_abort(active)
+
+    def send_command(self, text: str) -> SessionState:
+        """Deliver ``text`` to the active module and propagate transitions."""
+
+        state = self.kernel.state
+        if state is SessionState.EXIT:
+            return state
+
+        command_event = self._COMMAND_EVENTS.get(state)
+        if command_event is None:
+            raise ValueError(f"state {state!r} does not accept textual input")
+
+        if state is SessionState.MESSAGE_EDITOR:
+            return self._send_editor_command(text)
+
+        return self._dispatch(command_event, text)
+
+    def abort_editor(self) -> SessionState:
+        """Request that the message editor abort back to the main menu."""
+
+        if self.kernel.state is not SessionState.MESSAGE_EDITOR:
+            raise RuntimeError("abort_editor requires the message editor to be active")
+        return self._dispatch(MessageEditorEvent.ABORT, self._editor_context)
+
+    # Internal helpers ---------------------------------------------------
+
+    def _dispatch(self, event: object, *args: object) -> SessionState:
+        previous_state = self.kernel.state
+        editor_before_state: EditorState | None = None
+        if previous_state is SessionState.MESSAGE_EDITOR:
+            editor = self._get_message_editor()
+            if editor is not None:
+                editor_before_state = editor.state
+        next_state = self.kernel.step(event, *args)
+        if next_state is not SessionState.EXIT and next_state is not previous_state:
+            self._enter_state(next_state)
+        elif (
+            next_state is SessionState.MESSAGE_EDITOR
+            and previous_state is SessionState.MESSAGE_EDITOR
+        ):
+            self._handle_editor_state_change(editor_before_state)
+        return next_state
+
+    def _enter_state(self, state: SessionState) -> None:
+        if state is SessionState.EXIT:
+            return
+
+        enter_event = self._ENTER_EVENTS.get(state)
+        if enter_event is None:
+            return
+
+        if state is SessionState.MESSAGE_EDITOR:
+            self._prepare_editor_for_enter()
+            self._dispatch(enter_event, self._editor_context)
+            return
+
+        self._dispatch(enter_event)
+
+    def _prepare_editor_for_enter(self) -> None:
+        module = self._get_message_editor()
+        if isinstance(module, MessageEditor) and module.state is EditorState.EXIT:
+            module.state = EditorState.INTRO
+
+    def _get_message_editor(self) -> MessageEditor | None:
+        module = self.kernel._modules.get(SessionState.MESSAGE_EDITOR)
+        if isinstance(module, MessageEditor):
+            self._editor_module = module
+            return module
+        return None
+
+    def _handle_editor_state_change(
+        self, previous_state: EditorState | None
+    ) -> None:
+        editor = self._get_message_editor()
+        if editor is None:
+            return
+        current_state = editor.state
+        if previous_state is None or current_state is previous_state:
+            return
+        self._dispatch(MessageEditorEvent.ENTER, self._editor_context)
+
+    def _send_editor_command(self, text: str) -> SessionState:
+        editor = self._get_message_editor()
+        if editor is None:
+            raise RuntimeError("message editor module is unavailable")
+        context = self._editor_context
+        event = self._resolve_editor_event(editor, context, text)
+        return self._dispatch(event, context)
+
+    def _resolve_editor_event(
+        self, editor: MessageEditor, context: SessionContext, text: str
+    ) -> MessageEditorEvent:
+        state = editor.state
+        if state is EditorState.READ_MESSAGES:
+            context.current_message = text
+            return MessageEditorEvent.MESSAGE_SELECTED
+        if state is EditorState.POST_MESSAGE:
+            subject, lines = self._partition_editor_submission(text, include_subject=True)
+            context.current_message = subject
+            context.draft_buffer = lines
+            return MessageEditorEvent.DRAFT_SUBMITTED
+        if state is EditorState.EDIT_DRAFT:
+            if context.selected_message_id is None:
+                context.current_message = text
+                context.draft_buffer.clear()
+                return MessageEditorEvent.ENTER
+            _, lines = self._partition_editor_submission(
+                text, include_subject=False
+            )
+            context.draft_buffer = lines
+            return MessageEditorEvent.DRAFT_SUBMITTED
+
+        context.current_message = text
+        return MessageEditorEvent.COMMAND_SELECTED
+
+    def _partition_editor_submission(
+        self, text: str, *, include_subject: bool
+    ) -> tuple[str, list[str]]:
+        lines = list(self._split_editor_lines(text))
+        if include_subject:
+            subject = lines[0] if lines else ""
+            body = lines[1:] if lines else []
+            return subject, body
+        return "", lines
+
+    def _split_editor_lines(self, text: str) -> Iterable[str]:
+        if not text:
+            return ()
+        normalised = text.replace("\r\n", "\n").replace("\r", "\n")
+        return normalised.split("\n")
 
 
 __all__ = ["SessionRunner"]
