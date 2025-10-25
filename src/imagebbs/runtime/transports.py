@@ -277,6 +277,8 @@ class TelnetModemTransport(ModemTransport):
         self._outbound: Deque[str] = deque()
         self._closing = False
         self._telnet_buffer = bytearray()
+        self._paused = False
+        self._pause_buffer: list[str] = []
 
     _IAC = 0xFF
     _WILL = 0xFB
@@ -422,6 +424,24 @@ class TelnetModemTransport(ModemTransport):
             if callable(toggle):
                 toggle(active)
 
+    def _handle_pause_token(self, active: bool) -> None:
+        self._update_pause_indicator(active)
+        if self._paused == active:
+            return
+        self._paused = active
+        if not active:
+            self._flush_pause_buffer()
+
+    def _flush_pause_buffer(self) -> None:
+        if not self._pause_buffer:
+            return
+        payload = "".join(self._pause_buffer)
+        self._pause_buffer.clear()
+        try:
+            self.send(payload)
+        except ConnectionError:
+            self._mark_closed()
+
     def _strip_pause_tokens(self, payload: bytes) -> bytes:
         if not payload:
             return payload
@@ -429,7 +449,7 @@ class TelnetModemTransport(ModemTransport):
         tokens = self._PAUSE_TOKENS
         for byte in payload:
             if byte in tokens:
-                self._update_pause_indicator(tokens[byte])
+                self._handle_pause_token(tokens[byte])
                 continue
             filtered.append(byte)
         return bytes(filtered)
@@ -440,7 +460,10 @@ class TelnetModemTransport(ModemTransport):
                 flushed = self.runner.read_output()
                 if flushed:
                     try:
-                        self.send(flushed)
+                        if self._paused:
+                            self._pause_buffer.append(flushed)
+                        else:
+                            self.send(flushed)
                     except ConnectionError:
                         self._mark_closed()
                         break

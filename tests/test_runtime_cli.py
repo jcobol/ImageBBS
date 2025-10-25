@@ -1,5 +1,6 @@
 import asyncio
 import io
+from collections import deque
 import unittest.mock as mock
 from pathlib import Path
 
@@ -180,6 +181,107 @@ def test_run_session_posts_message_via_editor() -> None:
     record = records[0]
     assert record.subject == "Hello World"
     assert record.lines == ("This is the body",)
+
+
+def test_run_session_pauses_and_flushes_output_on_flow_control() -> None:
+    class RecordingIndicatorController:
+        def __init__(self, console: ConsoleService) -> None:
+            self.console = console
+            self.pause_states: list[bool] = []
+            self.carrier_states: list[bool] = []
+            self.idle_ticks = 0
+
+        def set_pause(self, active: bool) -> None:
+            self.pause_states.append(active)
+
+        def set_carrier(self, active: bool) -> None:
+            self.carrier_states.append(active)
+
+        def on_idle_tick(self) -> None:
+            self.idle_ticks += 1
+
+    class RecordingScheduler:
+        def __init__(self, console: ConsoleService) -> None:
+            self.console = console
+            self.reset_calls = 0
+            self.tick_calls = 0
+
+        def reset(self) -> None:
+            self.reset_calls += 1
+
+        def tick(self) -> None:
+            self.tick_calls += 1
+
+    class ScriptedRunner:
+        def __init__(self) -> None:
+            self.console = object()
+            self.state = SessionState.MAIN_MENU
+            self.outputs = deque(["READY", "PAUSED", "AFTER"])
+            self.pause_states: list[bool] = []
+            self.commands: list[str] = []
+            self.indicator_controller: RecordingIndicatorController | None = None
+
+        def read_output(self) -> str:
+            if self.outputs:
+                return self.outputs.popleft()
+            return ""
+
+        def send_command(self, command: str) -> SessionState:
+            self.commands.append(command)
+            if command == "EX":
+                self.state = SessionState.EXIT
+            return self.state
+
+        def set_indicator_controller(self, controller) -> None:
+            self.indicator_controller = controller
+
+        def set_pause_indicator_state(self, active: bool) -> None:
+            self.pause_states.append(active)
+            controller = self.indicator_controller
+            if controller is not None:
+                controller.set_pause(active)
+
+        def requires_editor_submission(self) -> bool:
+            return False
+
+    class RecordingOutput:
+        def __init__(self, runner: ScriptedRunner) -> None:
+            self.runner = runner
+            self.entries: list[tuple[str, list[bool]]] = []
+
+        def write(self, text: str) -> None:
+            if text:
+                self.entries.append((text, list(self.runner.pause_states)))
+
+        def flush(self) -> None:
+            pass
+
+    runner = ScriptedRunner()
+    input_stream = io.StringIO("\x13\n\x11\nEX\n")
+    output_stream = RecordingOutput(runner)
+
+    with mock.patch(
+        "imagebbs.runtime.cli._resolve_indicator_controller_cls",
+        return_value=RecordingIndicatorController,
+    ), mock.patch(
+        "imagebbs.runtime.cli._resolve_idle_timer_scheduler_cls",
+        return_value=RecordingScheduler,
+    ):
+        final_state = run_session(
+            runner, input_stream=input_stream, output_stream=output_stream
+        )
+
+    assert final_state is SessionState.EXIT
+    assert runner.commands == ["", "", "EX"]
+    assert runner.pause_states == [True, False]
+    controller = runner.indicator_controller
+    assert controller is not None
+    assert controller.pause_states == [True, False]
+
+    writes = output_stream.entries
+    assert [text for text, _ in writes] == ["READY", "PAUSED", "AFTER"]
+    paused_entry_states = [states for text, states in writes if text == "PAUSED"]
+    assert paused_entry_states == [[True, False]]
 
 
 def test_run_session_advances_spinner_and_idle_timer() -> None:

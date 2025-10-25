@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import deque
 from typing import Coroutine, Optional
 
 from imagebbs.device_context import ConsoleService
@@ -209,6 +210,103 @@ def test_telnet_transport_filters_pause_tokens_and_updates_indicator() -> None:
     assert runner.pause_states == [True, False]
     assert controller.pause_states == [True, False]
     assert controller.carrier_states == [True, False]
+
+
+def test_telnet_transport_pauses_outbound_until_resume() -> None:
+    class QueueReader:
+        def __init__(self) -> None:
+            self.queue: asyncio.Queue[bytes] = asyncio.Queue()
+
+        async def readline(self) -> bytes:
+            return await self.queue.get()
+
+    class PausingRunner:
+        def __init__(self) -> None:
+            self.console = object()
+            self.state = SessionState.MAIN_MENU
+            self._outputs: deque[str] = deque()
+            self.pause_states: list[bool] = []
+            self.commands: list[str] = []
+            self.indicator_controller = None
+
+        def queue_output(self, text: str) -> None:
+            self._outputs.append(text)
+
+        def read_output(self) -> str:
+            if self._outputs:
+                return self._outputs.popleft()
+            return ""
+
+        def send_command(self, text: str) -> SessionState:
+            self.commands.append(text)
+            if text == "EX":
+                self.state = SessionState.EXIT
+            return self.state
+
+        def set_indicator_controller(self, controller) -> None:
+            self.indicator_controller = controller
+
+        def set_pause_indicator_state(self, active: bool) -> None:
+            self.pause_states.append(active)
+
+        def requires_editor_submission(self) -> bool:
+            return False
+
+    async def _exercise() -> tuple[list[str], PausingRunner, StubIndicatorController]:
+        runner = PausingRunner()
+        instrumentation = SessionInstrumentation(
+            runner,
+            indicator_controller_cls=StubIndicatorController,
+            idle_timer_scheduler_cls=None,
+        )
+        reader = QueueReader()
+        writer = FakeWriter()
+        transport = TelnetModemTransport(
+            runner,
+            reader,  # type: ignore[arg-type]
+            writer,  # type: ignore[arg-type]
+            poll_interval=0.0,
+            instrumentation=instrumentation,
+        )
+
+        transport.open()
+
+        transmissions: list[str] = []
+
+        runner.queue_output("READY")
+        await asyncio.sleep(0)
+        transmissions.append(transport.collect_transmit())
+
+        await reader.queue.put(b"\x13")
+        await asyncio.sleep(0)
+        transmissions.append(transport.collect_transmit())
+
+        runner.queue_output("PAUSED")
+        await asyncio.sleep(0)
+        transmissions.append(transport.collect_transmit())
+
+        await reader.queue.put(b"\x11")
+        await asyncio.sleep(0)
+        transmissions.append(transport.collect_transmit())
+
+        runner.queue_output("AFTER")
+        await asyncio.sleep(0)
+        transmissions.append(transport.collect_transmit())
+
+        await reader.queue.put(b"EX\r\n")
+        await asyncio.sleep(0)
+        await asyncio.wait_for(transport.wait_closed(), timeout=0.1)
+
+        controller = instrumentation.ensure_indicator_controller()
+        assert controller is not None
+        transmissions.append(transport.collect_transmit())
+        return transmissions, runner, controller
+
+    transmissions, runner, controller = asyncio.run(_exercise())
+    assert transmissions == ["READY", "", "", "PAUSED", "AFTER", ""]
+    assert runner.pause_states == [True, False]
+    assert runner.commands == ["EX"]
+    assert controller.pause_states == [True, False]
 
 
 def test_telnet_transport_handles_negotiation_sequences() -> None:
