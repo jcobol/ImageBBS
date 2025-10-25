@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import ClassVar, Optional
+from typing import ClassVar, Mapping, Optional
 
 from ..ampersand_dispatcher import AmpersandDispatcher
 from ..ampersand_registry import AmpersandRegistry
@@ -39,6 +39,10 @@ class FileTransfersModule:
         MENU_PROMPT_MACRO: 0x29,
         INVALID_SELECTION_MACRO: 0x2A,
     }
+
+    _BINARY_STREAM_COMMANDS: ClassVar[frozenset[str]] = frozenset(
+        {"UD", "UL", "UX", "VB", "BB", "RF"}
+    )
 
     @property
     def MENU_HEADER_SLOT(self) -> int:
@@ -123,6 +127,7 @@ class FileTransfersModule:
         self.rendered_slots.clear()
         self.last_command = ""
         self.state = FileTransferMenuState.INTRO
+        self._set_binary_streaming(kernel, False)
         self._render_intro()
         return SessionState.FILE_TRANSFERS
 
@@ -137,30 +142,38 @@ class FileTransfersModule:
         if self._matches_event(event, FileTransferEvent.ENTER):
             self._render_intro()
             self.state = FileTransferMenuState.READY
+            self._set_binary_streaming(kernel, False)
             return SessionState.FILE_TRANSFERS
 
         if self._matches_event(event, FileTransferEvent.COMMAND):
             if self.state is not FileTransferMenuState.READY:
                 self._render_intro()
                 self.state = FileTransferMenuState.READY
+                self._set_binary_streaming(kernel, False)
                 return SessionState.FILE_TRANSFERS
 
             normalised = self._normalise_command(selection)
             if not normalised:
                 self._render_prompt()
+                self._set_binary_streaming(kernel, False)
                 return SessionState.FILE_TRANSFERS
 
             if normalised in self._EXIT_COMMANDS:
                 self.last_command = normalised
+                self._set_binary_streaming(kernel, False)
                 return SessionState.MAIN_MENU
 
             if normalised in self._KNOWN_COMMANDS:
                 self.last_command = normalised
                 self._render_prompt()
+                self._set_binary_streaming(
+                    kernel, normalised in self._BINARY_STREAM_COMMANDS
+                )
                 return SessionState.FILE_TRANSFERS
 
             self._render_macro(self.INVALID_SELECTION_MACRO)
             self._render_prompt()
+            self._set_binary_streaming(kernel, False)
             return SessionState.FILE_TRANSFERS
 
         raise ValueError(f"unsupported file-transfer event: {event!r}")
@@ -222,6 +235,17 @@ class FileTransfersModule:
                 return prefix
             return token
         return text[:2]
+
+    def _set_binary_streaming(self, kernel: SessionKernel, enabled: bool) -> None:
+        context = getattr(kernel, "context", None)
+        services: Mapping[str, object] | None = getattr(context, "services", None)
+        transport = None
+        if isinstance(services, Mapping):
+            modem = services.get("modem")
+            transport = getattr(modem, "transport", None)
+        setter = getattr(transport, "set_binary_mode", None)
+        if callable(setter):
+            setter(enabled)
 
     @staticmethod
     def _matches_event(

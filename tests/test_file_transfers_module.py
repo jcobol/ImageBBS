@@ -1,5 +1,5 @@
 from imagebbs import SessionKernel, SessionState
-from imagebbs.device_context import ConsoleService
+from imagebbs.device_context import ConsoleService, LoopbackModemTransport
 from imagebbs.runtime.file_transfers import (
     FileTransferEvent,
     FileTransferMenuState,
@@ -170,4 +170,34 @@ def test_file_transfers_exit_returns_to_main_menu() -> None:
     assert state is SessionState.MAIN_MENU
     assert kernel.state is SessionState.MAIN_MENU
     assert module.last_command == "Q"
+
+
+class RecordingLoopbackTransport(LoopbackModemTransport):
+    def __init__(self) -> None:
+        super().__init__()
+        self.binary_modes: list[bool] = []
+
+    def set_binary_mode(self, enabled: bool) -> None:  # type: ignore[override]
+        self.binary_modes.append(bool(enabled))
+
+
+def test_file_transfers_toggles_binary_mode_for_stream_commands() -> None:
+    kernel, module = _bootstrap_kernel()
+    transport = RecordingLoopbackTransport()
+    kernel.context.register_modem_device(transport=transport)
+
+    kernel.step(FileTransferEvent.ENTER)
+    transport.binary_modes.clear()
+
+    state = kernel.step(FileTransferEvent.COMMAND, "UL")
+    assert state is SessionState.FILE_TRANSFERS
+    assert transport.binary_modes == [True]
+
+    state = kernel.step(FileTransferEvent.COMMAND, "ED")
+    assert state is SessionState.FILE_TRANSFERS
+    assert transport.binary_modes[-1] is False
+
+    state = kernel.step(FileTransferEvent.COMMAND, "Q")
+    assert state is SessionState.MAIN_MENU
+    assert transport.binary_modes[-1] is False
 

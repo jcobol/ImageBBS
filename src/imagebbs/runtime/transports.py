@@ -167,6 +167,11 @@ class BaudLimitedTransport(ModemTransport):
     def collect_transmit(self) -> str:
         return self.transport.collect_transmit()
 
+    def set_binary_mode(self, enabled: bool) -> None:
+        setter = getattr(self.transport, "set_binary_mode", None)
+        if callable(setter):
+            setter(enabled)
+
     def close(self) -> None:
         if self._closing:
             return
@@ -279,6 +284,9 @@ class TelnetModemTransport(ModemTransport):
         self._telnet_buffer = bytearray()
         self._paused = False
         self._pause_buffer: list[str] = []
+        self._binary_mode = False
+        self._binary_decode_encoding = "latin-1"
+        self._binary_read_size = 4096
 
     _IAC = 0xFF
     _WILL = 0xFB
@@ -337,6 +345,11 @@ class TelnetModemTransport(ModemTransport):
             self._inbound.popleft() for _ in range(min(size, len(self._inbound)))
         )
         return "".join(chars)
+
+    def set_binary_mode(self, enabled: bool) -> None:
+        """Toggle binary streaming for inbound data."""
+
+        self._binary_mode = bool(enabled)
 
     def feed(self, data: str) -> None:
         self._inbound.extend(data)
@@ -442,6 +455,15 @@ class TelnetModemTransport(ModemTransport):
         except ConnectionError:
             self._mark_closed()
 
+    def _handle_binary_payload(self, payload: bytes) -> None:
+        if not payload:
+            return
+        try:
+            text = payload.decode(self._binary_decode_encoding)
+        except UnicodeDecodeError:
+            text = payload.decode(self._binary_decode_encoding, errors="ignore")
+        self.feed(text)
+
     def _strip_pause_tokens(self, payload: bytes) -> bytes:
         if not payload:
             return payload
@@ -479,10 +501,13 @@ class TelnetModemTransport(ModemTransport):
     async def _pump_reader(self) -> None:
         try:
             while not self._close_event.is_set():
-                if await self._maybe_collect_editor_submission():
+                if not self._binary_mode and await self._maybe_collect_editor_submission():
                     continue
                 try:
-                    data = await self.reader.readline()
+                    if self._binary_mode:
+                        data = await self.reader.read(self._binary_read_size)
+                    else:
+                        data = await self.reader.readline()
                 except ConnectionError:
                     self._mark_closed()
                     break
@@ -492,6 +517,10 @@ class TelnetModemTransport(ModemTransport):
                 payload, negotiations = self._filter_telnet_negotiations(data)
                 for reply in negotiations:
                     self.writer.write(reply)
+                if self._binary_mode:
+                    if payload:
+                        self._handle_binary_payload(payload)
+                    continue
                 filtered = self._strip_pause_tokens(payload)
                 if not filtered:
                     continue
