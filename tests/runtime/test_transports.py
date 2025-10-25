@@ -352,6 +352,7 @@ def test_telnet_transport_handles_negotiation_sequences() -> None:
             reader,  # type: ignore[arg-type]
             writer,  # type: ignore[arg-type]
             poll_interval=0.0,
+            idle_timer_scheduler_cls=None,
         )
 
         transport.open()
@@ -368,6 +369,61 @@ def test_telnet_transport_handles_negotiation_sequences() -> None:
         b"\xff\xfc\x23",
         b"\xff\xfe\x05",
     ]
+
+
+def test_telnet_transport_binary_mode_preserves_payload() -> None:
+    class BinaryReader:
+        def __init__(self, payloads: list[bytes]):
+            self._payloads = deque(payloads)
+
+        async def read(self, _size: int = -1) -> bytes:
+            await asyncio.sleep(0)
+            if self._payloads:
+                return self._payloads.popleft()
+            return b""
+
+        async def readline(self) -> bytes:  # pragma: no cover - should not be called
+            raise AssertionError("binary mode should not invoke readline()")
+
+    class BinaryRunner:
+        def __init__(self) -> None:
+            self.console = object()
+            self.state = SessionState.MAIN_MENU
+            self.commands: list[str] = []
+
+        def read_output(self) -> str:
+            return ""
+
+        def send_command(self, text: str) -> SessionState:
+            self.commands.append(text)
+            return self.state
+
+        def requires_editor_submission(self) -> bool:
+            return False
+
+    async def _exercise() -> tuple[str, list[str]]:
+        payload = b"\x00\x13BIN\x11\xfeDATA\r\n\x00"
+        reader = BinaryReader([payload, b""])
+        writer = FakeWriter()
+        runner = BinaryRunner()
+        transport = RecordingTelnetTransport(
+            runner,
+            reader,  # type: ignore[arg-type]
+            writer,  # type: ignore[arg-type]
+            poll_interval=0.0,
+            idle_timer_scheduler_cls=None,
+        )
+        transport.set_binary_mode(True)
+        transport.open()
+        pump_reader = transport.scheduled_coroutines[1]
+        await asyncio.wait_for(pump_reader, timeout=0.1)
+        transport.scheduled_coroutines[0].close()
+        received = transport.receive()
+        return received, runner.commands
+
+    received, commands = asyncio.run(_exercise())
+    assert received.encode("latin-1") == b"\x00\x13BIN\x11\xfeDATA\r\n\x00"
+    assert commands == []
 
 
 def test_telnet_transport_handles_empty_editor_cycles_gracefully() -> None:
