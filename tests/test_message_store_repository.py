@@ -66,3 +66,33 @@ def test_load_records_rejects_non_mapping_entries() -> None:
     with pytest.raises(TypeError, match="record payload must be a mapping"):
         load_records([{"message_id": 1, "board_id": "main"}, "invalid"])
 
+
+def test_save_message_store_atomic_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    path = tmp_path / "messages.json"
+    original_payload = {"version": 1, "records": []}
+    path.write_text(
+        json.dumps(original_payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    original_contents = path.read_text(encoding="utf-8")
+
+    store = MessageStore()
+    store.append(board_id="main", subject="Updated", author_handle="Sysop")
+
+    with monkeypatch.context() as context:
+        def failing_dump(*args: object, **kwargs: object) -> None:
+            raise RuntimeError("boom")
+
+        context.setattr(
+            "imagebbs.runtime.message_store_repository.json.dump", failing_dump
+        )
+
+        with pytest.raises(RuntimeError, match="boom"):
+            save_message_store(store, path)
+
+    assert path.read_text(encoding="utf-8") == original_contents
+    assert sorted(entry.name for entry in tmp_path.iterdir()) == ["messages.json"]
+
+    save_message_store(store, path)
+    assert sorted(entry.name for entry in tmp_path.iterdir()) == ["messages.json"]
+
