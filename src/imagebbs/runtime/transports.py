@@ -276,6 +276,13 @@ class TelnetModemTransport(ModemTransport):
         self._inbound: Deque[str] = deque()
         self._outbound: Deque[str] = deque()
         self._closing = False
+        self._telnet_buffer = bytearray()
+
+    _IAC = 0xFF
+    _WILL = 0xFB
+    _WONT = 0xFC
+    _DO = 0xFD
+    _DONT = 0xFE
 
     # ModemTransport API -------------------------------------------------
 
@@ -459,7 +466,10 @@ class TelnetModemTransport(ModemTransport):
                 if data == b"":
                     self._mark_closed()
                     break
-                filtered = self._strip_pause_tokens(data)
+                payload, negotiations = self._filter_telnet_negotiations(data)
+                for reply in negotiations:
+                    self.writer.write(reply)
+                filtered = self._strip_pause_tokens(payload)
                 if not filtered:
                     continue
                 text = filtered.decode(self.encoding, errors="ignore")
@@ -480,6 +490,47 @@ class TelnetModemTransport(ModemTransport):
         except ConnectionError:
             self._mark_closed()
             return True
+
+    def _filter_telnet_negotiations(self, payload: bytes) -> tuple[bytes, list[bytes]]:
+        if not payload:
+            return payload, []
+
+        buffer = self._telnet_buffer
+        buffer.extend(payload)
+        filtered = bytearray()
+        replies: list[bytes] = []
+
+        while buffer:
+            byte = buffer[0]
+            if byte != self._IAC:
+                filtered.append(byte)
+                buffer.pop(0)
+                continue
+
+            if len(buffer) == 1:
+                break
+
+            command = buffer[1]
+            if command == self._IAC:
+                filtered.append(self._IAC)
+                del buffer[:2]
+                continue
+
+            if command in (self._WILL, self._WONT, self._DO, self._DONT):
+                if len(buffer) < 3:
+                    break
+                option = buffer[2]
+                del buffer[:3]
+                if command in (self._WILL, self._WONT):
+                    replies.append(bytes([self._IAC, self._DONT, option]))
+                else:
+                    replies.append(bytes([self._IAC, self._WONT, option]))
+                continue
+
+            # Unknown command – discard the IAC and command byte.
+            del buffer[:2]
+
+        return bytes(filtered), replies
 
 
 __all__ = ["BaudLimitedTransport", "TelnetModemTransport"]
