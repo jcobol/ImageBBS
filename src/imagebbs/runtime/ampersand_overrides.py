@@ -4,6 +4,10 @@ from __future__ import annotations
 from .._compat import mirror_module
 from ..device_context import ConsoleService
 from .indicator_controller import IndicatorController
+from .message_store import (
+    MessageRecord as _RuntimeMessageRecord,
+    MessageStore as _RuntimeMessageStore,
+)
 
 _TARGET = mirror_module(globals(), "scripts.prototypes.runtime.ampersand_overrides")
 
@@ -11,6 +15,12 @@ _PROTOTYPE_HANDLE_CHKFLAGS = _TARGET.handle_chkflags
 BUILTIN_AMPERSAND_OVERRIDES = dict(_TARGET.BUILTIN_AMPERSAND_OVERRIDES)
 BUILTIN_AMPERSAND_OVERRIDES[0x1C] = f"{__name__}:handle_file_transfer_sequence"
 BUILTIN_AMPERSAND_OVERRIDES[0x34] = f"{__name__}:handle_chkflags"
+
+# Ensure ampersand overrides recognise the runtime message store types.
+MessageRecord = _RuntimeMessageRecord
+MessageStore = _RuntimeMessageStore
+_TARGET.MessageRecord = MessageRecord
+_TARGET.MessageStore = MessageStore
 
 
 def handle_chkflags(context: _TARGET.AmpersandDispatchContext):
