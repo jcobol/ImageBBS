@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import pytest
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
@@ -308,6 +309,95 @@ def test_ampersand_28_sequence_stages_and_commits_once() -> None:
     assert screen_bytes_again == expected_screen_bytes
     assert colour_bytes_again == expected_colour_bytes
 
+
+def test_ampersand_28_sequences_survive_bare_ampersand_and_toggle_staging() -> None:
+    context = bootstrap_device_context(
+        assignments=(), ampersand_overrides=BUILTIN_AMPERSAND_OVERRIDES
+    )
+    console = context.get_service("console")
+    assert isinstance(console, ConsoleService)
+    buffers = context.get_service("masked_pane_buffers")
+    assert isinstance(buffers, MaskedPaneBuffers)
+    dispatcher = context.get_service("ampersand")
+    assert isinstance(dispatcher, AmpersandDispatcher)
+
+    staging = console.masked_pane_staging_map
+    transfer_sequence = staging.ampersand_sequence("&,28")
+    assert transfer_sequence
+    sayings_toggle_sequence = staging.ampersand_sequence("&,52,20,3")
+    assert sayings_toggle_sequence
+    prompt_toggle_sequence = staging.ampersand_sequence("&,52,24,3")
+    assert prompt_toggle_sequence
+
+    sayings_slot = sayings_toggle_sequence[0].slot
+    prompt_slot = prompt_toggle_sequence[0].slot
+    prompt_slot_from_transfer = transfer_sequence[-1].slot
+    prompt_transfer_expected = _expected_macro_span(
+        prompt_slot_from_transfer, console
+    )
+
+    with _capture_macro_staging(console, buffers) as captured:
+        dispatcher.dispatch("&,28")
+
+        for spec in transfer_sequence:
+            expected = _expected_macro_span(spec.slot, console)
+            assert spec.slot in captured
+            assert captured[spec.slot][0] == expected[0]
+            assert captured[spec.slot][1] == expected[1]
+
+        pending_before = buffers.peek_pending_payload()
+        assert pending_before is not None
+        assert pending_before[0] == bytes(prompt_transfer_expected[0])
+        assert pending_before[1] == bytes(prompt_transfer_expected[1])
+        assert tuple(buffers.staged_screen) == prompt_transfer_expected[0]
+        assert tuple(buffers.staged_colour) == prompt_transfer_expected[1]
+        assert buffers.dirty is True
+
+        with pytest.raises(ValueError):
+            dispatcher.dispatch("&")
+
+        pending_after = buffers.peek_pending_payload()
+        assert pending_after is not None
+        assert pending_after[0] == bytes(prompt_transfer_expected[0])
+        assert pending_after[1] == bytes(prompt_transfer_expected[1])
+        assert buffers.dirty is True
+
+        dispatcher.dispatch("&,52,20,3")
+        assert sayings_slot in captured
+        sayings_expected = _expected_macro_span(sayings_slot, console)
+        assert captured[sayings_slot][0] == sayings_expected[0]
+        assert captured[sayings_slot][1] == sayings_expected[1]
+
+        dispatcher.dispatch("&,52,24,3")
+        assert prompt_slot in captured
+        prompt_toggle_expected = _expected_macro_span(prompt_slot, console)
+        assert captured[prompt_slot][0] == prompt_toggle_expected[0]
+        assert captured[prompt_slot][1] == prompt_toggle_expected[1]
+
+        dispatcher.dispatch("&,28")
+
+        for spec in transfer_sequence:
+            expected = _expected_macro_span(spec.slot, console)
+            assert spec.slot in captured
+            assert captured[spec.slot][0] == expected[0]
+            assert captured[spec.slot][1] == expected[1]
+
+        pending_before_commit = buffers.peek_pending_payload()
+        assert pending_before_commit is not None
+        assert pending_before_commit[0] == bytes(prompt_transfer_expected[0])
+        assert pending_before_commit[1] == bytes(prompt_transfer_expected[1])
+        assert tuple(buffers.staged_screen) == prompt_transfer_expected[0]
+        assert tuple(buffers.staged_colour) == prompt_transfer_expected[1]
+
+        dispatcher.dispatch("&,50")
+
+        assert buffers.peek_pending_payload() is None
+        assert buffers.dirty is False
+        assert tuple(buffers.live_screen) == prompt_transfer_expected[0]
+        assert tuple(buffers.live_colour) == prompt_transfer_expected[1]
+        fill_colour = console.screen_colour & 0xFF
+        assert tuple(buffers.staged_screen) == (0x20,) * buffers.width
+        assert tuple(buffers.staged_colour) == (fill_colour,) * buffers.width
 
 def test_ampersand_52_flag_sequences_stage_masked_slots() -> None:
     context = bootstrap_device_context(
