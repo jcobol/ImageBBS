@@ -309,6 +309,52 @@ def test_ampersand_28_sequence_stages_and_commits_once() -> None:
     assert colour_bytes_again == expected_colour_bytes
 
 
+def test_ampersand_52_flag_sequences_stage_masked_slots() -> None:
+    context = bootstrap_device_context(
+        assignments=(), ampersand_overrides=BUILTIN_AMPERSAND_OVERRIDES
+    )
+    console = context.get_service("console")
+    assert isinstance(console, ConsoleService)
+    buffers = context.get_service("masked_pane_buffers")
+    assert isinstance(buffers, MaskedPaneBuffers)
+    dispatcher = context.get_service("ampersand")
+    assert isinstance(dispatcher, AmpersandDispatcher)
+
+    staging = console.masked_pane_staging_map
+    sequence_expectations = [
+        ("&,52,4,3", 0x04),
+        ("&,52,9,3", 0x09),
+        ("&,52,13,3", 0x0D),
+        ("&,52,20,3", 0x14),
+        ("&,52,20,2", 0x14),
+        ("&,52,21,3", 0x15),
+        ("&,52,22,3", 0x16),
+        ("&,52,23,3", 0x17),
+        ("&,52,24,3", 0x18),
+        ("&,52,25,3", 0x19),
+    ]
+
+    with _capture_macro_staging(console, buffers) as captured:
+        for key, expected_slot in sequence_expectations:
+            sequence = staging.ampersand_sequence(key)
+            assert sequence, f"expected masked pane staging for {key}"
+            assert sequence[0].slot == expected_slot
+
+            dispatcher.dispatch(key)
+
+            assert expected_slot in captured
+            staged_glyphs, staged_colours = captured[expected_slot]
+            expected_glyphs, expected_colours = _expected_macro_span(
+                expected_slot, console
+            )
+            assert staged_glyphs == expected_glyphs
+            assert staged_colours == expected_colours
+            assert tuple(buffers.staged_screen) == expected_glyphs
+            assert tuple(buffers.staged_colour) == expected_colours
+            console.clear_masked_pane_staging(buffers)
+            captured.clear()
+
+
 def test_main_menu_macro_staging_sequences() -> None:
     module = MainMenuModule()
     kernel = SessionKernel(module=module)

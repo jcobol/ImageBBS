@@ -444,6 +444,28 @@ def test_masked_pane_staging_map_ampersand_sequences_align_with_defaults() -> No
         assert default_entry is not None
         assert default_entry.slot == spec.slot
 
+    flag_sequence_expectations = {
+        "&,52,4,3": MaskedPaneMacro.MAIN_MENU_HEADER,
+        "&,52,9,3": MaskedPaneMacro.MAIN_MENU_PROMPT,
+        "&,52,13,3": MaskedPaneMacro.MAIN_MENU_INVALID,
+        "&,52,20,3": MaskedPaneMacro.FLAG_SAYINGS_ENABLE,
+        "&,52,20,2": MaskedPaneMacro.FLAG_SAYINGS_ENABLE,
+        "&,52,21,3": MaskedPaneMacro.FLAG_SAYINGS_DISABLE,
+        "&,52,22,3": MaskedPaneMacro.FLAG_SAYINGS_PROMPT_ENABLE,
+        "&,52,23,3": MaskedPaneMacro.FLAG_SAYINGS_PROMPT_DISABLE,
+        "&,52,24,3": MaskedPaneMacro.FLAG_PROMPT_ENABLE,
+        "&,52,25,3": MaskedPaneMacro.FLAG_PROMPT_DISABLE,
+    }
+
+    for key, macro in flag_sequence_expectations.items():
+        sequence = staging.ampersand_sequence(key)
+        assert sequence, f"expected masked pane staging for {key}"
+        assert len(sequence) == 1
+        spec = sequence[0]
+        expected = staging.spec(macro)
+        assert spec is expected
+        assert spec.slot == expected.slot
+
 def test_stage_masked_pane_overlay_normalises_payloads_and_defers_commit() -> None:
     console = Console()
     service = ConsoleService(console)
