@@ -29,15 +29,23 @@ _TARGET.MessageStore = MessageStore
 def handle_chkflags(context: _TARGET.AmpersandDispatchContext):
     """Emulate ``chkflags`` while keeping the indicator controller in sync."""
 
-    result = _PROTOTYPE_HANDLE_CHKFLAGS(context)
-
     try:
         registry = _TARGET._require_registry(context)
     except RuntimeError:
-        return result
+        return _PROTOTYPE_HANDLE_CHKFLAGS(context)
 
     services = _TARGET._resolve_services(context, registry)
     console = _TARGET._resolve_console_service(services)
+
+    if console is not None:
+        staging_map = console.masked_pane_staging_map
+        sequence_key = _normalise_ampersand_sequence_key(context.invocation)
+        specs = staging_map.ampersand_sequence(sequence_key)
+        for spec in specs:
+            staging_map.stage_macro(console, spec.macro)
+
+    result = _PROTOTYPE_HANDLE_CHKFLAGS(context)
+
     if console is None:
         return result
 

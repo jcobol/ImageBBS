@@ -179,6 +179,21 @@ _FLAG_MACRO_INDICES: Mapping[int, Tuple[MaskedPaneMacro, ...]] = MappingProxyTyp
 )
 
 
+_FLAG_SEQUENCE_OPERATIONS: Mapping[int, Tuple[int, ...]] = MappingProxyType(
+    {
+        0x04: (3,),
+        0x09: (3,),
+        0x0D: (3,),
+        0x14: (3, 2),
+        0x15: (3,),
+        0x16: (3,),
+        0x17: (3,),
+        0x18: (3,),
+        0x19: (3,),
+    }
+)
+
+
 _DIRECT_SLOT_MACROS: Mapping[int, Tuple[MaskedPaneMacro, ...]] = MappingProxyType(
     {
         0x20: (MaskedPaneMacro.SYSOP_HEADER,),
@@ -253,7 +268,7 @@ def build_masked_pane_staging_map(console: ConsoleService) -> MaskedPaneStagingM
             continue
         flag_slots[entry.flag_index] = spec
 
-    ampersand_sequences = {
+    ampersand_sequences: dict[str, Tuple[MaskedPaneMacroSpec, ...]] = {
         "&,28": (
             macros[MaskedPaneMacro.FILE_TRANSFERS_HEADER],
             macros[MaskedPaneMacro.FILE_TRANSFERS_PROMPT],
@@ -267,6 +282,14 @@ def build_masked_pane_staging_map(console: ConsoleService) -> MaskedPaneStagingM
             if entry.slot in console._MASKED_OVERLAY_FLAG_SLOTS
         ),
     }
+
+    for flag_index, operations in _FLAG_SEQUENCE_OPERATIONS.items():
+        spec = flag_slots.get(flag_index)
+        if spec is None:
+            continue
+        for operation in operations:
+            key = f"&,52,{flag_index},{operation}"
+            ampersand_sequences[key] = (spec,)
 
     return MaskedPaneStagingMap(
         macros=MappingProxyType(macros),
