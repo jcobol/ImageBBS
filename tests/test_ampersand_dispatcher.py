@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Mapping
 
 import pytest
 
@@ -116,6 +117,38 @@ def test_dispatcher_shares_console_service_with_registry() -> None:
     appended = after[len(before) :]
     glyph_run = console_service.glyph_lookup.macros_by_slot[result.slot]
     assert appended == bytes(glyph_run.payload)
+
+
+def test_dispatcher_wraps_non_mapping_payload() -> None:
+    registry = AmpersandRegistry()
+    dispatcher = AmpersandDispatcher(registry=registry)
+    flag_index = next(iter(registry.available_flag_indices()))
+    defaults = registry.defaults
+    captured: dict[str, object] = {}
+
+    def handler(ctx: AmpersandDispatchContext) -> AmpersandResult:
+        captured["payload"] = ctx.payload
+        return AmpersandResult(
+            flag_index=flag_index,
+            slot=0x01,
+            handler_address=0xDEAD,
+            flag_records=defaults.flag_records,
+            flag_directory_block=defaults.flag_directory_block,
+            flag_directory_tail=defaults.flag_directory_tail,
+            flag_directory_text=defaults.flag_directory_text,
+            context=ctx,
+            rendered_text="",
+        )
+
+    registry.register_handler(flag_index, handler)
+
+    dispatcher.dispatch(f"&,{flag_index}", payload="token")
+
+    assert isinstance(captured["payload"], Mapping)
+    payload = captured["payload"]
+    assert payload["registry"] is registry
+    assert payload["payload"] == "token"
+    assert "services" in payload
 
 
 def test_parse_invocation_evaluates_numeric_expressions() -> None:
