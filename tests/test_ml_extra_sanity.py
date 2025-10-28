@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import gzip
 import json
 from pathlib import Path
 
@@ -25,6 +27,23 @@ def sanity_report() -> dict[str, object]:
 @pytest.fixture(scope="module")
 def metadata_snapshot(defaults: ml_extra_defaults.MLExtraDefaults) -> dict[str, object]:
     return ml_extra_reporting.collect_overlay_metadata(defaults)
+
+
+def _load_metadata_artifact() -> dict[str, object]:
+    path = (
+        Path(__file__).resolve().parents[1]
+        / "docs/porting/artifacts/ml-extra-overlay-metadata.json"
+    )
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _load_macro_directory_artifact() -> list[dict[str, object]]:
+    path = (
+        Path(__file__).resolve().parents[1]
+        / "docs/porting/artifacts/ml-extra-macro-screens.json.gz.base64"
+    )
+    raw = base64.b64decode(path.read_text(encoding="utf-8"))
+    return json.loads(gzip.decompress(raw))
 
 
 def test_run_checks_reports_payload_hashes(
@@ -83,6 +102,48 @@ def test_run_checks_metadata_snapshot_matches_helper(
 ) -> None:
     assert "metadata_snapshot" in sanity_report
     assert sanity_report["metadata_snapshot"] == metadata_snapshot
+
+
+def test_collect_overlay_metadata_matches_artifact(
+    defaults: ml_extra_defaults.MLExtraDefaults,
+) -> None:
+    snapshot = ml_extra_reporting.collect_overlay_metadata(defaults)
+    assert snapshot == _load_metadata_artifact()
+
+
+def test_macro_directory_matches_artifact(
+    defaults: ml_extra_defaults.MLExtraDefaults,
+) -> None:
+    recovered = [
+        {
+            "slot": entry.slot,
+            "address": entry.address,
+            "bytes": list(entry.payload),
+            "text": entry.decoded_text,
+        }
+        for entry in defaults.macros
+        if entry.address or entry.payload
+    ]
+
+    expected = _load_macro_directory_artifact()
+    overlay_slots = {item["slot"] for item in expected}
+    filtered = [item for item in recovered if item["slot"] in overlay_slots]
+    assert len(filtered) == len(expected)
+
+    for current, reference in zip(filtered, expected, strict=True):
+        assert current["slot"] == reference["slot"]
+        assert current["address"] == int(reference["address"][1:], 16)
+        assert [f"${value:02x}" for value in current["bytes"]] == reference["bytes"]
+        assert current["text"] == reference["text"]
+
+
+def test_extra_macro_payloads_present(
+    defaults: ml_extra_defaults.MLExtraDefaults,
+) -> None:
+    macros = defaults.macros_by_slot
+    assert 0x28 in macros and 0x29 in macros and 0x2A in macros
+    assert macros[0x29].decoded_text == "COMMAND (Q TO EXIT): "
+    assert macros[0x2A].decoded_text == "?? UNKNOWN COMMAND"
 
 
 def test_main_writes_metadata_json(
