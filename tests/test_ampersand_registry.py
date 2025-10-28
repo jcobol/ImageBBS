@@ -114,6 +114,17 @@ def test_registry_default_handler_uses_device_context_console_service() -> None:
     assert result.rendered_text == glyph_run.text
 
 
+def test_registry_register_service_merges_custom_service() -> None:
+    registry = AmpersandRegistry()
+    sentinel = object()
+    registry.register_service("custom", sentinel)
+    flag_index = next(iter(registry.available_flag_indices()))
+
+    result = registry.dispatch(flag_index, context=None, use_default=True)
+
+    assert result.services["custom"] is sentinel
+
+
 def test_message_editor_uses_registry_override_for_intro_banner() -> None:
     registry = AmpersandRegistry()
     flag_index = MessageEditor.INTRO_MACRO_INDEX

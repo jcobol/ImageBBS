@@ -1,6 +1,7 @@
-"""Wrapper for the prototype module."""
+"""Compat shim that re-exports the ampersand registry primitives."""
 from __future__ import annotations
 
-from ._compat import mirror_module
+from .ampersand.registry import AmpersandHandler, AmpersandRegistry, AmpersandResult
 
-_TARGET = mirror_module(globals(), "scripts.prototypes.ampersand_registry")
+__all__ = ["AmpersandHandler", "AmpersandRegistry", "AmpersandResult"]
+

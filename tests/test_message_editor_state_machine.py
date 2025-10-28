@@ -59,6 +59,34 @@ def _advance_to_main_menu(editor: MessageEditor, session: SessionContext) -> Non
     editor.dispatch(Event.ENTER, session)
 
 
+def test_intro_uses_fallback_text_when_handler_omits_rendered_text() -> None:
+    class NullRenderRegistry(StubAmpersandRegistry):
+        def dispatch(
+            self, flag_index: int, context: object, *, use_default: bool = False
+        ) -> AmpersandResult:
+            self.calls.append((flag_index, context))
+            return AmpersandResult(
+                flag_index=flag_index,
+                slot=flag_index,
+                handler_address=flag_index,
+                flag_records=tuple(),
+                flag_directory_block=tuple(),
+                flag_directory_tail=tuple(),
+                flag_directory_text="",
+                context=context,
+                rendered_text=None,
+                services=self.services,
+            )
+
+    registry = NullRenderRegistry()
+    editor = MessageEditor(registry=registry)
+    session = SessionContext(board_id="mb1", user_id="sysop", services=registry.services)
+
+    editor.dispatch(Event.ENTER, session)
+
+    assert session.modem_buffer[-1].startswith("\r*** IMAGE MESSAGE EDITOR")
+
+
 def test_read_flow_fetches_message_and_emits_macro() -> None:
     editor, session, registry, store = _bootstrap_editor()
     store.append(board_id="mb1", subject="Subject", author_handle="SYSOP", lines=["Line 1", "Line 2"])
