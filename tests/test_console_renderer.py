@@ -30,6 +30,13 @@ def editor_defaults() -> ml_extra_defaults.MLExtraDefaults:
     return ml_extra_defaults.MLExtraDefaults.from_overlay()
 
 
+@pytest.fixture
+def petscii_screen(
+    editor_defaults: ml_extra_defaults.MLExtraDefaults,
+) -> PetsciiScreen:
+    return PetsciiScreen(defaults=editor_defaults)
+
+
 def _artifact_root() -> Path:
     return Path(__file__).resolve().parents[1] / "docs/porting/artifacts"
 
@@ -841,6 +848,13 @@ def _resolve_vic_register_state(
     return dict(sorted(registers.items())), ordered_timeline
 
 
+@pytest.fixture
+def vic_register_state(
+    editor_defaults: ml_extra_defaults.MLExtraDefaults,
+) -> tuple[dict[int, int | None], tuple[VicRegisterTimelineEntry, ...]]:
+    return _resolve_vic_register_state(editor_defaults)
+
+
 def test_screen_seeds_overlay_palette(editor_defaults: ml_extra_defaults.MLExtraDefaults) -> None:
     screen = PetsciiScreen()
     assert screen.palette == editor_defaults.palette.colours
@@ -869,6 +883,26 @@ def test_screen_replays_hardware_colour_defaults(
     border_register = registers.get(0xD404)
     if border_register is not None:
         assert screen.border_colour == border_register
+
+
+def test_vic_register_timeline_entries_round_trip_to_dict(
+    petscii_screen: PetsciiScreen,
+    vic_register_state: tuple[dict[int, int | None], tuple[VicRegisterTimelineEntry, ...]],
+) -> None:
+    _, expected_timeline = vic_register_state
+
+    actual_timeline = petscii_screen.vic_register_timeline
+    assert actual_timeline == expected_timeline
+
+    previous_store = -1
+    for entry in actual_timeline:
+        assert isinstance(entry, VicRegisterTimelineEntry)
+        assert entry.store >= previous_store
+        previous_store = entry.store
+        mapping = entry.as_dict()
+        assert mapping["store"] == entry.store
+        assert mapping["address"] == entry.address
+        assert mapping["value"] == entry.value
 
 
 def test_console_renders_startup_banner(editor_defaults: ml_extra_defaults.MLExtraDefaults) -> None:
@@ -1226,6 +1260,51 @@ def test_reverse_mode_swaps_render_colours(editor_defaults: ml_extra_defaults.ML
     assert snapshot["background_colour"] == initial_background == editor_defaults.palette.colours[2]
 
 
+def test_screen_palette_setters_clamp_out_of_range_values(
+    petscii_screen: PetsciiScreen,
+) -> None:
+    palette = petscii_screen.palette
+
+    petscii_screen.set_screen_colour(0xFF)
+    assert petscii_screen.screen_colour == palette[0]
+
+    petscii_screen.set_background_colour(len(palette))
+    assert petscii_screen.background_colour == palette[2]
+
+    petscii_screen.set_border_colour(-1)
+    assert petscii_screen.border_colour == palette[3]
+
+    petscii_screen.set_screen_colour(1)
+    assert petscii_screen.screen_colour == palette[1]
+
+
+def test_console_poke_block_validates_arguments() -> None:
+    console = Console()
+
+    with pytest.raises(ValueError, match="poke_block requires screen_bytes and/or colour_bytes"):
+        console.poke_block()
+
+    with pytest.raises(ValueError, match="screen_address must be provided"):
+        console.poke_block(screen_bytes=b"\x00")
+
+    with pytest.raises(ValueError, match="colour_address must be provided"):
+        console.poke_block(colour_bytes=b"\x00")
+
+    with pytest.raises(ValueError, match="screen_length must be non-negative"):
+        console.poke_block(
+            screen_address=0x0400,
+            screen_bytes=b"\x00\x01",
+            screen_length=-1,
+        )
+
+    with pytest.raises(ValueError, match="colour_length must be non-negative"):
+        console.poke_block(
+            colour_address=0xD800,
+            colour_bytes=b"\x00\x01",
+            colour_length=-1,
+        )
+
+
 def _resolve_expected_colour(screen: PetsciiScreen, value: int, *, default_index: int = 0) -> int:
     resolved = int(value) & 0xFF
     palette = screen.palette
@@ -1296,6 +1375,25 @@ def test_console_poke_block_updates_chat_region_with_reverse_and_underline_state
     assert resolved_row[4] == (background, expected_colours[4])
 
 
+def test_console_peek_block_validates_arguments() -> None:
+    console = Console()
+
+    with pytest.raises(ValueError, match="peek_block requires screen_length and/or colour_length"):
+        console.peek_block()
+
+    with pytest.raises(ValueError, match="screen_length must be non-negative"):
+        console.peek_block(screen_length=-1)
+
+    with pytest.raises(ValueError, match="colour_length must be non-negative"):
+        console.peek_block(colour_length=-1)
+
+    with pytest.raises(ValueError, match="screen_address must be provided"):
+        console.peek_block(screen_length=1)
+
+    with pytest.raises(ValueError, match="colour_address must be provided"):
+        console.peek_block(colour_length=1)
+
+
 def test_spinner_direct_pokes_preserve_reverse_behaviour() -> None:
     screen = PetsciiScreen()
 
@@ -1332,6 +1430,17 @@ def test_spinner_direct_pokes_preserve_reverse_behaviour() -> None:
 
     resolved = screen.resolved_colour_matrix[row][column]
     assert resolved == (screen.background_colour, updated_colour)
+
+
+def test_console_overlay_glyph_lookup_cached_instance() -> None:
+    console = Console()
+
+    first = console.overlay_glyph_lookup
+    second = console.overlay_glyph_lookup
+
+    assert first is second
+    assert console.macro_glyphs is first.macros_by_slot
+    assert console.flag_glyph_records is first.flag_records
 
 
 def test_session_runner_cli_boot_banner_uses_ascii() -> None:

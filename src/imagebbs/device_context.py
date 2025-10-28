@@ -6,6 +6,7 @@ from typing import Iterable, Mapping
 
 from ._compat import mirror_module
 from . import setup_defaults as _setup_defaults
+from .console_renderer import VicRegisterTimelineEntry
 
 _TARGET = mirror_module(globals(), "scripts.prototypes.device_context")
 
@@ -17,6 +18,38 @@ FilesystemDriveLocator = _setup_defaults.FilesystemDriveLocator
 # Ensure runtime overrides reuse the prototype device helpers.
 DiskDrive = _TARGET.DiskDrive
 MaskedPaneBuffers = _TARGET.MaskedPaneBuffers
+
+
+class Console(_TARGET.Console):
+    """Console device exposing native VIC register metadata."""
+
+    def __init__(self, *args, **kwargs) -> None:  # type: ignore[no-untyped-def]
+        super().__init__(*args, **kwargs)
+        self._vic_registers = {
+            int(address): (int(value) if value is not None else None)
+            for address, value in getattr(self, "_vic_registers", {}).items()
+        }
+        original_timeline = tuple(getattr(self, "_vic_register_timeline", ()))
+        self._vic_register_timeline = tuple(
+            VicRegisterTimelineEntry(
+                store=int(entry.store),
+                address=int(entry.address),
+                value=(int(entry.value) if entry.value is not None else None),
+            )
+            for entry in original_timeline
+        )
+
+    @property
+    def vic_registers(self) -> dict[int, int | None]:
+        """Return the resolved VIC register defaults."""
+
+        return dict(self._vic_registers)
+
+    @property
+    def vic_register_timeline(self) -> tuple[VicRegisterTimelineEntry, ...]:
+        """Return the VIC register write timeline as native entries."""
+
+        return self._vic_register_timeline
 
 
 class ConsoleService(_TARGET.ConsoleService):
@@ -74,6 +107,7 @@ def bootstrap_device_context(
 
 
 # Ensure prototype helpers see the ImageBBS overrides.
+_TARGET.Console = Console
 _TARGET.ConsoleService = ConsoleService
 _TARGET.DeviceContext = DeviceContext
 _TARGET.bootstrap_device_context = bootstrap_device_context

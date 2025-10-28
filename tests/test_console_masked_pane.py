@@ -38,6 +38,54 @@ def _read_colour(service: ConsoleService, address: int, length: int) -> bytes:
     )
 
 
+def test_console_service_poke_block_validates_arguments() -> None:
+    console = Console()
+    service = ConsoleService(console)
+
+    with pytest.raises(ValueError, match="poke_block requires screen_bytes and/or colour_bytes"):
+        service.poke_block()
+
+    with pytest.raises(ValueError, match="screen_address must be provided"):
+        service.poke_block(screen_bytes=b"\x00")
+
+    with pytest.raises(ValueError, match="colour_address must be provided"):
+        service.poke_block(colour_bytes=b"\x00")
+
+    with pytest.raises(ValueError, match="screen_length must be non-negative"):
+        service.poke_block(
+            screen_address=0x0400,
+            screen_bytes=b"\x00\x01",
+            screen_length=-1,
+        )
+
+    with pytest.raises(ValueError, match="colour_length must be non-negative"):
+        service.poke_block(
+            colour_address=0xD800,
+            colour_bytes=b"\x00\x01",
+            colour_length=-1,
+        )
+
+
+def test_console_service_peek_block_validates_arguments() -> None:
+    console = Console()
+    service = ConsoleService(console)
+
+    with pytest.raises(ValueError, match="peek_block requires screen_length and/or colour_length"):
+        service.peek_block()
+
+    with pytest.raises(ValueError, match="screen_length must be non-negative"):
+        service.peek_block(screen_length=-1)
+
+    with pytest.raises(ValueError, match="colour_length must be non-negative"):
+        service.peek_block(colour_length=-1)
+
+    with pytest.raises(ValueError, match="screen_address must be provided"):
+        service.peek_block(screen_length=1)
+
+    with pytest.raises(ValueError, match="colour_address must be provided"):
+        service.peek_block(colour_length=1)
+
+
 def test_masked_pane_staging_map_uses_runtime_builder(monkeypatch: pytest.MonkeyPatch) -> None:
     console = Console()
     service = ConsoleService(console)
