@@ -170,6 +170,19 @@ DEFAULT_MODEM_BAUD_LIMIT = 1200
 
 
 @dataclass(frozen=True)
+class SetupConfig:
+    """Loaded drive assignments and ampersand overrides."""
+
+    drives: Tuple[DriveAssignment, ...]
+    ampersand_overrides: Dict[int, str]
+    modem_baud_limit: Optional[int] = None
+
+    def __post_init__(self) -> None:
+        # Ensure mutable values are not shared between instances.
+        object.__setattr__(self, "ampersand_overrides", dict(self.ampersand_overrides))
+
+
+@dataclass(frozen=True)
 class SetupDefaults:
     """Aggregates the stubbed values exposed by ``setup`` for host tooling."""
 
@@ -333,6 +346,7 @@ __all__ = [
     "ChatModeMessages",
     "PrimeTimeWindow",
     "ModemDefaults",
+    "SetupConfig",
     "SetupDefaults",
     "SysopProfile",
     "SetupDataRecords",

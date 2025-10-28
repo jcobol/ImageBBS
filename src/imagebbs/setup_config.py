@@ -1,26 +1,17 @@
-"""Host-side helpers for runtime setup configuration."""
+"""Load host drive configuration overlays from TOML files."""
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Mapping
 
 import tomllib
 
-from .setup_defaults import DriveAssignment, FilesystemDriveLocator, SetupDefaults
-
-
-@dataclass(frozen=True)
-class SetupConfig:
-    """Loaded drive assignments and ampersand overrides."""
-
-    drives: tuple[DriveAssignment, ...]
-    ampersand_overrides: Dict[int, str]
-    modem_baud_limit: int | None = None
-
-    def __post_init__(self) -> None:
-        # Ensure mutable values are not shared between instances.
-        object.__setattr__(self, "ampersand_overrides", dict(self.ampersand_overrides))
+from .setup_defaults import (
+    DriveAssignment,
+    FilesystemDriveLocator,
+    SetupConfig,
+    SetupDefaults,
+)
 
 
 def load_drive_config(config_path: Path) -> SetupConfig:
@@ -161,4 +152,3 @@ def _coerce_import_path(raw_path: Any) -> str:
 
 
 __all__ = ["load_drive_config", "SetupConfig"]
-

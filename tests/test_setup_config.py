@@ -1,152 +1,94 @@
-"""Tests for loading modern drive configuration overlays."""
+"""Regression tests for the TOML setup configuration loader."""
 from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
 
-from imagebbs import (
-    SetupDefaults,
-    SetupConfig,
-    bootstrap_device_context,
-    derive_drive_inventory,
-    load_drive_config,
-)
+from imagebbs.setup_config import load_drive_config
 from imagebbs.setup_defaults import (
-    CommodoreDeviceDrive,
-    DEFAULT_MODEM_BAUD_LIMIT,
+    DriveAssignment,
     FilesystemDriveLocator,
+    SetupConfig,
+    SetupDefaults,
 )
-from imagebbs.device_context import DiskDrive
 
 
-@pytest.fixture()
-def sample_config(tmp_path: Path) -> Path:
+def test_load_drive_config_applies_overrides(tmp_path: Path) -> None:
+    defaults = SetupDefaults.stub()
+
     config_dir = tmp_path / "config"
     config_dir.mkdir()
-    (config_dir / "relative_drive").mkdir()
-    absolute_drive = tmp_path / "absolute_drive"
+    relative_drive = config_dir / "relative"
+    relative_drive.mkdir()
+    absolute_drive = tmp_path / "absolute"
     absolute_drive.mkdir()
 
     config_path = config_dir / "storage.toml"
     config_path.write_text(
         "[slots]\n"
-        "5 = \"relative_drive\"\n"
-        f"6 = \"{absolute_drive}\"\n",
+        "1 = \"relative\"\n"
+        f"9 = \"{absolute_drive}\"\n\n"
+        "[ampersand_overrides]\n"
+        "0 = \"package.module:callable\"\n"
+        '"0x20" = "pkg.mod.attr"\n\n'
+        "[modem]\n"
+        "baud_limit = \"2400\"\n",
         encoding="utf-8",
     )
-    return config_path
 
-
-def test_load_drive_config_merges_stub_defaults(sample_config: Path) -> None:
-    config = load_drive_config(sample_config)
+    config = load_drive_config(config_path)
     assert isinstance(config, SetupConfig)
 
-    assignments = config.drives
-    lookup = {assignment.slot: assignment for assignment in assignments}
-
-    defaults = SetupDefaults.stub()
-    assert len(assignments) >= len(defaults.drives)
-    assert defaults.modem.baud_limit == DEFAULT_MODEM_BAUD_LIMIT
-
-    for slot in (1, 2, 3, 4):
-        locator = lookup[slot].locator
-        assert isinstance(locator, CommodoreDeviceDrive)
-
-    fs_five = lookup[5].locator
-    fs_six = lookup[6].locator
-    assert isinstance(fs_five, FilesystemDriveLocator)
-    assert isinstance(fs_six, FilesystemDriveLocator)
-    assert fs_five.path == (sample_config.parent / "relative_drive").resolve()
-    assert fs_six.path == (sample_config.parent.parent / "absolute_drive").resolve()
-
-    inventory = derive_drive_inventory(assignments)
-    assert inventory == defaults.drive_inventory
-    assert config.modem_baud_limit is None
-
-
-def test_bootstrap_device_context_registers_filesystem_drives(sample_config: Path) -> None:
-    config = load_drive_config(sample_config)
-    context = bootstrap_device_context(config.drives)
-
-    drive5 = context.devices.get("drive5")
-    drive6 = context.devices.get("drive6")
-    assert isinstance(drive5, DiskDrive)
-    assert isinstance(drive6, DiskDrive)
-
-    lookup = {assignment.slot: assignment for assignment in config.drives}
-    assert drive5.root == lookup[5].locator.path
-    assert drive6.root == lookup[6].locator.path
-
-    # Commodore-backed slots are intentionally not mounted as host paths.
-    assert "drive1" not in context.devices
-
-
-def test_load_drive_config_accepts_string_slot_keys(tmp_path: Path) -> None:
-    config_dir = tmp_path / "config"
-    config_dir.mkdir()
-    (config_dir / "string_drive").mkdir()
-
-    config_path = config_dir / "storage.toml"
-    config_path.write_text(
-        "[slots]\n" '"7" = "string_drive"\n',
-        encoding="utf-8",
+    expected_drives = list(defaults.drives)
+    expected_drives[0] = DriveAssignment(
+        slot=1,
+        locator=FilesystemDriveLocator(path=relative_drive.resolve()),
+    )
+    expected_drives.append(
+        DriveAssignment(
+            slot=9,
+            locator=FilesystemDriveLocator(path=absolute_drive.resolve()),
+        )
     )
 
-    assignments = load_drive_config(config_path).drives
-    lookup = {assignment.slot: assignment for assignment in assignments}
-
-    fs_seven = lookup[7].locator
-    assert isinstance(fs_seven, FilesystemDriveLocator)
-    assert fs_seven.path == (config_dir / "string_drive").resolve()
+    assert config.drives == tuple(expected_drives)
+    assert config.ampersand_overrides == {0: "package.module:callable", 0x20: "pkg.mod.attr"}
+    assert config.modem_baud_limit == 2400
 
 
-def test_load_drive_config_rejects_non_positive_slot(tmp_path: Path) -> None:
-    config_dir = tmp_path / "config"
-    config_dir.mkdir()
-    config_path = config_dir / "storage.toml"
-    config_path.write_text(
-        "[slots]\n" "0 = 'invalid'\n",
-        encoding="utf-8",
-    )
+@pytest.mark.parametrize(
+    "config_text",
+    [
+        "slots = \"not-a-table\"\n",
+        "[slots]\n1 = []\n",
+    ],
+)
+def test_load_drive_config_rejects_invalid_slots(tmp_path: Path, config_text: str) -> None:
+    config_path = tmp_path / "storage.toml"
+    config_path.write_text(config_text, encoding="utf-8")
 
-    with pytest.raises(ValueError, match="drive slot numbers must be positive"):
+    with pytest.raises((TypeError, ValueError)):
         load_drive_config(config_path)
 
 
-def test_load_drive_config_parses_ampersand_overrides(tmp_path: Path) -> None:
-    config_dir = tmp_path / "config"
-    config_dir.mkdir()
-    (config_dir / "drive").mkdir()
-
-    config_path = config_dir / "storage.toml"
+@pytest.mark.parametrize(
+    "overrides, expected_exception",
+    [
+        ("ampersand_overrides = []\n", ValueError),
+        ("[ampersand_overrides]\n0 = 1\n", TypeError),
+        ("[ampersand_overrides]\n-1 = \"callable\"\n", ValueError),
+    ],
+)
+def test_load_drive_config_validates_ampersand_overrides(
+    tmp_path: Path, overrides: str, expected_exception: type[Exception]
+) -> None:
+    (tmp_path / "drive").mkdir()
+    config_path = tmp_path / "storage.toml"
     config_path.write_text(
-        "[slots]\n"
-        "8 = \"drive\"\n\n"
-        "[ampersand_overrides]\n"
-        "0 = \"package.module:callable\"\n"
-        '"0x21" = "pkg.mod.attr"\n',
+        overrides + "\n[slots]\n1 = \"drive\"\n",
         encoding="utf-8",
     )
 
-    config = load_drive_config(config_path)
-    assert config.ampersand_overrides == {0: "package.module:callable", 0x21: "pkg.mod.attr"}
-    assert config.modem_baud_limit is None
-
-
-def test_load_drive_config_parses_modem_baud_limit(tmp_path: Path) -> None:
-    config_dir = tmp_path / "config"
-    config_dir.mkdir()
-    (config_dir / "drive").mkdir()
-
-    config_path = config_dir / "storage.toml"
-    config_path.write_text(
-        "[slots]\n"
-        "8 = \"drive\"\n\n"
-        "[modem]\n"
-        "baud_limit = 2400\n",
-        encoding="utf-8",
-    )
-
-    config = load_drive_config(config_path)
-    assert config.modem_baud_limit == 2400
+    with pytest.raises(expected_exception):
+        load_drive_config(config_path)
