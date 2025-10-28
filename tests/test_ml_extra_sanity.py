@@ -165,6 +165,16 @@ def test_main_writes_metadata_json(
     assert "Slot diff (recovered vs. stub data):" in capture.out
 
 
+def test_main_json_output_includes_metadata(
+    capsys: pytest.CaptureFixture[str],
+    metadata_snapshot: dict[str, object],
+) -> None:
+    ml_extra_sanity.main(["--json"])
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["metadata_snapshot"] == metadata_snapshot
+    assert payload["payload_hashes"], "expected payload hashes in JSON report"
+
+
 def test_main_with_matching_baseline(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],

@@ -12,10 +12,13 @@ from pathlib import Path
 
 import pytest
 
+from imagebbs import ml_extra_cli
 from imagebbs import ml_extra_defaults
 from imagebbs import ml_extra_disasm
+from imagebbs import ml_extra_dump_flag_strings
 from imagebbs import ml_extra_dump_macros
 from imagebbs import ml_extra_reporting
+from imagebbs import ml_extra_screen_dumps
 
 
 @pytest.fixture(scope="module")
@@ -34,14 +37,29 @@ def metadata_snapshot(defaults: ml_extra_defaults.MLExtraDefaults) -> dict[str, 
 
 
 @pytest.fixture(scope="module")
-def macro_screen_artifacts() -> dict[int, dict[str, object]]:
+def macro_screen_records() -> list[dict[str, object]]:
     root = Path(__file__).resolve().parents[1] / "docs/porting/artifacts"
     path = root / "ml-extra-macro-screens.json.gz.base64"
     raw_text = path.read_text(encoding="utf-8")
     payload = base64.b64decode("".join(raw_text.split()))
     archive = gzip.decompress(payload).decode("utf-8")
-    records = json.loads(archive)
-    return {int(entry["slot"]): entry for entry in records}
+    return json.loads(archive)
+
+
+@pytest.fixture(scope="module")
+def macro_screen_artifacts(
+    macro_screen_records: list[dict[str, object]]
+) -> dict[int, dict[str, object]]:
+    return {int(entry["slot"]): entry for entry in macro_screen_records}
+
+
+@pytest.fixture(scope="module")
+def flag_screen_artifact() -> dict[str, object]:
+    path = (
+        Path(__file__).resolve().parents[1]
+        / "docs/porting/artifacts/ml-extra-flag-screens.json"
+    )
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def test_dump_macros_metadata_json(
@@ -92,6 +110,25 @@ def test_dump_macros_metadata_json_file(
     assert payload["macro_slots"] == [entry.slot for entry in defaults.macros]
     output = capsys.readouterr().out
     assert "slot" in output, "expected macro dump output alongside file write"
+
+
+def test_dump_flag_strings_cli_output(
+    capsys: pytest.CaptureFixture[str], defaults: ml_extra_defaults.MLExtraDefaults
+) -> None:
+    ml_extra_dump_flag_strings.main([])
+    output = capsys.readouterr().out
+    assert f"overlay: {ml_extra_defaults.default_overlay_path()}" in output
+    assert "flag data start: $d9c3" in output
+    decoded_line = next(
+        line for line in output.splitlines() if line.startswith("decoded bytes")
+    )
+    raw_line = next(line for line in output.splitlines() if line.startswith("raw bytes"))
+    raw_values = raw_line.partition(": ")[2].split()
+    assert raw_values == [f"${value:02x}" for value in defaults.flag_directory_block]
+    decoded_values = decoded_line.partition(": ")[2].split()
+    expected = [f"${(value ^ 0xFF):02x}" for value in defaults.flag_directory_block]
+    assert decoded_values == expected
+    assert defaults.flag_directory_text in output
 
 
 def test_disasm_metadata_text(capsys: pytest.CaptureFixture[str], sample_slot: int) -> None:
@@ -155,6 +192,48 @@ def _baseline_path() -> Path:
         / "artifacts"
         / "ml-extra-overlay-metadata.json"
     )
+
+
+def _run_cli(args: list[str]) -> subprocess.CompletedProcess[str]:
+    command = [sys.executable, "-m", "imagebbs.ml_extra_cli", *args]
+    return subprocess.run(
+        command,
+        check=False,
+        capture_output=True,
+        text=True,
+        env=_python_env(),
+    )
+
+
+def test_cli_lists_commands(capsys: pytest.CaptureFixture[str]) -> None:
+    ml_extra_cli.main(["--help"])
+    output = capsys.readouterr().out
+    for name in sorted(ml_extra_cli.COMMANDS):
+        assert name in output
+
+
+def test_cli_dispatches_dump_macros(
+    sample_slot: int, defaults: ml_extra_defaults.MLExtraDefaults
+) -> None:
+    result = _run_cli(["dump-macros", "--json", "--slot", str(sample_slot)])
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    rows = list(
+        ml_extra_dump_macros.iter_macro_dumps(defaults, slots=[sample_slot])
+    )
+    assert payload == [row.as_dict() for row in rows]
+
+
+def test_cli_unknown_command() -> None:
+    result = _run_cli(["unknown-command"])
+    assert result.returncode == 1
+    assert "Unknown command" in result.stdout
+
+
+def test_cli_help_from_subprocess() -> None:
+    result = _run_cli(["--help"])
+    assert result.returncode == 0
+    assert "Available commands" in result.stdout
 
 
 def test_snapshot_guard_matches_baseline() -> None:
@@ -242,6 +321,24 @@ def test_dump_macros_file_transfer_slots(
         assert row["bytes"] == artifact["bytes"]
         assert row["text"] == artifact["text"]
         assert len(artifact["bytes"]) == artifact.get("byte_count", len(artifact["bytes"]))
+
+
+def test_screen_dumps_matches_artifacts(
+    tmp_path: Path,
+    macro_screen_records: list[dict[str, object]],
+    flag_screen_artifact: dict[str, object],
+) -> None:
+    output_dir = tmp_path / "dumps"
+    ml_extra_screen_dumps.main(["--output-dir", str(output_dir)])
+
+    macro_path = output_dir / "ml-extra-macro-screens.json"
+    flag_path = output_dir / "ml-extra-flag-screens.json"
+
+    generated_macros = json.loads(macro_path.read_text(encoding="utf-8"))
+    generated_flags = json.loads(flag_path.read_text(encoding="utf-8"))
+
+    assert generated_macros == macro_screen_records
+    assert generated_flags == flag_screen_artifact
 
 
 def test_refresh_pipeline_matches_baseline(tmp_path: Path) -> None:
