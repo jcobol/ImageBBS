@@ -32,6 +32,18 @@ def _read_colour(service: ConsoleService, address: int, length: int) -> bytes:
     )
 
 
+def test_console_transcript_records_ascii_and_binary_payloads() -> None:
+    console = Console()
+    service = ConsoleService(console)
+
+    console.write("HELLO\r")
+    console.write(b"\x93GOODBYE\r")
+
+    assert console.transcript == "HELLO\r\nGOODBYE\n"
+    assert console.transcript_bytes == b"HELLO\r\x93GOODBYE\r"
+    assert list(service.device.output) == ["HELLO\r", "\nGOODBYE\n"]
+
+
 def test_fill_colour_span_writes_resolved_palette_without_transcript() -> None:
     console = Console()
     service = ConsoleService(console)
