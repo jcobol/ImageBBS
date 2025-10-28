@@ -5,6 +5,8 @@ from pathlib import Path
 from imagebbs.device_context import (
     DeviceContext,
     DiskDrive,
+    LoopbackModemTransport,
+    Modem,
     SequentialFileChannel,
 )
 
@@ -41,3 +43,42 @@ def test_sequential_file_roundtrip(tmp_path: Path) -> None:
     response = context.issue_command(slot, "S:GREETING")
     assert response == "00,OK,00,00"
     assert not host_path.exists()
+
+
+def test_disk_drive_command_responses(tmp_path: Path) -> None:
+    context = _bootstrap_context(tmp_path)
+    slot = 8
+
+    command_channel = context.command_channels[slot]
+    assert command_channel.dump().endswith("00,OK,00,00\r")
+
+    initialise_response = context.issue_command(slot, "I")
+    assert initialise_response == "00,OK,00,00"
+    assert command_channel.dump().endswith("00,OK,00,00\r")
+
+    host_file = tmp_path / "DOSFILE"
+    host_file.write_text("PAYLOAD", encoding="latin-1")
+
+    directory_response = context.issue_command(slot, "$")
+    assert directory_response.startswith("00,")
+    assert "DOSFILE" in directory_response
+
+    scratch_response = context.issue_command(slot, "S:DOSFILE")
+    assert scratch_response == "00,OK,00,00"
+    assert not host_file.exists()
+
+
+def test_loopback_modem_transport_roundtrip() -> None:
+    context = DeviceContext()
+    modem = context.register_modem_device()
+    assert isinstance(modem, Modem)
+    assert isinstance(modem.transport, LoopbackModemTransport)
+
+    channel = context.open(modem.name, 2, 0)
+    channel.write("HELLO")
+    assert modem.collect_transmit() == "HELLO"
+
+    modem.enqueue_receive("WORLD")
+    assert modem.read() == "WORLD"
+
+    context.close(2, 0)

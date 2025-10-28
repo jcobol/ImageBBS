@@ -399,6 +399,63 @@ def test_ampersand_28_sequences_survive_bare_ampersand_and_toggle_staging() -> N
         assert tuple(buffers.staged_screen) == (0x20,) * buffers.width
         assert tuple(buffers.staged_colour) == (fill_colour,) * buffers.width
 
+
+def test_masked_pane_buffers_pending_payload_helpers() -> None:
+    buffers = MaskedPaneBuffers()
+
+    glyphs = bytes(range(buffers.width))
+    colours = bytes((index % 16) for index in range(buffers.width))
+
+    buffers.cache_pending_payload(glyphs, colours)
+    assert buffers.has_pending_payload() is True
+    peeked = buffers.peek_pending_payload()
+    assert peeked == (glyphs, colours)
+
+    consumed = buffers.consume_pending_payload()
+    assert consumed == (glyphs, colours)
+    assert buffers.has_pending_payload() is False
+
+    # The first cache after a consume is intentionally suppressed to mirror
+    # the overlay's staging loop.
+    buffers.cache_pending_payload(glyphs, colours)
+    assert buffers.has_pending_payload() is False
+    buffers.cache_pending_payload(glyphs, colours)
+    assert buffers.peek_pending_payload() == (glyphs, colours)
+
+    buffers.clear_pending_payload()
+    assert buffers.has_pending_payload() is False
+
+
+def test_console_masked_pane_rotation_applies_pending_payload() -> None:
+    context = bootstrap_device_context(assignments=())
+    console = context.get_service("console")
+    assert isinstance(console, ConsoleService)
+    buffers = context.get_service("masked_pane_buffers")
+    assert isinstance(buffers, MaskedPaneBuffers)
+
+    glyphs = bytes((0x60 + index) % 256 for index in range(buffers.width))
+    colours = bytes((index % 16) for index in range(buffers.width))
+
+    buffers.clear_pending_payload()
+    console.clear_masked_pane_staging(buffers, glyph=0x20, colour=0x01)
+    console.stage_masked_pane_overlay(glyphs, colours)
+
+    pending = buffers.peek_pending_payload()
+    assert pending is not None
+    assert pending[0][: len(glyphs)] == glyphs[: len(pending[0])]
+    assert pending[1][: len(colours)] == colours[: len(pending[1])]
+    assert buffers.dirty is True
+
+    console.commit_masked_pane_staging()
+
+    assert buffers.dirty is False
+    assert buffers.has_pending_payload() is False
+    assert tuple(buffers.live_screen)[: len(glyphs)] == tuple(glyphs[: buffers.width])
+    assert tuple(buffers.live_colour)[: len(colours)] == tuple(
+        colours[: buffers.width]
+    )
+    assert tuple(buffers.staged_screen) == (0x20,) * buffers.width
+
 def test_ampersand_52_flag_sequences_stage_masked_slots() -> None:
     context = bootstrap_device_context(
         assignments=(), ampersand_overrides=BUILTIN_AMPERSAND_OVERRIDES
