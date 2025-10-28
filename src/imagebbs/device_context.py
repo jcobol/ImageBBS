@@ -5,12 +5,14 @@ from importlib import import_module
 from typing import Iterable, Mapping
 
 from ._compat import mirror_module
+from . import setup_defaults as _setup_defaults
 
 _TARGET = mirror_module(globals(), "scripts.prototypes.device_context")
 
-# Populate globals for prototype symbols that fall outside ``__all__``.
-DriveAssignment = _TARGET.DriveAssignment
-FilesystemDriveLocator = _TARGET.FilesystemDriveLocator
+# Populate globals for prototype symbols that fall outside ``__all__`` while
+# ensuring they reference the native dataclasses.
+DriveAssignment = _setup_defaults.DriveAssignment
+FilesystemDriveLocator = _setup_defaults.FilesystemDriveLocator
 
 # Ensure runtime overrides reuse the prototype device helpers.
 DiskDrive = _TARGET.DiskDrive

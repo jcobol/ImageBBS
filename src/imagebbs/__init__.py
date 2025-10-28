@@ -12,6 +12,10 @@ for _name in __all__:
 from .runtime.main_menu import MainMenuEvent, MainMenuModule, MenuCommand, MenuState
 from .runtime.session_runner import SessionRunner
 
+from . import device_context as _device_context
+from . import setup_config as _setup_config
+from . import setup_defaults as _setup_defaults
+
 globals().update(
     MainMenuEvent=MainMenuEvent,
     MainMenuModule=MainMenuModule,
@@ -27,6 +31,21 @@ for _override in (
     "MenuState",
     "SessionRunner",
 ):
+    if _override not in __all__:
+        __all__.append(_override)
+
+for _override in getattr(_setup_defaults, "__all__", ()):  # pragma: no branch - data-driven
+    globals()[_override] = getattr(_setup_defaults, _override)
+    if _override not in __all__:
+        __all__.append(_override)
+
+for _override in getattr(_setup_config, "__all__", ()):  # pragma: no branch - data-driven
+    globals()[_override] = getattr(_setup_config, _override)
+    if _override not in __all__:
+        __all__.append(_override)
+
+for _override in getattr(_device_context, "__all__", ()):  # pragma: no branch - data-driven
+    globals()[_override] = getattr(_device_context, _override)
     if _override not in __all__:
         __all__.append(_override)
 
