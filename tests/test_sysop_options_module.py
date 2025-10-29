@@ -8,6 +8,11 @@ from imagebbs.runtime.sysop_options import (
 )
 
 
+class _DummySysopOptionsEvent:
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+
 def _bootstrap_kernel() -> tuple[SessionKernel, SysopOptionsModule]:
     module = SysopOptionsModule()
     kernel = SessionKernel(module=module)
@@ -177,3 +182,24 @@ def test_sysop_options_exit_terminates_session() -> None:
 
     assert state is SessionState.EXIT
     assert module.last_command == "EX"
+
+
+def test_sysop_options_handles_dummy_events_by_name() -> None:
+    kernel, module = _bootstrap_kernel()
+
+    state = kernel.step(_DummySysopOptionsEvent("ENTER"))
+
+    assert state is SessionState.SYSOP_OPTIONS
+    assert module.state is SysopOptionsState.READY
+
+    module.rendered_slots.clear()
+
+    state = kernel.step(_DummySysopOptionsEvent("COMMAND"), "sy")
+
+    assert state is SessionState.SYSOP_OPTIONS
+    assert module.last_command == "SY"
+    assert module.rendered_slots[-3:] == [
+        module.SAYING_PREAMBLE_SLOT,
+        module.SAYING_OUTPUT_SLOT,
+        module.MENU_PROMPT_SLOT,
+    ]
