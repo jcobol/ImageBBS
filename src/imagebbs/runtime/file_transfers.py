@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import Enum, auto
 from typing import ClassVar, Mapping, Optional
 
 from ..ampersand_dispatcher import AmpersandDispatcher
@@ -10,13 +11,19 @@ from ..device_context import ConsoleService
 from ..session_kernel import SessionKernel, SessionState
 from .macro_rendering import render_macro_with_overlay_commit
 from .masked_pane_staging import MaskedPaneMacro
-from scripts.prototypes.runtime.file_transfers import (
-    FileTransferEvent as PrototypeFileTransferEvent,
-    FileTransferMenuState as PrototypeFileTransferMenuState,
-)
 
-FileTransferEvent = PrototypeFileTransferEvent
-FileTransferMenuState = PrototypeFileTransferMenuState
+class FileTransferMenuState(Enum):
+    """Internal states exposed by :class:`FileTransfersModule`."""
+
+    INTRO = auto()
+    READY = auto()
+
+
+class FileTransferEvent(Enum):
+    """Events that drive menu rendering and command handling."""
+
+    ENTER = auto()
+    COMMAND = auto()
 
 
 @dataclass
@@ -248,20 +255,15 @@ class FileTransfersModule:
             setter(enabled)
 
     @staticmethod
-    def _matches_event(
-        candidate: object, expected: PrototypeFileTransferEvent
-    ) -> bool:
+    def _matches_event(candidate: object, expected: FileTransferEvent) -> bool:
         if candidate is expected:
             return True
-        if isinstance(candidate, PrototypeFileTransferEvent):
+        if isinstance(candidate, FileTransferEvent):
             return candidate == expected
         name = getattr(candidate, "name", None)
-        if name is None:
+        if not isinstance(name, str):
             return False
-        try:
-            return PrototypeFileTransferEvent[name] is expected
-        except KeyError:  # pragma: no cover - defensive guard
-            return False
+        return name == expected.name
 
 
 __all__ = [
