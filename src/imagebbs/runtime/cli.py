@@ -6,8 +6,9 @@ import argparse
 import asyncio
 import contextlib
 import sys
+import threading
 from pathlib import Path
-from typing import IO, Callable, Sequence, Tuple
+from typing import IO, Callable, Iterator, Sequence, Tuple
 
 from ..message_editor import SessionContext
 from ..session_kernel import SessionState
@@ -16,6 +17,7 @@ from .console_ui import IdleTimerScheduler, SysopConsoleApp
 from .editor_submission import EditorSubmissionHandler, SyncEditorIO
 from .indicator_controller import IndicatorController
 from .message_store import MessageStore
+from .message_store_repository import message_store_lock
 from .session_factory import (
     DEFAULT_RUNTIME_SESSION_FACTORY,
     RuntimeSessionFactory,
@@ -151,6 +153,57 @@ def _persist_messages(
     runtime_factory.persist_messages(args, runner)
 
 
+@contextlib.contextmanager
+def _runner_with_persistence(
+    args: argparse.Namespace,
+    *,
+    factory: RuntimeSessionFactory | None = None,
+) -> Iterator[SessionRunner]:
+    runtime_factory = _ensure_factory(factory)
+    messages_path: Path | None = getattr(args, "messages_path", None)
+    if messages_path is None:
+        lock_cm: contextlib.AbstractContextManager[object] = contextlib.nullcontext()
+    else:
+        lock_cm = message_store_lock(messages_path)
+    with lock_cm:
+        runner = create_runner(args, factory=runtime_factory)
+        try:
+            yield runner
+        finally:
+            _persist_messages(args, runner, factory=runtime_factory)
+
+
+@contextlib.asynccontextmanager
+async def _async_runner_with_persistence(
+    args: argparse.Namespace,
+    *,
+    factory: RuntimeSessionFactory | None = None,
+) -> Iterator[SessionRunner]:
+    runtime_factory = _ensure_factory(factory)
+    messages_path: Path | None = getattr(args, "messages_path", None)
+    if messages_path is None:
+        runner = create_runner(args, factory=runtime_factory)
+        try:
+            yield runner
+        finally:
+            _persist_messages(args, runner, factory=runtime_factory)
+        return
+
+    lock = message_store_lock(messages_path)
+    owner_id = threading.get_ident()
+    await asyncio.to_thread(lock.acquire, owner_id=owner_id)
+    runner: SessionRunner | None = None
+    try:
+        runner = create_runner(args, factory=runtime_factory)
+        try:
+            yield runner
+        finally:
+            if runner is not None:
+                _persist_messages(args, runner, factory=runtime_factory)
+    finally:
+        await asyncio.to_thread(lock.release)
+
+
 async def run_stream_session(
     args: argparse.Namespace,
     reader: asyncio.StreamReader,
@@ -175,50 +228,51 @@ async def run_stream_session(
     """Create a runner and bridge it to ``reader``/``writer``."""
 
     runtime_factory = _ensure_factory(factory)
-    runner = create_runner(args, factory=runtime_factory)
-    instrumentation = SessionInstrumentation(
-        runner,
-        indicator_controller_cls=_resolve_indicator_controller_cls(),
-        idle_timer_scheduler_cls=_resolve_idle_timer_scheduler_cls(),
-    )
-    instrumentation.ensure_indicator_controller()
-    if telnet_transport_factory is None:
-        telnet_transport_factory = (
-            lambda runner, reader, writer, instrumentation: TelnetModemTransport(
-                runner,
-                reader,
-                writer,
-                instrumentation=instrumentation,
-            )
+    async with _async_runner_with_persistence(args, factory=runtime_factory) as runner:
+        instrumentation = SessionInstrumentation(
+            runner,
+            indicator_controller_cls=_resolve_indicator_controller_cls(),
+            idle_timer_scheduler_cls=_resolve_idle_timer_scheduler_cls(),
         )
-    telnet_transport = telnet_transport_factory(
-        runner,
-        reader,
-        writer,
-        instrumentation,
-    )
-    baud_limit = getattr(getattr(runner.defaults, "modem", None), "baud_limit", None)
-    if baud_limit is not None:
-        if baud_limited_transport_factory is None:
-            baud_limited_transport_factory = (
-                lambda transport, limit: BaudLimitedTransport(transport, limit)
+        instrumentation.ensure_indicator_controller()
+        if telnet_transport_factory is None:
+            telnet_transport_factory = (
+                lambda runner, reader, writer, instrumentation: TelnetModemTransport(
+                    runner,
+                    reader,
+                    writer,
+                    instrumentation=instrumentation,
+                )
             )
-        transport = baud_limited_transport_factory(telnet_transport, baud_limit)
-    else:
-        transport = telnet_transport
-    context = runner.kernel.context
-    context.register_modem_device(transport=transport)
-    transport.open()
-    try:
-        await telnet_transport.wait_closed()
-    finally:
-        transport.close()
+        telnet_transport = telnet_transport_factory(
+            runner,
+            reader,
+            writer,
+            instrumentation,
+        )
+        baud_limit = getattr(
+            getattr(runner.defaults, "modem", None), "baud_limit", None
+        )
+        if baud_limit is not None:
+            if baud_limited_transport_factory is None:
+                baud_limited_transport_factory = (
+                    lambda transport, limit: BaudLimitedTransport(transport, limit)
+                )
+            transport = baud_limited_transport_factory(telnet_transport, baud_limit)
+        else:
+            transport = telnet_transport
+        context = runner.kernel.context
+        context.register_modem_device(transport=transport)
+        transport.open()
         try:
-            writer.close()
-            await writer.wait_closed()
-        except ConnectionError:
-            pass
-        _persist_messages(args, runner, factory=runtime_factory)
+            await telnet_transport.wait_closed()
+        finally:
+            transport.close()
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except ConnectionError:
+                pass
 
 
 async def start_session_server(
@@ -286,7 +340,7 @@ def _maybe_collect_editor_submission(
     return handler.collect_sync(stream_io)
 
 
-def run_session(
+def drive_session(
     runner: SessionRunner,
     *,
     input_stream: IO[str] = sys.stdin,
@@ -371,6 +425,22 @@ def run_session(
             return SessionState.EXIT
 
 
+def run_session(
+    args: argparse.Namespace,
+    *,
+    factory: RuntimeSessionFactory | None = None,
+    input_stream: IO[str] = sys.stdin,
+    output_stream: IO[str] = sys.stdout,
+) -> SessionState:
+    """Create a runner for ``args`` and drive it using the console streams."""
+
+    runtime_factory = _ensure_factory(factory)
+    with _runner_with_persistence(args, factory=runtime_factory) as runner:
+        return drive_session(
+            runner, input_stream=input_stream, output_stream=output_stream
+        )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Entry point for the runtime CLI."""
 
@@ -386,24 +456,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         asyncio.run(run_connect(args, host, port))
         return 0
     runtime_factory = DEFAULT_RUNTIME_SESSION_FACTORY
-    runner = create_runner(args, factory=runtime_factory)
-    if args.curses_ui:
-        instrumentation = SessionInstrumentation(
-            runner,
-            indicator_controller_cls=_resolve_indicator_controller_cls(),
-            idle_timer_scheduler_cls=_resolve_idle_timer_scheduler_cls(),
-        )
-        instrumentation.ensure_indicator_controller()
-        instrumentation.reset_idle_timer()
-        app = SysopConsoleApp(
-            runner.console,
-            runner=runner,
-            instrumentation=instrumentation,
-        )
-        app.run()
-    else:
-        run_session(runner)
-    _persist_messages(args, runner, factory=runtime_factory)
+    with _runner_with_persistence(args, factory=runtime_factory) as runner:
+        if args.curses_ui:
+            instrumentation = SessionInstrumentation(
+                runner,
+                indicator_controller_cls=_resolve_indicator_controller_cls(),
+                idle_timer_scheduler_cls=_resolve_idle_timer_scheduler_cls(),
+            )
+            instrumentation.ensure_indicator_controller()
+            instrumentation.reset_idle_timer()
+            app = SysopConsoleApp(
+                runner.console,
+                runner=runner,
+                instrumentation=instrumentation,
+            )
+            app.run()
+        else:
+            drive_session(runner)
     return 0
 
 
@@ -412,6 +481,7 @@ if __name__ == "__main__":  # pragma: no cover - exercised via python -m
 
 
 __all__ = [
+    "drive_session",
     "create_runner",
     "main",
     "parse_args",

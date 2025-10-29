@@ -81,7 +81,10 @@ class RuntimeSessionFactory:
         path: Path | None = getattr(args, "messages_path", None)
         if path is None:
             return
-        self._message_store_saver(runner.message_store, path)
+        initial_keys = getattr(runner, "_initial_message_keys", None)
+        self._message_store_saver(
+            runner.message_store, path, initial_keys=initial_keys
+        )
 
 
 def _build_defaults_from_args(args: argparse.Namespace) -> SetupDefaults:

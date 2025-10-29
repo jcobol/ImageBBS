@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import io
 from collections import deque
 import unittest.mock as mock
@@ -6,10 +7,13 @@ from pathlib import Path
 
 from imagebbs.runtime.cli import (
     create_runner,
+    drive_session,
     parse_args,
     run_session,
+    run_stream_session,
     start_session_server,
 )
+from imagebbs.runtime.message_store_repository import load_message_store
 from imagebbs.session_kernel import SessionState
 from imagebbs.setup_defaults import (
     DEFAULT_MODEM_BAUD_LIMIT,
@@ -20,14 +24,14 @@ from imagebbs.runtime.console_ui import IdleTimerScheduler
 from imagebbs.runtime.indicator_controller import IndicatorController
 
 
-def test_run_session_handles_exit_sequence() -> None:
+def test_drive_session_handles_exit_sequence() -> None:
     args = parse_args([])
     runner = create_runner(args)
 
     input_stream = io.StringIO("EX\n")
     output_stream = io.StringIO()
 
-    final_state = run_session(
+    final_state = drive_session(
         runner, input_stream=input_stream, output_stream=output_stream
     )
 
@@ -38,6 +42,24 @@ def test_run_session_handles_exit_sequence() -> None:
     assert args.listen is None
     assert args.connect is None
     assert runner.defaults.modem.baud_limit == DEFAULT_MODEM_BAUD_LIMIT
+
+
+def test_run_session_acquires_lock_and_persists(tmp_path: Path) -> None:
+    messages_path = tmp_path / "messages.json"
+    args = parse_args(["--messages-path", str(messages_path)])
+
+    input_stream = io.StringIO("EX\n")
+    output_stream = io.StringIO()
+
+    final_state = run_session(
+        args, input_stream=input_stream, output_stream=output_stream
+    )
+
+    assert final_state is SessionState.EXIT
+    assert messages_path.exists()
+    stored = load_message_store(messages_path)
+    assert list(stored.iter_records()) == []
+    assert output_stream.getvalue()
 
 
 def test_parse_args_defaults_to_curses_ui() -> None:
@@ -168,7 +190,7 @@ def test_run_session_posts_message_via_editor() -> None:
     input_stream = io.StringIO(script)
     output_stream = io.StringIO()
 
-    final_state = run_session(
+    final_state = drive_session(
         runner, input_stream=input_stream, output_stream=output_stream
     )
 
@@ -267,7 +289,7 @@ def test_run_session_pauses_and_flushes_output_on_flow_control() -> None:
         "imagebbs.runtime.cli._resolve_idle_timer_scheduler_cls",
         return_value=RecordingScheduler,
     ):
-        final_state = run_session(
+        final_state = drive_session(
             runner, input_stream=input_stream, output_stream=output_stream
         )
 
@@ -331,7 +353,7 @@ def test_run_session_advances_spinner_and_idle_timer() -> None:
     ), mock.patch(
         "scripts.prototypes.runtime.cli.IndicatorController", RecordingIndicatorController
     ):
-        final_state = run_session(
+        final_state = drive_session(
             runner, input_stream=input_stream, output_stream=output_stream
         )
 
@@ -393,7 +415,7 @@ def test_run_session_toggles_pause_indicator_from_control_tokens() -> None:
     ), mock.patch(
         "scripts.prototypes.runtime.cli.IndicatorController", RecordingIndicator
     ):
-        final_state = run_session(
+        final_state = drive_session(
             runner, input_stream=input_stream, output_stream=output_stream
         )
 
@@ -419,7 +441,7 @@ def test_run_session_edits_existing_message_via_editor() -> None:
     input_stream = io.StringIO(script)
     output_stream = io.StringIO()
 
-    final_state = run_session(
+    final_state = drive_session(
         runner, input_stream=input_stream, output_stream=output_stream
     )
 
@@ -438,7 +460,7 @@ def test_run_session_abort_editor_discards_draft() -> None:
     input_stream = io.StringIO(script)
     output_stream = io.StringIO()
 
-    final_state = run_session(
+    final_state = drive_session(
         runner, input_stream=input_stream, output_stream=output_stream
     )
 
@@ -446,3 +468,129 @@ def test_run_session_abort_editor_discards_draft() -> None:
     assert list(runner.message_store.iter_records()) == []
     assert runner.editor_context.draft_buffer == []
     assert runner.editor_context.drafts == {}
+
+
+def test_run_stream_session_concurrent_persistence(tmp_path: Path) -> None:
+    messages_path = tmp_path / "messages.json"
+    args = parse_args(["--messages-path", str(messages_path)])
+
+    async def _exercise() -> None:
+        server = await start_session_server(args, "127.0.0.1", 0)
+        async with server:
+            sockets = server.sockets or []
+            assert sockets
+            host, port = sockets[0].getsockname()[:2]
+
+            async def _run_client(subject: str, body: str) -> str:
+                reader, writer = await asyncio.open_connection(host, port)
+                try:
+                    script = "\r\n".join(
+                        [
+                            "MB",
+                            "P",
+                            subject,
+                            body,
+                            "/send",
+                            "Q",
+                            "EX",
+                            "",
+                        ]
+                    ).encode("latin-1")
+                    writer.write(script)
+                    await writer.drain()
+                    with contextlib.suppress(Exception):
+                        writer.write_eof()
+                    transcript = await asyncio.wait_for(
+                        reader.read(), timeout=5.0
+                    )
+                    return transcript.decode("latin-1", errors="ignore")
+                finally:
+                    writer.close()
+                    await writer.wait_closed()
+
+            transcripts = await asyncio.gather(
+                _run_client("Hello One", "Body One"),
+                _run_client("Hello Two", "Body Two"),
+            )
+            assert all(transcripts)
+
+    asyncio.run(_exercise())
+
+    stored = load_message_store(messages_path)
+    subjects = {record.subject for record in stored.iter_records()}
+    assert subjects == {"Hello One", "Hello Two"}
+
+
+def test_run_stream_session_overlapping_tasks_persist_outputs(
+    tmp_path: Path,
+) -> None:
+    messages_path = tmp_path / "messages.json"
+    args = parse_args(["--messages-path", str(messages_path)])
+
+    async def _exercise() -> None:
+        queue: asyncio.Queue[
+            tuple[asyncio.StreamReader, asyncio.StreamWriter, asyncio.Event]
+        ] = asyncio.Queue()
+
+        async def _handler(
+            reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+        ) -> None:
+            done = asyncio.Event()
+            await queue.put((reader, writer, done))
+            await done.wait()
+
+        server = await asyncio.start_server(_handler, "127.0.0.1", 0)
+        async with server:
+            sockets = server.sockets or []
+            assert sockets
+            host, port = sockets[0].getsockname()[:2]
+
+            async def _drive(subject: str, body: str) -> str:
+                client_reader, client_writer = await asyncio.open_connection(
+                    host, port
+                )
+                server_reader, server_writer, done = await queue.get()
+                session_task = asyncio.create_task(
+                    run_stream_session(args, server_reader, server_writer)
+                )
+                session_task.add_done_callback(lambda _: done.set())
+                try:
+                    script = "\r\n".join(
+                        [
+                            "MB",
+                            "P",
+                            subject,
+                            body,
+                            "/send",
+                            "Q",
+                            "EX",
+                            "",
+                        ]
+                    ).encode("latin-1")
+                    client_writer.write(script)
+                    await client_writer.drain()
+                    with contextlib.suppress(Exception):
+                        client_writer.write_eof()
+                    transcript = await asyncio.wait_for(
+                        client_reader.read(), timeout=5.0
+                    )
+                    await asyncio.wait_for(session_task, timeout=5.0)
+                    return transcript.decode("latin-1", errors="ignore")
+                finally:
+                    client_writer.close()
+                    await client_writer.wait_closed()
+
+            transcripts = await asyncio.gather(
+                _drive("Subject One", "Body One"),
+                _drive("Subject Two", "Body Two"),
+            )
+            assert all(transcripts)
+
+    asyncio.run(_exercise())
+
+    stored = load_message_store(messages_path)
+    subjects = [record.subject for record in stored.iter_records()]
+    bodies = [tuple(record.lines) for record in stored.iter_records()]
+    assert {"Subject One", "Subject Two"} <= set(subjects)
+    assert ("Body One",) in bodies
+    assert ("Body Two",) in bodies

@@ -39,6 +39,7 @@ class SessionRunner:
     _indicator_controller: "IndicatorController" | None = field(
         init=False, default=None, repr=False
     )
+    _initial_message_keys: set[tuple[str, int]] = field(init=False, repr=False)
 
     _ENTER_EVENTS: Mapping[SessionState, object] = field(
         init=False,
@@ -78,6 +79,10 @@ class SessionRunner:
             else SessionContext(board_id=self.board_id, user_id=self.user_id)
         )
         self._editor_context.store = self.message_store
+        self._initial_message_keys: set[tuple[str, int]] = {
+            (record.board_id, record.message_id)
+            for record in self.message_store.iter_records()
+        }
         self._enter_state(self.kernel.state)
 
     # Public API ---------------------------------------------------------
