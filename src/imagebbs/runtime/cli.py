@@ -45,6 +45,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Path to a TOML file describing drive assignments",
     )
     parser.add_argument(
+        "--storage-config",
+        type=Path,
+        default=None,
+        help="Path to a TOML file describing filesystem storage mappings",
+    )
+    parser.add_argument(
         "--messages-path",
         type=Path,
         default=None,
