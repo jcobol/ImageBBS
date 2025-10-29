@@ -11,9 +11,6 @@ from ..device_context import ConsoleService
 from ..session_kernel import SessionKernel, SessionModule, SessionState
 from .macro_rendering import render_macro_with_overlay_commit
 from .masked_pane_staging import MaskedPaneMacro
-from scripts.prototypes.runtime.sysop_options import (
-    SysopOptionsEvent as PrototypeSysopOptionsEvent,
-)
 
 
 class SysopOptionsState(Enum):
@@ -253,18 +250,13 @@ class SysopOptionsModule:
             return True
         if isinstance(candidate, SysopOptionsEvent):
             return candidate == expected
-        if isinstance(candidate, PrototypeSysopOptionsEvent):
-            return candidate.name == expected.name
         name = getattr(candidate, "name", None)
-        if name is None:
+        if not isinstance(name, str):
             return False
         try:
-            return PrototypeSysopOptionsEvent[name].name == expected.name
-        except KeyError:  # pragma: no cover - defensive guard
-            try:
-                return SysopOptionsEvent[name] is expected
-            except KeyError:
-                return False
+            return SysopOptionsEvent[name] is expected
+        except KeyError:
+            return name == expected.name
 
 
 __all__ = [
