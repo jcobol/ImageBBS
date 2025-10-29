@@ -87,8 +87,13 @@ class EditorSubmissionHandler:
 
         if not self.should_handle():
             return False
-        result = self._drive_flow(self._flow(), io)
-        self._apply_result(result)
+        runner = self._runner
+        runner.set_abort_indicator_state(True)
+        try:
+            result = self._drive_flow(self._flow(), io)
+            self._apply_result(result)
+        finally:
+            runner.set_abort_indicator_state(False)
         return True
 
     async def collect_async(self, io: AsyncEditorIO) -> bool:
@@ -96,8 +101,13 @@ class EditorSubmissionHandler:
 
         if not self.should_handle():
             return False
-        result = await self._drive_flow_async(self._flow(), io)
-        self._apply_result(result)
+        runner = self._runner
+        runner.set_abort_indicator_state(True)
+        try:
+            result = await self._drive_flow_async(self._flow(), io)
+            self._apply_result(result)
+        finally:
+            runner.set_abort_indicator_state(False)
         return True
 
     def _flow(self) -> Generator[_WriteLine | _WritePrompt | _ReadLine, str | None, _SubmissionResult]:
