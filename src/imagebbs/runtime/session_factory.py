@@ -5,11 +5,17 @@ from __future__ import annotations
 import argparse
 from dataclasses import replace
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Dict
 
 from ..message_editor import MessageEditor, SessionContext
 from ..setup_config import load_drive_config
-from ..setup_defaults import ModemDefaults, SetupDefaults
+from ..setup_defaults import (
+    DriveAssignment,
+    FilesystemDriveLocator,
+    ModemDefaults,
+    SetupDefaults,
+)
+from ..storage_config import StorageConfig, load_storage_config
 from .main_menu import MainMenuModule
 from .message_store import MessageStore
 from .message_store_repository import load_message_store, save_message_store
@@ -87,6 +93,17 @@ class RuntimeSessionFactory:
 def _build_defaults_from_args(args: argparse.Namespace) -> SetupDefaults:
     defaults = SetupDefaults.stub()
 
+    storage_config_path: Path | None = getattr(args, "storage_config", None)
+    if storage_config_path is not None:
+        if not storage_config_path.exists():
+            raise SystemExit(f"storage configuration not found: {storage_config_path}")
+        storage = load_storage_config(storage_config_path)
+        defaults = _apply_storage_config(defaults, storage)
+        baud_override = getattr(args, "baud_limit", None)
+        if baud_override is not None:
+            defaults = replace(defaults, modem=ModemDefaults(baud_limit=baud_override))
+        return defaults
+
     config_path: Path | None = getattr(args, "drive_config", None)
     if config_path is None:
         baud_override = getattr(args, "baud_limit", None)
@@ -107,6 +124,43 @@ def _build_defaults_from_args(args: argparse.Namespace) -> SetupDefaults:
     if modem_override is not None:
         defaults = replace(defaults, modem=ModemDefaults(baud_limit=modem_override))
     object.__setattr__(defaults, "ampersand_overrides", ampersand_overrides)
+    return defaults
+
+
+def _apply_storage_config(
+    defaults: SetupDefaults, storage: StorageConfig
+) -> SetupDefaults:
+    assignments = list(defaults.drives)
+    drive_slots: Dict[int, int] = {}
+
+    def ensure_slot(slot: int) -> None:
+        while len(assignments) < slot:
+            assignments.append(
+                DriveAssignment(slot=len(assignments) + 1, locator=None)
+            )
+
+    for drive, mapping in sorted(storage.drives.items()):
+        slot = drive - 7
+        if slot < 1:
+            slot = len(assignments) + 1
+        ensure_slot(slot)
+        assignments[slot - 1] = DriveAssignment(
+            slot=slot,
+            locator=FilesystemDriveLocator(path=mapping.root),
+        )
+        drive_slots[drive] = slot
+
+    defaults = replace(defaults, drives=tuple(assignments))
+
+    filesystem_roots = {drive: mapping.root for drive, mapping in storage.drives.items()}
+    object.__setattr__(defaults, "filesystem_drive_roots", filesystem_roots)
+    object.__setattr__(defaults, "default_filesystem_drive", storage.default_drive)
+    default_slot = (
+        drive_slots.get(storage.default_drive) if storage.default_drive is not None else None
+    )
+    object.__setattr__(defaults, "default_filesystem_drive_slot", default_slot)
+    object.__setattr__(defaults, "filesystem_drive_slots", drive_slots)
+    object.__setattr__(defaults, "storage_config", storage)
     return defaults
 
 
