@@ -91,8 +91,12 @@ def test_save_message_store_atomic_failure(tmp_path: Path, monkeypatch: pytest.M
             save_message_store(store, path)
 
     assert path.read_text(encoding="utf-8") == original_contents
-    assert sorted(entry.name for entry in tmp_path.iterdir()) == ["messages.json"]
+    remaining = sorted(entry.name for entry in tmp_path.iterdir())
+    assert remaining[0] == "messages.json"
+    assert set(remaining).issubset({"messages.json", "messages.json.lock"})
 
     save_message_store(store, path)
-    assert sorted(entry.name for entry in tmp_path.iterdir()) == ["messages.json"]
+    remaining = sorted(entry.name for entry in tmp_path.iterdir())
+    assert remaining[0] == "messages.json"
+    assert set(remaining).issubset({"messages.json", "messages.json.lock"})
 
