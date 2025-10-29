@@ -1,3 +1,4 @@
+import argparse
 import asyncio
 import io
 from collections import deque
@@ -8,16 +9,22 @@ from imagebbs.runtime.cli import (
     create_runner,
     parse_args,
     run_session,
+    run_stream_session,
     start_session_server,
 )
 from imagebbs.session_kernel import SessionState
 from imagebbs.setup_defaults import (
     DEFAULT_MODEM_BAUD_LIMIT,
     FilesystemDriveLocator,
+    SetupDefaults,
 )
 from imagebbs.device_context import ConsoleService
+from imagebbs.message_editor import SessionContext
 from imagebbs.runtime.console_ui import IdleTimerScheduler
 from imagebbs.runtime.indicator_controller import IndicatorController
+from imagebbs.runtime.message_store import MessageStore
+from imagebbs.runtime.session_factory import DEFAULT_RUNTIME_SESSION_FACTORY
+from imagebbs.runtime.session_runner import SessionRunner
 
 
 def test_run_session_handles_exit_sequence() -> None:
@@ -401,6 +408,154 @@ def test_run_session_toggles_pause_indicator_from_control_tokens() -> None:
     indicator = RecordingIndicator.instance
     assert indicator is not None
     assert indicator.pause_states == [True, False]
+
+
+def test_run_stream_session_bridges_telnet_and_persists_messages(tmp_path: Path) -> None:
+    messages_path = tmp_path / "messages.json"
+    args = parse_args(["--messages-path", str(messages_path)])
+
+    class RecordingFactory:
+        def __init__(self) -> None:
+            self._delegate = DEFAULT_RUNTIME_SESSION_FACTORY
+            self.runners: list[SessionRunner] = []
+            self.persist_calls: list[tuple[argparse.Namespace, SessionRunner]] = []
+
+        def build_defaults(self, namespace: argparse.Namespace) -> SetupDefaults:
+            return self._delegate.build_defaults(namespace)
+
+        def build_message_store(self, namespace: argparse.Namespace) -> MessageStore:
+            return self._delegate.build_message_store(namespace)
+
+        def build_session_context(
+            self,
+            defaults: SetupDefaults,
+            *,
+            store: MessageStore,
+            messages_path: Path | None,
+        ) -> SessionContext:
+            return self._delegate.build_session_context(
+                defaults, store=store, messages_path=messages_path
+            )
+
+        def create_runner(self, namespace: argparse.Namespace) -> SessionRunner:
+            runner = self._delegate.create_runner(namespace)
+            self.runners.append(runner)
+            return runner
+
+        def persist_messages(
+            self, namespace: argparse.Namespace, runner: SessionRunner
+        ) -> None:
+            self.persist_calls.append((namespace, runner))
+            self._delegate.persist_messages(namespace, runner)
+
+    recording_factory = RecordingFactory()
+
+    class RecordingIndicator(IndicatorController):
+        instances: list["RecordingIndicator"] = []
+
+        def __init__(self, console: ConsoleService) -> None:
+            super().__init__(console)
+            self.pause_updates: list[bool] = []
+            self.carrier_updates: list[bool] = []
+            RecordingIndicator.instances.append(self)
+
+        def set_pause(self, active: bool) -> None:
+            self.pause_updates.append(active)
+            super().set_pause(active)
+
+        def set_carrier(self, active: bool) -> None:
+            self.carrier_updates.append(active)
+            super().set_carrier(active)
+
+    script = b"".join(
+        [
+            b"\x13",  # pause outbound delivery
+            b"MB\r\n",
+            b"P\r\n",
+            b"Async Subject\r\n",
+            b"Async Body\r\n",
+            b"/send\r\n",
+            b"Q\r\n",
+            b"\x11",  # resume outbound delivery
+            b"EX\r\n",
+        ]
+    )
+
+    async def _exercise() -> str:
+        session_done = asyncio.Event()
+        transcript: list[bytes] = []
+
+        async def _handle(
+            reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+        ) -> None:
+            try:
+                await run_stream_session(
+                    args, reader, writer, factory=recording_factory
+                )
+            finally:
+                session_done.set()
+
+        server = await asyncio.start_server(_handle, "127.0.0.1", 0)
+        try:
+            sockets = server.sockets or []
+            assert sockets
+            host, port = sockets[0].getsockname()[:2]
+
+            reader, writer = await asyncio.open_connection(host, port)
+            try:
+                writer.write(script)
+                await writer.drain()
+
+                while True:
+                    chunk = await asyncio.wait_for(reader.read(4096), timeout=5.0)
+                    if not chunk:
+                        break
+                    transcript.append(chunk)
+
+                await asyncio.wait_for(session_done.wait(), timeout=1.0)
+            finally:
+                writer.close()
+                await writer.wait_closed()
+        finally:
+            server.close()
+            await server.wait_closed()
+
+        return b"".join(transcript).decode("latin-1", errors="ignore")
+
+    with mock.patch(
+        "imagebbs.runtime.cli._resolve_indicator_controller_cls",
+        return_value=RecordingIndicator,
+    ):
+        transcript = asyncio.run(_exercise())
+
+    assert transcript
+    assert "Type /send to save or /abort to cancel." in transcript
+
+    runners = recording_factory.runners
+    assert len(runners) == 1
+    runner = runners[0]
+
+    records = list(runner.message_store.iter_records())
+    assert len(records) == 1
+    record = records[0]
+    assert record.subject == "Async Subject"
+    assert record.lines == ("Async Body",)
+
+    assert len(recording_factory.persist_calls) == 1
+    assert messages_path.exists()
+    persisted_text = messages_path.read_text(encoding="utf-8")
+    assert "Async Subject" in persisted_text
+
+    assert RecordingIndicator.instances
+    indicator = RecordingIndicator.instances[0]
+    assert True in indicator.carrier_updates
+    assert indicator.carrier_updates[-1] is False
+
+    assert True in indicator.pause_updates
+    assert False in indicator.pause_updates
+    first_pause = indicator.pause_updates.index(True)
+    resume_index = indicator.pause_updates.index(False, first_pause)
+    assert resume_index > first_pause
 
 
 def test_run_session_edits_existing_message_via_editor() -> None:
