@@ -9,8 +9,8 @@ from ..message_editor import EditorState
 from ..session_kernel import SessionState
 from .session_runner import SessionRunner
 
-_EDITOR_ABORT_COMMAND = "/abort"
-_EDITOR_SUBMIT_COMMAND = "/send"
+DEFAULT_EDITOR_ABORT_COMMAND = "/abort"
+DEFAULT_EDITOR_SUBMIT_COMMAND = "/send"
 
 
 class SyncEditorIO(Protocol):
@@ -67,8 +67,8 @@ class EditorSubmissionHandler:
         self,
         runner: SessionRunner,
         *,
-        submit_command: str = _EDITOR_SUBMIT_COMMAND,
-        abort_command: str = _EDITOR_ABORT_COMMAND,
+        submit_command: str = DEFAULT_EDITOR_SUBMIT_COMMAND,
+        abort_command: str = DEFAULT_EDITOR_ABORT_COMMAND,
     ) -> None:
         self._runner = runner
         self._submit_command = submit_command
@@ -214,4 +214,10 @@ class EditorSubmissionHandler:
                 return stop.value
 
 
-__all__ = ["EditorSubmissionHandler", "SyncEditorIO", "AsyncEditorIO"]
+__all__ = [
+    "AsyncEditorIO",
+    "DEFAULT_EDITOR_ABORT_COMMAND",
+    "DEFAULT_EDITOR_SUBMIT_COMMAND",
+    "EditorSubmissionHandler",
+    "SyncEditorIO",
+]

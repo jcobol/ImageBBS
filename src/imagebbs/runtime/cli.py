@@ -14,7 +14,12 @@ from ..message_editor import SessionContext
 from ..session_kernel import SessionState
 from ..setup_defaults import SetupDefaults
 from .console_ui import IdleTimerScheduler, SysopConsoleApp
-from .editor_submission import EditorSubmissionHandler, SyncEditorIO
+from .editor_submission import (
+    DEFAULT_EDITOR_ABORT_COMMAND,
+    DEFAULT_EDITOR_SUBMIT_COMMAND,
+    EditorSubmissionHandler,
+    SyncEditorIO,
+)
 from .indicator_controller import IndicatorController
 from .message_store import MessageStore
 from .message_store_repository import message_store_lock, message_store_lock_owner
@@ -89,6 +94,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=int,
         default=None,
         help="Limit modem throughput to the specified bits per second",
+    )
+    parser.add_argument(
+        "--editor-submit-command",
+        default=DEFAULT_EDITOR_SUBMIT_COMMAND,
+        help="Command token that saves the current editor buffer",
+    )
+    parser.add_argument(
+        "--editor-abort-command",
+        default=DEFAULT_EDITOR_ABORT_COMMAND,
+        help="Command token that cancels the current editor buffer",
     )
     return parser.parse_args(argv)
 
@@ -256,6 +271,8 @@ async def run_stream_session(
                     reader,
                     writer,
                     instrumentation=instrumentation,
+                    editor_submit_command=args.editor_submit_command,
+                    editor_abort_command=args.editor_abort_command,
                 )
             )
         telnet_transport = telnet_transport_factory(
@@ -330,7 +347,12 @@ def _write_and_flush(stream: IO[str], text: str) -> None:
 
 
 def _maybe_collect_editor_submission(
-    runner: SessionRunner, *, input_stream: IO[str], output_stream: IO[str]
+    runner: SessionRunner,
+    *,
+    input_stream: IO[str],
+    output_stream: IO[str],
+    submit_command: str = DEFAULT_EDITOR_SUBMIT_COMMAND,
+    abort_command: str = DEFAULT_EDITOR_ABORT_COMMAND,
 ) -> bool:
     class _StreamEditorIO:
         def __init__(self, input_stream: IO[str], output_stream: IO[str]) -> None:
@@ -349,7 +371,11 @@ def _maybe_collect_editor_submission(
                 return None
             return line.rstrip("\r\n")
 
-    handler = EditorSubmissionHandler(runner)
+    handler = EditorSubmissionHandler(
+        runner,
+        submit_command=submit_command,
+        abort_command=abort_command,
+    )
     stream_io: SyncEditorIO = _StreamEditorIO(input_stream, output_stream)
     return handler.collect_sync(stream_io)
 
@@ -359,6 +385,8 @@ def drive_session(
     *,
     input_stream: IO[str] = sys.stdin,
     output_stream: IO[str] = sys.stdout,
+    editor_submit_command: str = DEFAULT_EDITOR_SUBMIT_COMMAND,
+    editor_abort_command: str = DEFAULT_EDITOR_ABORT_COMMAND,
 ) -> SessionState:
     """Drive ``runner`` using ``input_stream`` and ``output_stream``."""
 
@@ -417,7 +445,11 @@ def drive_session(
             return SessionState.EXIT
 
         if _maybe_collect_editor_submission(
-            runner, input_stream=input_stream, output_stream=output_stream
+            runner,
+            input_stream=input_stream,
+            output_stream=output_stream,
+            submit_command=editor_submit_command,
+            abort_command=editor_abort_command,
         ):
             continue
 
@@ -451,7 +483,11 @@ def run_session(
     runtime_factory = _ensure_factory(factory)
     with _runner_with_persistence(args, factory=runtime_factory) as runner:
         return drive_session(
-            runner, input_stream=input_stream, output_stream=output_stream
+            runner,
+            input_stream=input_stream,
+            output_stream=output_stream,
+            editor_submit_command=args.editor_submit_command,
+            editor_abort_command=args.editor_abort_command,
         )
 
 
@@ -486,7 +522,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             app.run()
         else:
-            drive_session(runner)
+            drive_session(
+                runner,
+                editor_submit_command=args.editor_submit_command,
+                editor_abort_command=args.editor_abort_command,
+            )
     return 0
 
 
