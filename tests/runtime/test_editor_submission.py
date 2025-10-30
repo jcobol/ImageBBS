@@ -7,7 +7,11 @@ from dataclasses import dataclass, field
 from types import SimpleNamespace
 
 from imagebbs.message_editor import EditorState
-from imagebbs.runtime.editor_submission import EditorSubmissionHandler
+from imagebbs.runtime.editor_submission import (
+    DEFAULT_EDITOR_ABORT_COMMAND,
+    DEFAULT_EDITOR_SUBMIT_COMMAND,
+    EditorSubmissionHandler,
+)
 from imagebbs.session_kernel import SessionState
 
 
@@ -77,7 +81,7 @@ class StubAsyncIO:
 
 def test_collect_sync_sets_abort_indicator_state() -> None:
     runner = StubRunner()
-    io = StubSyncIO(["Subject", "Body line", "/send"])
+    io = StubSyncIO(["Subject", "Body line", DEFAULT_EDITOR_SUBMIT_COMMAND])
     handler = EditorSubmissionHandler(runner)
 
     handled = handler.collect_sync(io)
@@ -86,6 +90,7 @@ def test_collect_sync_sets_abort_indicator_state() -> None:
     assert runner.abort_indicator_states == [True, False]
     assert runner.submitted == [("Subject", ["Body line"])], runner.submitted
     assert runner.aborted is False
+    assert "Type /send to save or /abort to cancel." in io.lines
 
 
 def test_collect_async_restores_abort_indicator_on_abort() -> None:
@@ -95,8 +100,8 @@ def test_collect_async_restores_abort_indicator_on_abort() -> None:
         selected_message_id=1,
     )
     runner = StubRunner(editor_context=context, _editor_state=EditorState.EDIT_DRAFT)
-    io = StubAsyncIO(["/abort"])
-    handler = EditorSubmissionHandler(runner)
+    io = StubAsyncIO(["/cancel"])
+    handler = EditorSubmissionHandler(runner, abort_command="/cancel")
 
     handled = asyncio.run(handler.collect_async(io))
 
@@ -104,3 +109,18 @@ def test_collect_async_restores_abort_indicator_on_abort() -> None:
     assert runner.abort_indicator_states == [True, False]
     assert runner.submitted == []
     assert runner.aborted is True
+    assert "Type /send to save or /cancel to cancel." in io.lines
+
+
+def test_collect_sync_uses_custom_commands() -> None:
+    runner = StubRunner()
+    io = StubSyncIO(["Subject", "Body line", "/save"])
+    handler = EditorSubmissionHandler(
+        runner, submit_command="/save", abort_command="/cancel"
+    )
+
+    handled = handler.collect_sync(io)
+
+    assert handled is True
+    assert runner.submitted == [("Subject", ["Body line"])], runner.submitted
+    assert "Type /save to save or /cancel to cancel." in io.lines
