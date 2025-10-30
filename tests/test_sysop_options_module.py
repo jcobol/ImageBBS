@@ -1,5 +1,5 @@
 import sys
-from imagebbs import SessionKernel, SessionState
+from imagebbs import BoardStatistics, SessionKernel, SessionState
 from imagebbs.device_context import ConsoleService
 from imagebbs.runtime.sysop_options import (
     SysopOptionsEvent,
@@ -160,6 +160,38 @@ def test_sysop_options_saying_command_renders_text() -> None:
     assert isinstance(console_service, ConsoleService)
     transcript = "".join(console_service.device.output)
     assert module.last_saying in transcript
+
+
+def test_sysop_options_statistics_command_renders_counters() -> None:
+    kernel, module = _bootstrap_kernel()
+    custom_statistics = BoardStatistics(
+        message_counts=(5, 4, 3, 2),
+        status_banner="Welcome back, sysop!",
+        total_calls=42,
+        last_caller="TEST CALLER",
+        last_logon_timestamp="01/01/24 12:34",
+        password_subs_password="SECRET",
+    )
+    object.__setattr__(kernel.defaults, "statistics", custom_statistics)
+
+    kernel.step(SysopOptionsEvent.ENTER)
+    initial_render_count = len(module.rendered_slots)
+
+    state = kernel.step(SysopOptionsEvent.COMMAND, "st")
+
+    assert state is SessionState.SYSOP_OPTIONS
+    assert module.state is SysopOptionsState.READY
+    assert module.last_command == "ST"
+    assert len(module.rendered_slots) == initial_render_count + 1
+    assert module.rendered_slots[-1] == module.MENU_PROMPT_SLOT
+
+    console_service = kernel.services["console"]
+    assert isinstance(console_service, ConsoleService)
+    transcript = "".join(console_service.device.output)
+
+    assert "Total calls: 42" in transcript
+    assert "Messages: 5/4/3/2" in transcript
+    assert custom_statistics.status_banner in transcript
 
 
 def test_sysop_options_abort_returns_to_main_menu() -> None:
