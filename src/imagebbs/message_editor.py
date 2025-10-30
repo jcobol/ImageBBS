@@ -114,6 +114,7 @@ class MessageEditor:
     READ_MESSAGE_MACRO_INDEX = 0x0D
     POST_MESSAGE_MACRO_INDEX = 0x14
     EDIT_DRAFT_MACRO_INDEX = 0x15
+    MAIN_MENU_PROMPT = "(R)ead, (P)ost, (E)dit Draft, (Q)uit? "
 
     def __init__(
         self,
@@ -156,7 +157,7 @@ class MessageEditor:
             self._ampersand_dispatch(
                 self.MAIN_MENU_MACRO_INDEX,
                 ctx,
-                "(R)ead, (P)ost, (E)dit Draft, (Q)uit? ",
+                self.MAIN_MENU_PROMPT,
                 event,
             )
             return EditorState.MAIN_MENU
@@ -196,6 +197,17 @@ class MessageEditor:
                     ctx.push_output(self._format_summary_line(summary))
             return EditorState.READ_MESSAGES
         if event is Event.MESSAGE_SELECTED:
+            selection = (ctx.command_buffer or "").strip()
+            if selection.upper().startswith("Q"):
+                ctx.reset_selection()
+                ctx.clear_draft()
+                self._ampersand_dispatch(
+                    self.MAIN_MENU_MACRO_INDEX,
+                    ctx,
+                    self.MAIN_MENU_PROMPT,
+                    event,
+                )
+                return EditorState.MAIN_MENU
             message_id = self._resolve_message_id(ctx)
             if message_id is None:
                 ctx.push_output("?INVALID MESSAGE SELECTION\r")

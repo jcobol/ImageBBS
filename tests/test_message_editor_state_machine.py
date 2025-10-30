@@ -113,6 +113,27 @@ def test_read_flow_fetches_message_and_emits_macro() -> None:
     assert session.modem_buffer[1:] == ["Line 1\r", "Line 2\r"]
 
 
+def test_read_flow_quit_returns_to_main_menu() -> None:
+    editor, session, registry, store = _bootstrap_editor()
+    store.append(board_id="mb1", subject="Subject", author_handle="SYSOP", lines=["Body"])
+
+    _advance_to_main_menu(editor, session)
+
+    session.command_buffer = "R"
+    editor.dispatch(Event.COMMAND_SELECTED, session)
+    editor.dispatch(Event.ENTER, session)
+
+    session.modem_buffer.clear()
+    session.command_buffer = "Q"
+    state = editor.dispatch(Event.MESSAGE_SELECTED, session)
+
+    assert state is EditorState.MAIN_MENU
+    assert session.selected_message_id is None
+    assert registry.calls[-1][0] == editor.MAIN_MENU_MACRO_INDEX
+    assert session.modem_buffer == [f"MACRO:{editor.MAIN_MENU_MACRO_INDEX}"]
+    assert all("?INVALID MESSAGE SELECTION" not in line for line in session.modem_buffer)
+
+
 def test_post_flow_appends_message_and_records_macro() -> None:
     editor, session, registry, store = _bootstrap_editor()
 
