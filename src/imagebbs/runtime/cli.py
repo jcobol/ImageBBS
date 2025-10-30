@@ -9,12 +9,16 @@ import sys
 import threading
 from pathlib import Path
 from typing import IO, Callable, Iterator, Sequence, Tuple
-
 from ..message_editor import SessionContext
 from ..session_kernel import SessionState
 from ..setup_defaults import SetupDefaults
 from .console_ui import IdleTimerScheduler, SysopConsoleApp
-from .editor_submission import EditorSubmissionHandler, SyncEditorIO
+from .editor_submission import (
+    DEFAULT_EDITOR_ABORT_COMMAND,
+    DEFAULT_EDITOR_SUBMIT_COMMAND,
+    EditorSubmissionHandler,
+    SyncEditorIO,
+)
 from .indicator_controller import IndicatorController
 from .message_store import MessageStore
 from .message_store_repository import message_store_lock
@@ -25,6 +29,20 @@ from .session_factory import (
 from .session_instrumentation import SessionInstrumentation
 from .session_runner import SessionRunner
 from .transports import BaudLimitedTransport, TelnetModemTransport
+
+
+_ASYNC_LOCKS: dict[Path, asyncio.Lock] = {}
+_ASYNC_LOCKS_GUARD = threading.Lock()
+
+
+def _acquire_async_message_lock(path: Path) -> asyncio.Lock:
+    resolved = path.resolve()
+    with _ASYNC_LOCKS_GUARD:
+        lock = _ASYNC_LOCKS.get(resolved)
+        if lock is None:
+            lock = asyncio.Lock()
+            _ASYNC_LOCKS[resolved] = lock
+    return lock
 
 
 def _parse_host_port(value: str) -> Tuple[str, int]:
@@ -90,7 +108,21 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Limit modem throughput to the specified bits per second",
     )
+    parser.add_argument(
+        "--editor-submit-command",
+        default=DEFAULT_EDITOR_SUBMIT_COMMAND,
+        help="Command that submits the message editor contents",
+    )
+    parser.add_argument(
+        "--editor-abort-command",
+        default=DEFAULT_EDITOR_ABORT_COMMAND,
+        help="Command that aborts the message editor without saving",
+    )
     return parser.parse_args(argv)
+
+
+def _clone_args(args: argparse.Namespace) -> argparse.Namespace:
+    return argparse.Namespace(**vars(args))
 
 
 def _ensure_factory(factory: RuntimeSessionFactory | None) -> RuntimeSessionFactory:
@@ -172,11 +204,12 @@ def _runner_with_persistence(
     else:
         lock_cm = message_store_lock(messages_path)
     with lock_cm:
-        runner = create_runner(args, factory=runtime_factory)
+        runner_args = _clone_args(args)
+        runner = create_runner(runner_args, factory=runtime_factory)
         try:
             yield runner
         finally:
-            _persist_messages(args, runner, factory=runtime_factory)
+            _persist_messages(runner_args, runner, factory=runtime_factory)
 
 
 @contextlib.asynccontextmanager
@@ -195,19 +228,21 @@ async def _async_runner_with_persistence(
             _persist_messages(args, runner, factory=runtime_factory)
         return
 
-    lock = message_store_lock(messages_path)
-    owner_id = threading.get_ident()
-    await asyncio.to_thread(lock.acquire, owner_id=owner_id)
-    runner: SessionRunner | None = None
-    try:
-        runner = create_runner(args, factory=runtime_factory)
+    async_lock = _acquire_async_message_lock(messages_path)
+    async with async_lock:
+        lock = message_store_lock(messages_path)
+        await asyncio.to_thread(lock.acquire, owner_id=threading.get_ident())
+        runner: SessionRunner | None = None
         try:
-            yield runner
+            runner_args = _clone_args(args)
+            runner = create_runner(runner_args, factory=runtime_factory)
+            try:
+                yield runner
+            finally:
+                if runner is not None:
+                    _persist_messages(runner_args, runner, factory=runtime_factory)
         finally:
-            if runner is not None:
-                _persist_messages(args, runner, factory=runtime_factory)
-    finally:
-        await asyncio.to_thread(lock.release)
+            await asyncio.to_thread(lock.release)
 
 
 async def run_stream_session(
@@ -233,6 +268,7 @@ async def run_stream_session(
 ) -> None:
     """Create a runner and bridge it to ``reader``/``writer``."""
 
+    args = _clone_args(args)
     runtime_factory = _ensure_factory(factory)
     async with _async_runner_with_persistence(args, factory=runtime_factory) as runner:
         instrumentation = SessionInstrumentation(
@@ -241,6 +277,12 @@ async def run_stream_session(
             idle_timer_scheduler_cls=_resolve_idle_timer_scheduler_cls(),
         )
         instrumentation.ensure_indicator_controller()
+        submit_command = getattr(
+            args, "editor_submit_command", DEFAULT_EDITOR_SUBMIT_COMMAND
+        )
+        abort_command = getattr(
+            args, "editor_abort_command", DEFAULT_EDITOR_ABORT_COMMAND
+        )
         if telnet_transport_factory is None:
             telnet_transport_factory = (
                 lambda runner, reader, writer, instrumentation: TelnetModemTransport(
@@ -248,6 +290,8 @@ async def run_stream_session(
                     reader,
                     writer,
                     instrumentation=instrumentation,
+                    editor_submit_command=submit_command,
+                    editor_abort_command=abort_command,
                 )
             )
         telnet_transport = telnet_transport_factory(
@@ -322,7 +366,12 @@ def _write_and_flush(stream: IO[str], text: str) -> None:
 
 
 def _maybe_collect_editor_submission(
-    runner: SessionRunner, *, input_stream: IO[str], output_stream: IO[str]
+    runner: SessionRunner,
+    *,
+    input_stream: IO[str],
+    output_stream: IO[str],
+    submit_command: str,
+    abort_command: str,
 ) -> bool:
     class _StreamEditorIO:
         def __init__(self, input_stream: IO[str], output_stream: IO[str]) -> None:
@@ -341,7 +390,9 @@ def _maybe_collect_editor_submission(
                 return None
             return line.rstrip("\r\n")
 
-    handler = EditorSubmissionHandler(runner)
+    handler = EditorSubmissionHandler(
+        runner, submit_command=submit_command, abort_command=abort_command
+    )
     stream_io: SyncEditorIO = _StreamEditorIO(input_stream, output_stream)
     return handler.collect_sync(stream_io)
 
@@ -351,6 +402,8 @@ def drive_session(
     *,
     input_stream: IO[str] = sys.stdin,
     output_stream: IO[str] = sys.stdout,
+    editor_submit_command: str = DEFAULT_EDITOR_SUBMIT_COMMAND,
+    editor_abort_command: str = DEFAULT_EDITOR_ABORT_COMMAND,
 ) -> SessionState:
     """Drive ``runner`` using ``input_stream`` and ``output_stream``."""
 
@@ -409,7 +462,11 @@ def drive_session(
             return SessionState.EXIT
 
         if _maybe_collect_editor_submission(
-            runner, input_stream=input_stream, output_stream=output_stream
+            runner,
+            input_stream=input_stream,
+            output_stream=output_stream,
+            submit_command=editor_submit_command,
+            abort_command=editor_abort_command,
         ):
             continue
 
@@ -442,8 +499,18 @@ def run_session(
 
     runtime_factory = _ensure_factory(factory)
     with _runner_with_persistence(args, factory=runtime_factory) as runner:
+        submit_command = getattr(
+            args, "editor_submit_command", DEFAULT_EDITOR_SUBMIT_COMMAND
+        )
+        abort_command = getattr(
+            args, "editor_abort_command", DEFAULT_EDITOR_ABORT_COMMAND
+        )
         return drive_session(
-            runner, input_stream=input_stream, output_stream=output_stream
+            runner,
+            input_stream=input_stream,
+            output_stream=output_stream,
+            editor_submit_command=submit_command,
+            editor_abort_command=abort_command,
         )
 
 

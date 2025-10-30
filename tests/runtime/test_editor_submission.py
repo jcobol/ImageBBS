@@ -104,3 +104,46 @@ def test_collect_async_restores_abort_indicator_on_abort() -> None:
     assert runner.abort_indicator_states == [True, False]
     assert runner.submitted == []
     assert runner.aborted is True
+
+
+def test_collect_sync_includes_custom_command_prompts() -> None:
+    runner = StubRunner()
+    submit_command = "/customsend"
+    abort_command = "/customabort"
+    io = StubSyncIO(["Subject", "Body line", submit_command])
+    handler = EditorSubmissionHandler(
+        runner, submit_command=submit_command, abort_command=abort_command
+    )
+
+    handled = handler.collect_sync(io)
+
+    assert handled is True
+    assert any(
+        f"Type {submit_command} to save or {abort_command} to cancel." == line
+        for line in io.lines
+    )
+    assert runner.abort_indicator_states == [True, False]
+    assert runner.submitted == [("Subject", ["Body line"])], runner.submitted
+    assert runner.aborted is False
+
+
+def test_collect_async_honours_custom_abort_command() -> None:
+    context = SimpleNamespace(
+        current_message="Existing",
+        draft_buffer=["Existing body"],
+        selected_message_id=1,
+    )
+    runner = StubRunner(editor_context=context, _editor_state=EditorState.EDIT_DRAFT)
+    submit_command = "/customsend"
+    abort_command = "/customabort"
+    io = StubAsyncIO([abort_command])
+    handler = EditorSubmissionHandler(
+        runner, submit_command=submit_command, abort_command=abort_command
+    )
+
+    handled = asyncio.run(handler.collect_async(io))
+
+    assert handled is True
+    assert runner.abort_indicator_states == [True, False]
+    assert runner.submitted == []
+    assert runner.aborted is True

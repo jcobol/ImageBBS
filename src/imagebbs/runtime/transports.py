@@ -9,7 +9,12 @@ from typing import Awaitable, Callable, Coroutine, Deque, Iterable, Optional
 from ..device_context import ModemTransport
 from ..session_kernel import SessionState
 from .console_ui import IdleTimerScheduler
-from .editor_submission import AsyncEditorIO, EditorSubmissionHandler
+from .editor_submission import (
+    AsyncEditorIO,
+    DEFAULT_EDITOR_ABORT_COMMAND,
+    DEFAULT_EDITOR_SUBMIT_COMMAND,
+    EditorSubmissionHandler,
+)
 from .indicator_controller import IndicatorController
 from .session_instrumentation import SessionInstrumentation
 
@@ -260,6 +265,8 @@ class TelnetModemTransport(ModemTransport):
         indicator_controller: IndicatorController | None = None,
         instrumentation: SessionInstrumentation | None = None,
         idle_timer_scheduler_cls: type[IdleTimerScheduler] | None = IdleTimerScheduler,
+        editor_submit_command: str = DEFAULT_EDITOR_SUBMIT_COMMAND,
+        editor_abort_command: str = DEFAULT_EDITOR_ABORT_COMMAND,
     ) -> None:
         self.runner = runner
         self.reader = reader
@@ -268,6 +275,8 @@ class TelnetModemTransport(ModemTransport):
         self.poll_interval = poll_interval
         self._instrumentation = instrumentation
         self._idle_timer_scheduler_cls = idle_timer_scheduler_cls
+        self._editor_submit_command = editor_submit_command
+        self._editor_abort_command = editor_abort_command
 
         if instrumentation is not None:
             indicator_controller = instrumentation.ensure_indicator_controller()
@@ -535,7 +544,11 @@ class TelnetModemTransport(ModemTransport):
             self._mark_closed()
 
     async def _maybe_collect_editor_submission(self) -> bool:
-        handler = EditorSubmissionHandler(self.runner)
+        handler = EditorSubmissionHandler(
+            self.runner,
+            submit_command=self._editor_submit_command,
+            abort_command=self._editor_abort_command,
+        )
         io = _TelnetEditorIO(self)
         try:
             return await handler.collect_async(io)

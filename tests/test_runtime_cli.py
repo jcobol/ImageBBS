@@ -80,6 +80,20 @@ def test_parse_args_console_flag_disables_curses_ui() -> None:
     assert args.curses_ui is False
 
 
+def test_parse_args_accepts_custom_editor_commands() -> None:
+    args = parse_args(
+        [
+            "--editor-submit-command",
+            "/customsend",
+            "--editor-abort-command",
+            "/customabort",
+        ]
+    )
+
+    assert args.editor_submit_command == "/customsend"
+    assert args.editor_abort_command == "/customabort"
+
+
 def test_create_runner_applies_configuration_and_persistence(tmp_path: Path) -> None:
     config_path = tmp_path / "drives.toml"
     config_path.write_text(
@@ -209,6 +223,75 @@ def test_run_session_posts_message_via_editor() -> None:
     record = records[0]
     assert record.subject == "Hello World"
     assert record.lines == ("This is the body",)
+
+
+def test_drive_session_uses_custom_editor_commands() -> None:
+    args = parse_args(
+        [
+            "--editor-submit-command",
+            "/customsend",
+            "--editor-abort-command",
+            "/customabort",
+        ]
+    )
+    runner = create_runner(args)
+
+    script = (
+        "MB\nP\nCustom Subject\nCustom body\n"
+        f"{args.editor_submit_command}\nQ\nEX\n"
+    )
+    input_stream = io.StringIO(script)
+    output_stream = io.StringIO()
+
+    final_state = drive_session(
+        runner,
+        input_stream=input_stream,
+        output_stream=output_stream,
+        editor_submit_command=args.editor_submit_command,
+        editor_abort_command=args.editor_abort_command,
+    )
+
+    assert final_state is SessionState.EXIT
+    transcript = output_stream.getvalue()
+    expected_prompt = (
+        f"Type {args.editor_submit_command} to save or {args.editor_abort_command} to cancel."
+    )
+    assert expected_prompt in transcript
+
+    records = list(runner.message_store.iter_records())
+    assert len(records) == 1
+    record = records[0]
+    assert record.subject == "Custom Subject"
+    assert record.lines == ("Custom body",)
+
+
+def test_run_session_respects_custom_editor_commands() -> None:
+    args = parse_args(
+        [
+            "--editor-submit-command",
+            "/customsend",
+            "--editor-abort-command",
+            "/customabort",
+        ]
+    )
+
+    script = (
+        "MB\nP\nRun Subject\nRun body\n"
+        f"{args.editor_submit_command}\nQ\nEX\n"
+    )
+    input_stream = io.StringIO(script)
+    output_stream = io.StringIO()
+
+    final_state = run_session(
+        args, input_stream=input_stream, output_stream=output_stream
+    )
+
+    assert final_state is SessionState.EXIT
+    transcript = output_stream.getvalue()
+    expected_prompt = (
+        f"Type {args.editor_submit_command} to save or {args.editor_abort_command} to cancel."
+    )
+    assert expected_prompt in transcript
 
 
 def test_run_session_pauses_and_flushes_output_on_flow_control() -> None:
@@ -433,7 +516,18 @@ def test_run_session_toggles_pause_indicator_from_control_tokens() -> None:
 
 def test_run_stream_session_bridges_telnet_and_persists_messages(tmp_path: Path) -> None:
     messages_path = tmp_path / "messages.json"
-    args = parse_args(["--messages-path", str(messages_path)])
+    submit_command = "/customsend"
+    abort_command = "/customabort"
+    args = parse_args(
+        [
+            "--messages-path",
+            str(messages_path),
+            "--editor-submit-command",
+            submit_command,
+            "--editor-abort-command",
+            abort_command,
+        ]
+    )
 
     class RecordingFactory:
         def __init__(self) -> None:
@@ -488,6 +582,7 @@ def test_run_stream_session_bridges_telnet_and_persists_messages(tmp_path: Path)
             self.carrier_updates.append(active)
             super().set_carrier(active)
 
+    submit_bytes = (submit_command + "\r\n").encode("latin-1")
     script = b"".join(
         [
             b"\x13",  # pause outbound delivery
@@ -495,7 +590,7 @@ def test_run_stream_session_bridges_telnet_and_persists_messages(tmp_path: Path)
             b"P\r\n",
             b"Async Subject\r\n",
             b"Async Body\r\n",
-            b"/send\r\n",
+            submit_bytes,
             b"Q\r\n",
             b"\x11",  # resume outbound delivery
             b"EX\r\n",
@@ -550,7 +645,10 @@ def test_run_stream_session_bridges_telnet_and_persists_messages(tmp_path: Path)
         transcript = asyncio.run(_exercise())
 
     assert transcript
-    assert "Type /send to save or /abort to cancel." in transcript
+    expected_prompt = (
+        f"Type {submit_command} to save or {abort_command} to cancel."
+    )
+    assert expected_prompt in transcript
 
     runners = recording_factory.runners
     assert len(runners) == 1

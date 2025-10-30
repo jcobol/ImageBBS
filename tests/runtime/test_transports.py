@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
+from types import SimpleNamespace
 from typing import Coroutine, Optional
 
 from imagebbs.device_context import ConsoleService
+from imagebbs.message_editor import EditorState
 from imagebbs.runtime.console_ui import IdleTimerScheduler
 from imagebbs.runtime.session_instrumentation import SessionInstrumentation
 from imagebbs.runtime.transports import TelnetModemTransport
@@ -307,6 +309,189 @@ def test_telnet_transport_pauses_outbound_until_resume() -> None:
     assert runner.pause_states == [True, False]
     assert runner.commands == ["EX"]
     assert controller.pause_states == [True, False]
+
+
+def test_telnet_transport_editor_submission_uses_custom_commands() -> None:
+    class ScriptedReader:
+        def __init__(self, payloads: list[bytes]):
+            self._payloads = deque(payloads)
+
+        async def readline(self) -> bytes:
+            await asyncio.sleep(0)
+            if self._payloads:
+                return self._payloads.popleft()
+            return b""
+
+    class EditorRunner:
+        def __init__(self) -> None:
+            self.console = object()
+            self.state = SessionState.MESSAGE_EDITOR
+            self.editor_context = SimpleNamespace(
+                current_message="",
+                draft_buffer=[],
+                selected_message_id=None,
+            )
+            self.submissions: list[tuple[str | None, list[str] | None]] = []
+            self.abort_indicator_states: list[bool] = []
+            self.pause_states: list[bool] = []
+            self.aborted = False
+
+        def read_output(self) -> str:
+            return ""
+
+        def requires_editor_submission(self) -> bool:
+            return not self.submissions and not self.aborted
+
+        def get_editor_state(self) -> EditorState | None:
+            return EditorState.POST_MESSAGE
+
+        def submit_editor_draft(
+            self, *, subject: str | None, lines: list[str] | None
+        ) -> SessionState:
+            self.submissions.append((subject, list(lines) if lines is not None else None))
+            self.state = SessionState.MAIN_MENU
+            return self.state
+
+        def abort_editor(self) -> SessionState:
+            self.aborted = True
+            self.state = SessionState.MAIN_MENU
+            return self.state
+
+        def set_abort_indicator_state(self, active: bool) -> None:
+            self.abort_indicator_states.append(active)
+
+        def set_pause_indicator_state(self, active: bool) -> None:
+            self.pause_states.append(active)
+
+        def send_command(self, text: str) -> SessionState:
+            if text == "EX":
+                self.state = SessionState.EXIT
+            return self.state
+
+    async def _exercise() -> tuple[str, EditorRunner]:
+        submit_command = "/customsend"
+        reader = ScriptedReader(
+            [
+                b"Custom Subject\r\n",
+                b"Custom line\r\n",
+                submit_command.encode("latin-1") + b"\r\n",
+                b"EX\r\n",
+            ]
+        )
+        runner = EditorRunner()
+        writer = FakeWriter()
+        transport = RecordingTelnetTransport(
+            runner,
+            reader,  # type: ignore[arg-type]
+            writer,  # type: ignore[arg-type]
+            poll_interval=0.0,
+            idle_timer_scheduler_cls=None,
+            editor_submit_command=submit_command,
+            editor_abort_command="/customabort",
+        )
+
+        transport.open()
+        pump_console, pump_reader = transport.scheduled_coroutines
+        try:
+            await asyncio.wait_for(pump_reader, timeout=0.1)
+        finally:
+            pump_console.close()
+
+        transcript = b"".join(writer.buffer).decode("latin-1", errors="ignore")
+        return transcript, runner
+
+    transcript, runner = asyncio.run(_exercise())
+    assert "Type /customsend to save or /customabort to cancel." in transcript
+    assert runner.submissions == [("Custom Subject", ["Custom line"])], runner.submissions
+    assert runner.abort_indicator_states == [True, False]
+    assert runner.pause_states == []
+
+
+def test_telnet_transport_editor_submission_honours_custom_abort() -> None:
+    class ScriptedReader:
+        def __init__(self, payloads: list[bytes]):
+            self._payloads = deque(payloads)
+
+        async def readline(self) -> bytes:
+            await asyncio.sleep(0)
+            if self._payloads:
+                return self._payloads.popleft()
+            return b""
+
+    class EditorRunner:
+        def __init__(self) -> None:
+            self.console = object()
+            self.state = SessionState.MESSAGE_EDITOR
+            self.editor_context = SimpleNamespace(
+                current_message="",
+                draft_buffer=[],
+                selected_message_id=None,
+            )
+            self.abort_indicator_states: list[bool] = []
+            self.pause_states: list[bool] = []
+            self.aborted = False
+
+        def read_output(self) -> str:
+            return ""
+
+        def requires_editor_submission(self) -> bool:
+            return not self.aborted
+
+        def get_editor_state(self) -> EditorState | None:
+            return EditorState.POST_MESSAGE
+
+        def submit_editor_draft(
+            self, *, subject: str | None, lines: list[str] | None
+        ) -> SessionState:
+            raise AssertionError("editor draft should not be submitted")
+
+        def abort_editor(self) -> SessionState:
+            self.aborted = True
+            self.state = SessionState.MAIN_MENU
+            return self.state
+
+        def set_abort_indicator_state(self, active: bool) -> None:
+            self.abort_indicator_states.append(active)
+
+        def set_pause_indicator_state(self, active: bool) -> None:
+            self.pause_states.append(active)
+
+        def send_command(self, text: str) -> SessionState:
+            if text == "EX":
+                self.state = SessionState.EXIT
+            return self.state
+
+    async def _exercise() -> tuple[str, EditorRunner]:
+        reader = ScriptedReader([b"/customabort\r\n", b"EX\r\n"])
+        runner = EditorRunner()
+        writer = FakeWriter()
+        transport = RecordingTelnetTransport(
+            runner,
+            reader,  # type: ignore[arg-type]
+            writer,  # type: ignore[arg-type]
+            poll_interval=0.0,
+            idle_timer_scheduler_cls=None,
+            editor_submit_command="/customsend",
+            editor_abort_command="/customabort",
+        )
+
+        transport.open()
+        pump_console, pump_reader = transport.scheduled_coroutines
+        try:
+            await asyncio.wait_for(pump_reader, timeout=0.1)
+        finally:
+            pump_console.close()
+
+        transcript = b"".join(writer.buffer).decode("latin-1", errors="ignore")
+        return transcript, runner
+
+    transcript, runner = asyncio.run(_exercise())
+    assert "Type /customsend to save or /customabort to cancel." in transcript
+    assert "Subject: " in transcript
+    assert "> " not in transcript
+    assert runner.abort_indicator_states == [True, False]
+    assert runner.pause_states == []
+    assert runner.aborted is True
 
 
 def test_telnet_transport_handles_negotiation_sequences() -> None:
