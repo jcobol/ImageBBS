@@ -26,6 +26,7 @@ from imagebbs.runtime.sysop_options import (
     SysopOptionsEvent,
     SysopOptionsModule,
 )
+from imagebbs.runtime.masked_pane_staging import MaskedPaneMacro
 from imagebbs.session_kernel import SessionKernel
 
 
@@ -130,6 +131,131 @@ def _parse_overlay_hex(value: str) -> int:
     if value.lower().startswith("0x"):
         return int(value, 16)
     return int(value, 10)
+
+
+def test_masked_pane_staging_map_matches_iteration_47() -> None:
+    context = bootstrap_device_context(
+        assignments=(), ampersand_overrides=BUILTIN_AMPERSAND_OVERRIDES
+    )
+    console = context.get_service("console")
+    assert isinstance(console, ConsoleService)
+
+    staging = console.masked_pane_staging_map
+
+    expected_slots = {
+        MaskedPaneMacro.MAIN_MENU_HEADER: 0x04,
+        MaskedPaneMacro.MAIN_MENU_PROMPT: 0x09,
+        MaskedPaneMacro.MAIN_MENU_INVALID: 0x0D,
+        MaskedPaneMacro.FILE_TRANSFERS_HEADER: 0x28,
+        MaskedPaneMacro.FILE_TRANSFERS_PROMPT: 0x29,
+        MaskedPaneMacro.FILE_TRANSFERS_INVALID: 0x2A,
+        MaskedPaneMacro.SYSOP_HEADER: 0x20,
+        MaskedPaneMacro.SYSOP_PROMPT: 0x21,
+        MaskedPaneMacro.SYSOP_SAYING_PREAMBLE: 0x22,
+        MaskedPaneMacro.SYSOP_SAYING_OUTPUT: 0x23,
+        MaskedPaneMacro.SYSOP_INVALID: 0x24,
+        MaskedPaneMacro.SYSOP_ABORT: 0x25,
+        MaskedPaneMacro.FLAG_MAIN_MENU_HEADER: 0x04,
+        MaskedPaneMacro.FLAG_MAIN_MENU_PROMPT: 0x09,
+        MaskedPaneMacro.FLAG_MAIN_MENU_INVALID: 0x0D,
+        MaskedPaneMacro.FLAG_SAYINGS_ENABLE: 0x14,
+        MaskedPaneMacro.FLAG_SAYINGS_DISABLE: 0x15,
+        MaskedPaneMacro.FLAG_SAYINGS_PROMPT_ENABLE: 0x16,
+        MaskedPaneMacro.FLAG_SAYINGS_PROMPT_DISABLE: 0x17,
+        MaskedPaneMacro.FLAG_PROMPT_ENABLE: 0x18,
+        MaskedPaneMacro.FLAG_PROMPT_DISABLE: 0x19,
+    }
+
+    for macro, slot in expected_slots.items():
+        spec = staging.spec(macro)
+        assert spec.slot == slot
+        assert staging.slot(macro) == slot
+        assert staging.spec_for_slot(slot) is not None
+
+    expected_fallbacks = {
+        MaskedPaneMacro.SYSOP_HEADER: (
+            (0x68, 0xC3, 0x85, 0x06, 0xE2, 0xC1, 0xA0, 0x00)
+            + (0x20,) * 32,
+            (0x0A, 0x0A, 0x0A, 0x0A, 0x0A, 0x0A, 0x0A, 0x00)
+            + (0x0A,) * 32,
+        ),
+        MaskedPaneMacro.SYSOP_PROMPT: (
+            (0x00,) + (0x20,) * 39,
+            (0x00,) + (0x0A,) * 39,
+        ),
+        MaskedPaneMacro.SYSOP_SAYING_PREAMBLE: (
+            (0x00,) + (0x20,) * 39,
+            (0x00,) + (0x0A,) * 39,
+        ),
+        MaskedPaneMacro.SYSOP_SAYING_OUTPUT: (
+            (0x00,) + (0x20,) * 39,
+            (0x00,) + (0x0A,) * 39,
+        ),
+        MaskedPaneMacro.SYSOP_INVALID: (
+            (0x00,) + (0x20,) * 39,
+            (0x00,) + (0x0A,) * 39,
+        ),
+        MaskedPaneMacro.SYSOP_ABORT: (
+            (0x00,) + (0x20,) * 39,
+            (0x00,) + (0x0A,) * 39,
+        ),
+    }
+
+    for macro, expected in expected_fallbacks.items():
+        fallback = staging.fallback_overlay(macro)
+        assert fallback is not None
+        glyphs, colours = fallback
+        assert glyphs == expected[0]
+        assert colours == expected[1]
+        slot = staging.slot(macro)
+        slot_fallback = staging.fallback_overlay_for_slot(slot)
+        assert slot_fallback == fallback
+
+    transfer_sequence = staging.ampersand_sequence("&,28")
+    assert tuple(spec.macro for spec in transfer_sequence) == (
+        MaskedPaneMacro.FILE_TRANSFERS_HEADER,
+        MaskedPaneMacro.FILE_TRANSFERS_PROMPT,
+    )
+
+    transfer_invalid_sequence = staging.ampersand_sequence("&,28,invalid")
+    assert tuple(spec.macro for spec in transfer_invalid_sequence) == (
+        MaskedPaneMacro.FILE_TRANSFERS_INVALID,
+    )
+
+    flag_sequence = staging.ampersand_sequence("&,52")
+    assert tuple(spec.macro for spec in flag_sequence) == (
+        MaskedPaneMacro.MAIN_MENU_HEADER,
+        MaskedPaneMacro.MAIN_MENU_PROMPT,
+        MaskedPaneMacro.MAIN_MENU_INVALID,
+        MaskedPaneMacro.FLAG_SAYINGS_ENABLE,
+        MaskedPaneMacro.FLAG_SAYINGS_DISABLE,
+        MaskedPaneMacro.FLAG_SAYINGS_PROMPT_ENABLE,
+        MaskedPaneMacro.FLAG_SAYINGS_PROMPT_DISABLE,
+        MaskedPaneMacro.FLAG_PROMPT_ENABLE,
+        MaskedPaneMacro.FLAG_PROMPT_DISABLE,
+    )
+
+    expected_flag_operations = {
+        0x04: MaskedPaneMacro.MAIN_MENU_HEADER,
+        0x09: MaskedPaneMacro.MAIN_MENU_PROMPT,
+        0x0D: MaskedPaneMacro.MAIN_MENU_INVALID,
+        0x14: MaskedPaneMacro.FLAG_SAYINGS_ENABLE,
+        0x15: MaskedPaneMacro.FLAG_SAYINGS_DISABLE,
+        0x16: MaskedPaneMacro.FLAG_SAYINGS_PROMPT_ENABLE,
+        0x17: MaskedPaneMacro.FLAG_SAYINGS_PROMPT_DISABLE,
+        0x18: MaskedPaneMacro.FLAG_PROMPT_ENABLE,
+        0x19: MaskedPaneMacro.FLAG_PROMPT_DISABLE,
+    }
+
+    for flag_index, macro in expected_flag_operations.items():
+        expected_spec = staging.spec(macro)
+        actual_spec = staging.ampersand_sequence(f"&,52,{flag_index},3")
+        assert actual_spec == (expected_spec,)
+
+    sayings_reset_sequence = staging.ampersand_sequence("&,52,20,2")
+    assert tuple(spec.macro for spec in sayings_reset_sequence) == (
+        MaskedPaneMacro.FLAG_SAYINGS_ENABLE,
+    )
 
 
 def test_ampersand_dispatcher_stages_masked_pane_flag_entries() -> None:

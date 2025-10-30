@@ -155,27 +155,43 @@ class MaskedPaneStagingMap:
         return self.ampersand_sequences.get(key, ())
 
 
-_FLAG_MACRO_INDICES: Mapping[int, Tuple[MaskedPaneMacro, ...]] = MappingProxyType(
+_ITERATION_47_ALIAS_SLOTS: Mapping[MaskedPaneMacro, int] = MappingProxyType(
     {
-        0x04: (
-            MaskedPaneMacro.MAIN_MENU_HEADER,
-            MaskedPaneMacro.FLAG_MAIN_MENU_HEADER,
-        ),
-        0x09: (
-            MaskedPaneMacro.MAIN_MENU_PROMPT,
-            MaskedPaneMacro.FLAG_MAIN_MENU_PROMPT,
-        ),
-        0x0D: (
-            MaskedPaneMacro.MAIN_MENU_INVALID,
-            MaskedPaneMacro.FLAG_MAIN_MENU_INVALID,
-        ),
-        0x14: (MaskedPaneMacro.FLAG_SAYINGS_ENABLE,),
-        0x15: (MaskedPaneMacro.FLAG_SAYINGS_DISABLE,),
-        0x16: (MaskedPaneMacro.FLAG_SAYINGS_PROMPT_ENABLE,),
-        0x17: (MaskedPaneMacro.FLAG_SAYINGS_PROMPT_DISABLE,),
-        0x18: (MaskedPaneMacro.FLAG_PROMPT_ENABLE,),
-        0x19: (MaskedPaneMacro.FLAG_PROMPT_DISABLE,),
+        MaskedPaneMacro.MAIN_MENU_HEADER: 0x04,
+        MaskedPaneMacro.MAIN_MENU_PROMPT: 0x09,
+        MaskedPaneMacro.MAIN_MENU_INVALID: 0x0D,
+        MaskedPaneMacro.FILE_TRANSFERS_HEADER: 0x28,
+        MaskedPaneMacro.FILE_TRANSFERS_PROMPT: 0x29,
+        MaskedPaneMacro.FILE_TRANSFERS_INVALID: 0x2A,
+        MaskedPaneMacro.SYSOP_HEADER: 0x20,
+        MaskedPaneMacro.SYSOP_PROMPT: 0x21,
+        MaskedPaneMacro.SYSOP_SAYING_PREAMBLE: 0x22,
+        MaskedPaneMacro.SYSOP_SAYING_OUTPUT: 0x23,
+        MaskedPaneMacro.SYSOP_INVALID: 0x24,
+        MaskedPaneMacro.SYSOP_ABORT: 0x25,
+        MaskedPaneMacro.FLAG_MAIN_MENU_HEADER: 0x04,
+        MaskedPaneMacro.FLAG_MAIN_MENU_PROMPT: 0x09,
+        MaskedPaneMacro.FLAG_MAIN_MENU_INVALID: 0x0D,
+        MaskedPaneMacro.FLAG_SAYINGS_ENABLE: 0x14,
+        MaskedPaneMacro.FLAG_SAYINGS_DISABLE: 0x15,
+        MaskedPaneMacro.FLAG_SAYINGS_PROMPT_ENABLE: 0x16,
+        MaskedPaneMacro.FLAG_SAYINGS_PROMPT_DISABLE: 0x17,
+        MaskedPaneMacro.FLAG_PROMPT_ENABLE: 0x18,
+        MaskedPaneMacro.FLAG_PROMPT_DISABLE: 0x19,
     }
+)
+
+
+_ITERATION_47_FLAG_SEQUENCE_SLOTS: Tuple[int, ...] = (
+    0x04,
+    0x09,
+    0x0D,
+    0x14,
+    0x15,
+    0x16,
+    0x17,
+    0x18,
+    0x19,
 )
 
 
@@ -194,55 +210,17 @@ _FLAG_SEQUENCE_OPERATIONS: Mapping[int, Tuple[int, ...]] = MappingProxyType(
 )
 
 
-_DIRECT_SLOT_MACROS: Mapping[int, Tuple[MaskedPaneMacro, ...]] = MappingProxyType(
-    {
-        0x20: (MaskedPaneMacro.SYSOP_HEADER,),
-        0x21: (MaskedPaneMacro.SYSOP_PROMPT,),
-        0x22: (MaskedPaneMacro.SYSOP_SAYING_PREAMBLE,),
-        0x23: (MaskedPaneMacro.SYSOP_SAYING_OUTPUT,),
-        0x24: (MaskedPaneMacro.SYSOP_INVALID,),
-        0x25: (MaskedPaneMacro.SYSOP_ABORT,),
-        0x28: (MaskedPaneMacro.FILE_TRANSFERS_HEADER,),
-        0x29: (MaskedPaneMacro.FILE_TRANSFERS_PROMPT,),
-        0x2A: (MaskedPaneMacro.FILE_TRANSFERS_INVALID,),
-    }
-)
-
-
-def _register_alias(
-    target: dict[MaskedPaneMacro, int],
-    macros: Tuple[MaskedPaneMacro, ...],
-    slot: int,
-    *,
-    macros_by_slot: Mapping[int, object],
-) -> None:
-    if slot not in macros_by_slot and slot not in _SYSOP_FALLBACK_PAYLOADS:
-        raise KeyError(f"console metadata missing macro slot 0x{slot:02x}")
-    for macro in macros:
-        existing = target.setdefault(macro, slot)
-        if existing != slot:
-            raise ValueError(
-                f"conflicting slot alias for {macro.value}: 0x{existing:02x} vs 0x{slot:02x}"
-            )
-
-
 def _build_alias_slot_map(console: ConsoleService) -> Mapping[MaskedPaneMacro, int]:
     macros_by_slot = console.defaults.macros_by_slot
-    alias_slots: dict[MaskedPaneMacro, int] = {}
 
-    flag_slots = {
-        entry.flag_index: entry.slot for entry in console.device.flag_dispatch.entries
-    }
-    for flag_index, macros in _FLAG_MACRO_INDICES.items():
-        slot = flag_slots.get(flag_index)
-        if slot is None:
-            raise KeyError(f"missing flag dispatch entry for index 0x{flag_index:02x}")
-        _register_alias(alias_slots, macros, slot, macros_by_slot=macros_by_slot)
+    for macro, slot in _ITERATION_47_ALIAS_SLOTS.items():
+        if slot in macros_by_slot:
+            continue
+        if slot in _SYSOP_FALLBACK_PAYLOADS:
+            continue
+        raise KeyError(f"console metadata missing macro slot 0x{slot:02x}")
 
-    for slot, macros in _DIRECT_SLOT_MACROS.items():
-        _register_alias(alias_slots, macros, slot, macros_by_slot=macros_by_slot)
-
-    return MappingProxyType(alias_slots)
+    return _ITERATION_47_ALIAS_SLOTS
 
 
 def build_masked_pane_staging_map(console: ConsoleService) -> MaskedPaneStagingMap:
@@ -261,11 +239,13 @@ def build_masked_pane_staging_map(console: ConsoleService) -> MaskedPaneStagingM
 
     flag_slots: dict[int, MaskedPaneMacroSpec] = {}
     for entry in console.device.flag_dispatch.entries:
-        spec = macros_by_slot.get(entry.slot)
-        if spec is None:
-            continue
         if entry.slot not in console._MASKED_OVERLAY_FLAG_SLOTS:
             continue
+        spec = macros_by_slot.get(entry.slot)
+        if spec is None:
+            raise KeyError(
+                f"masked-pane staging slot 0x{entry.slot:02x} missing macro spec"
+            )
         flag_slots[entry.flag_index] = spec
 
     ampersand_sequences: dict[str, Tuple[MaskedPaneMacroSpec, ...]] = {
@@ -276,11 +256,7 @@ def build_masked_pane_staging_map(console: ConsoleService) -> MaskedPaneStagingM
         "&,28,invalid": (
             macros[MaskedPaneMacro.FILE_TRANSFERS_INVALID],
         ),
-        "&,52": tuple(
-            macros_by_slot[entry.slot]
-            for entry in console.device.flag_dispatch.entries
-            if entry.slot in console._MASKED_OVERLAY_FLAG_SLOTS
-        ),
+        "&,52": tuple(macros_by_slot[slot] for slot in _ITERATION_47_FLAG_SEQUENCE_SLOTS),
     }
 
     for flag_index, operations in _FLAG_SEQUENCE_OPERATIONS.items():
