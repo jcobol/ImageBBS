@@ -62,6 +62,33 @@ def test_load_message_store_rejects_non_iterable_records(tmp_path: Path) -> None
         load_message_store(path)
 
 
+def test_load_message_store_accepts_version_one(tmp_path: Path) -> None:
+    path = tmp_path / "valid_version.json"
+    payload = {"version": 1, "records": []}
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    store = load_message_store(path)
+    assert isinstance(store, MessageStore)
+
+
+def test_load_message_store_accepts_missing_version(tmp_path: Path) -> None:
+    path = tmp_path / "legacy.json"
+    payload = {"records": []}
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    store = load_message_store(path)
+    assert isinstance(store, MessageStore)
+
+
+def test_load_message_store_rejects_mismatched_version(tmp_path: Path) -> None:
+    path = tmp_path / "unsupported.json"
+    payload = {"version": 2, "records": []}
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="unsupported message store version"):
+        load_message_store(path)
+
+
 def test_load_records_rejects_non_mapping_entries() -> None:
     with pytest.raises(TypeError, match="record payload must be a mapping"):
         load_records([{"message_id": 1, "board_id": "main"}, "invalid"])

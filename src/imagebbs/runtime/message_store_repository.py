@@ -1,4 +1,9 @@
-"""Persistence helpers for :mod:`imagebbs.runtime.message_store`."""
+"""Persistence helpers for :mod:`imagebbs.runtime.message_store`.
+
+The persisted JSON payload is versioned. The loader currently recognises
+version ``1`` (the format emitted by :func:`save_message_store`) and legacy
+dumps that predate explicit versioning.
+"""
 
 from __future__ import annotations
 
@@ -245,10 +250,20 @@ def load_message_store(path: Path) -> MessageStore:
             return MessageStore()
 
         payload = json.loads(text)
-        if isinstance(payload, Mapping):
+        if not isinstance(payload, Mapping):
+            raise TypeError("message store payload must be a mapping")
+
+        version = payload.get("version")
+        if version is None:
+            records = payload.get("records", [])
+        elif isinstance(version, int):
+            if version != 1:
+                raise ValueError(
+                    f"unsupported message store version: {version}"
+                )
             records = payload.get("records", [])
         else:
-            raise TypeError("message store payload must be a mapping")
+            raise ValueError("message store version must be an integer")
 
     return MessageStore(records=load_records(records))
 
