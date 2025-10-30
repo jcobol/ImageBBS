@@ -1,4 +1,5 @@
 import pytest
+from unittest import mock
 
 from imagebbs.device_context import (
     Console,
@@ -274,6 +275,57 @@ def test_masked_pane_buffer_rotation_matches_loopb94e() -> None:
     assert bytes(buffers.colour_var_4078) == bytes((fill_colour,) * buffers.width)
     assert buffers.dirty is False
     assert console.transcript_bytes == b""
+
+
+def test_rotate_masked_pane_buffers_consumes_pending_payload_once() -> None:
+    console = Console()
+    service = ConsoleService(console)
+    buffers = MaskedPaneBuffers()
+    service.set_masked_pane_buffers(buffers)
+
+    width = buffers.width
+    previous_screen = bytes((0x30 + i) % 256 for i in range(width))
+    previous_colour = bytes((i + 1) % 16 for i in range(width))
+    buffers.live_screen[:] = previous_screen
+    buffers.live_colour[:] = previous_colour
+
+    pending_screen = bytes((0x50 + i) % 256 for i in range(width))
+    pending_colour = bytes(((i + 5) % 16) for i in range(width))
+    service.stage_masked_pane_overlay(pending_screen, pending_colour)
+
+    assert buffers.has_pending_payload() is True
+
+    fill_glyph = 0x2A
+    fill_colour = 0x06
+
+    with mock.patch.object(
+        buffers, "consume_pending_payload", wraps=buffers.consume_pending_payload
+    ) as consume_spy:
+        service.rotate_masked_pane_buffers(
+            buffers, fill_glyph=fill_glyph, fill_colour=fill_colour
+        )
+        assert consume_spy.call_count == 1
+
+    assert buffers.has_pending_payload() is False
+    assert buffers.peek_pending_payload() is None
+
+    overlay_screen_address = ConsoleService._MASKED_OVERLAY_SCREEN_BASE
+    overlay_colour_address = ConsoleService._MASKED_OVERLAY_COLOUR_BASE
+
+    assert _read_screen(service, overlay_screen_address, width) == pending_screen
+
+    palette = service.screen.palette
+    expected_colour = bytes(
+        _resolve_palette_colour(value, palette) for value in pending_colour
+    )
+    assert _read_colour(service, overlay_colour_address, width) == expected_colour
+
+    assert bytes(buffers.live_screen) == pending_screen
+    assert bytes(buffers.live_colour) == pending_colour
+
+    assert bytes(buffers.staged_screen) == bytes((fill_glyph,) * width)
+    assert bytes(buffers.staged_colour) == bytes((fill_colour,) * width)
+    assert buffers.dirty is False
 
 
 def test_masked_pane_staging_single_byte_writes_capture_buffers() -> None:
