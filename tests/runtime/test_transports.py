@@ -10,6 +10,7 @@ from typing import Coroutine, Optional
 from imagebbs.device_context import ConsoleService
 from imagebbs.message_editor import EditorState
 from imagebbs.runtime.console_ui import IdleTimerScheduler
+from imagebbs.runtime.indicator_controller import IndicatorController
 from imagebbs.runtime.session_instrumentation import SessionInstrumentation
 from imagebbs.runtime.transports import TelnetModemTransport
 from imagebbs.session_kernel import SessionState
@@ -240,6 +241,104 @@ def test_telnet_transport_updates_idle_timer_via_instrumentation() -> None:
         assert transport._idle_timer_scheduler is instrumentation.idle_timer_scheduler
 
     asyncio.run(_exercise())
+
+
+def test_telnet_transport_forwards_indicator_controller_without_instrumentation() -> None:
+    class RecordingConsoleService:
+        def __init__(self) -> None:
+            self.spinner_glyphs: list[int] = []
+            self.carrier_updates: list[tuple[int, int]] = []
+
+        def set_pause_indicator(self, glyph: int, *, colour=None) -> None:  # pragma: no cover - unused
+            pass
+
+        def set_carrier_indicator(
+            self,
+            *,
+            leading_cell: int,
+            indicator_cell: int,
+            leading_colour=None,
+            indicator_colour=None,
+        ) -> None:
+            self.carrier_updates.append((leading_cell & 0xFF, indicator_cell & 0xFF))
+
+        def set_spinner_glyph(self, glyph: int, *, colour=None) -> None:
+            self.spinner_glyphs.append(glyph & 0xFF)
+
+    class IdleRunner:
+        def __init__(self, console: RecordingConsoleService, iterations: int) -> None:
+            self.console = console
+            self.state = SessionState.MAIN_MENU
+            self._iterations = iterations
+            self._indicator = None
+            self.editor_context = None
+
+        def read_output(self) -> str:
+            if self._iterations <= 0:
+                self.state = SessionState.EXIT
+                return ""
+            self._iterations -= 1
+            if self._iterations == 0:
+                self.state = SessionState.EXIT
+            return ""
+
+        def send_command(self, command: str) -> SessionState:  # pragma: no cover - unused
+            return self.state
+
+        def set_indicator_controller(self, controller) -> None:  # pragma: no cover - unused
+            self._indicator = controller
+
+        def requires_editor_submission(self) -> bool:  # pragma: no cover - unused
+            return False
+
+        def set_abort_indicator_state(self, active: bool) -> None:  # pragma: no cover - unused
+            pass
+
+    class BlockingReader:
+        def __init__(self) -> None:
+            self._release = asyncio.Event()
+
+        async def readline(self) -> bytes:
+            await self._release.wait()
+            return b""
+
+        def release(self) -> None:
+            self._release.set()
+
+    async def _exercise() -> tuple[IndicatorController, RecordingConsoleService]:
+        console = RecordingConsoleService()
+        runner = IdleRunner(console, iterations=4)
+        controller = IndicatorController(console)
+        reader = BlockingReader()
+        writer = FakeWriter()
+        transport = RecordingTelnetTransport(
+            runner,
+            reader,  # type: ignore[arg-type]
+            writer,  # type: ignore[arg-type]
+            poll_interval=0.0,
+            indicator_controller=controller,
+            idle_timer_scheduler_cls=None,
+        )
+
+        transport.open()
+        pump_console, pump_reader = transport.scheduled_coroutines
+        try:
+            await asyncio.wait_for(pump_console, timeout=0.1)
+        finally:
+            reader.release()
+            await asyncio.wait_for(pump_reader, timeout=0.1)
+            await asyncio.wait_for(transport.wait_closed(), timeout=0.1)
+        return controller, console
+
+    controller, console = asyncio.run(_exercise())
+    assert console.carrier_updates, console.carrier_updates
+    assert console.carrier_updates[0] == (0xA0, 0xFA)
+    assert console.carrier_updates[-1] == (0x20, 0x20)
+    assert controller is not None
+    assert len(console.spinner_glyphs) >= 3
+    assert console.spinner_glyphs[0] == 0xB0
+    assert console.spinner_glyphs[1] == 0xAE
+    assert console.spinner_glyphs[-1] == 0x20
 
 
 def test_telnet_transport_filters_pause_tokens_and_updates_indicator() -> None:

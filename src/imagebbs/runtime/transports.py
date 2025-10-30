@@ -64,6 +64,77 @@ class _BaudBudget:
         return deficit / self.limit
 
 
+class _IndicatorAwareTransportMixin:
+    """Support indicator forwarding for modem transport front-ends."""
+
+    def __init__(
+        self,
+        *,
+        indicator_controller: IndicatorController | None = None,
+        instrumentation: SessionInstrumentation | None = None,
+        idle_timer_scheduler_cls: type[IdleTimerScheduler] | None = IdleTimerScheduler,
+    ) -> None:
+        self._instrumentation = instrumentation
+        self.indicator_controller = indicator_controller
+        self._idle_timer_scheduler_cls = idle_timer_scheduler_cls
+        self._idle_timer_scheduler: IdleTimerScheduler | None = None
+
+    def _indicator_on_open(self, runner) -> None:
+        instrumentation = self._instrumentation
+        if instrumentation is not None:
+            instrumentation.set_carrier(True)
+            instrumentation.reset_idle_timer()
+            self._idle_timer_scheduler = instrumentation.ensure_idle_timer_scheduler()
+            return
+
+        controller = self.indicator_controller
+        if controller is not None:
+            controller.set_carrier(True)
+
+        scheduler = self._idle_timer_scheduler
+        if scheduler is None:
+            scheduler_cls = self._idle_timer_scheduler_cls
+            console = getattr(runner, "console", None)
+            if scheduler_cls is not None and console is not None:
+                scheduler = scheduler_cls(console)
+        self._idle_timer_scheduler = scheduler
+        if scheduler is not None:
+            scheduler.reset()
+
+    def _indicator_on_close(self) -> None:
+        instrumentation = self._instrumentation
+        if instrumentation is not None:
+            instrumentation.set_carrier(False)
+            return
+
+        controller = self.indicator_controller
+        if controller is not None:
+            controller.set_carrier(False)
+
+    def _indicator_on_idle_cycle(self) -> None:
+        instrumentation = self._instrumentation
+        if instrumentation is not None:
+            instrumentation.on_idle_cycle()
+            return
+
+        controller = self.indicator_controller
+        if controller is not None:
+            controller.on_idle_tick()
+
+        scheduler = self._idle_timer_scheduler
+        if scheduler is not None:
+            scheduler.tick()
+
+    def _indicator_ensure_controller(self) -> IndicatorController | None:
+        instrumentation = self._instrumentation
+        if instrumentation is not None:
+            controller = instrumentation.ensure_indicator_controller()
+            if controller is not None:
+                self.indicator_controller = controller
+            return controller
+        return self.indicator_controller
+
+
 class BaudLimitedTransport(ModemTransport):
     """Decorator that throttles a :class:`ModemTransport` by baud rate."""
 
@@ -254,7 +325,7 @@ class _TelnetEditorIO(AsyncEditorIO):
         return normalized.rstrip("\r\n")
 
 
-class TelnetModemTransport(ModemTransport):
+class TelnetModemTransport(_IndicatorAwareTransportMixin, ModemTransport):
     """Bridge :class:`SessionRunner` console traffic over asyncio streams."""
 
     _PAUSE_TOKENS: dict[int, bool] = {0x13: True, 0x11: False}
@@ -274,13 +345,17 @@ class TelnetModemTransport(ModemTransport):
         editor_abort_command: str = DEFAULT_EDITOR_ABORT_COMMAND,
         newline_translation: str | None = None,
     ) -> None:
+        _IndicatorAwareTransportMixin.__init__(
+            self,
+            indicator_controller=indicator_controller,
+            instrumentation=instrumentation,
+            idle_timer_scheduler_cls=idle_timer_scheduler_cls,
+        )
         self.runner = runner
         self.reader = reader
         self.writer = writer
         self.encoding = encoding
         self.poll_interval = poll_interval
-        self._instrumentation = instrumentation
-        self._idle_timer_scheduler_cls = idle_timer_scheduler_cls
         self._editor_submit_command = editor_submit_command
         self._editor_abort_command = editor_abort_command
         if newline_translation == "":
@@ -291,7 +366,6 @@ class TelnetModemTransport(ModemTransport):
             indicator_controller = instrumentation.ensure_indicator_controller()
 
         self.indicator_controller = indicator_controller
-        self._idle_timer_scheduler: IdleTimerScheduler | None = None
 
         self._loop: asyncio.AbstractEventLoop | None = None
         self._close_event = asyncio.Event()
@@ -345,24 +419,7 @@ class TelnetModemTransport(ModemTransport):
             return
         self._loop = asyncio.get_running_loop()
 
-        instrumentation = self._instrumentation
-        if instrumentation is not None:
-            instrumentation.set_carrier(True)
-            instrumentation.reset_idle_timer()
-            self._idle_timer_scheduler = instrumentation.ensure_idle_timer_scheduler()
-        else:
-            controller = self.indicator_controller
-            if controller is not None:
-                controller.set_carrier(True)
-            scheduler = self._idle_timer_scheduler
-            if scheduler is None:
-                scheduler_cls = self._idle_timer_scheduler_cls
-                console = getattr(self.runner, "console", None)
-                if scheduler_cls is not None and console is not None:
-                    scheduler = scheduler_cls(console)
-            self._idle_timer_scheduler = scheduler
-            if scheduler is not None:
-                scheduler.reset()
+        self._indicator_on_open(self.runner)
 
         initial = self.runner.read_output()
         if initial:
@@ -423,13 +480,7 @@ class TelnetModemTransport(ModemTransport):
     def _mark_closed(self) -> None:
         if not self._close_event.is_set():
             self._close_event.set()
-        instrumentation = self._instrumentation
-        if instrumentation is not None:
-            instrumentation.set_carrier(False)
-        else:
-            controller = self.indicator_controller
-            if controller is not None:
-                controller.set_carrier(False)
+        self._indicator_on_close()
 
     def _track_task(self, task: asyncio.Task[None]) -> None:
         def _on_done(completed: asyncio.Task[None]) -> None:
@@ -450,25 +501,10 @@ class TelnetModemTransport(ModemTransport):
         self._track_task(task)
 
     def _resolve_indicator_controller(self) -> IndicatorController | None:
-        instrumentation = self._instrumentation
-        if instrumentation is not None:
-            controller = instrumentation.ensure_indicator_controller()
-            if controller is not None:
-                self.indicator_controller = controller
-            return controller
-        return self.indicator_controller
+        return self._indicator_ensure_controller()
 
     def _on_idle_cycle(self) -> None:
-        instrumentation = self._instrumentation
-        if instrumentation is not None:
-            instrumentation.on_idle_cycle()
-            return
-        controller = self.indicator_controller
-        if controller is not None:
-            controller.on_idle_tick()
-        scheduler = self._idle_timer_scheduler
-        if scheduler is not None:
-            scheduler.tick()
+        self._indicator_on_idle_cycle()
 
     def _update_pause_indicator(self, active: bool) -> None:
         runner = getattr(self, "runner", None)
