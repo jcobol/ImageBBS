@@ -1,9 +1,13 @@
+import json
+from pathlib import Path
+
 import pytest
 
 from imagebbs import SessionRunner, SessionState
 from imagebbs.message_editor import EditorState, MessageEditor
 from imagebbs.runtime.file_transfers import FileTransfersModule
 from imagebbs.runtime.main_menu import MainMenuModule
+from imagebbs.runtime.message_store import MessageStore
 from imagebbs.runtime.sysop_options import SysopOptionsModule
 
 
@@ -182,3 +186,40 @@ def test_session_runner_edits_existing_message(runner: SessionRunner) -> None:
 
     updated = runner.message_store.fetch(runner.board_id, original.message_id)
     assert updated.lines == ("Updated text",)
+
+
+def test_session_runner_persists_message_store(tmp_path: Path) -> None:
+    path = tmp_path / "messages.json"
+    runner = SessionRunner(message_store=MessageStore(), message_store_path=path)
+
+    runner.read_output()
+    state = runner.send_command("MF")
+    assert state is SessionState.MESSAGE_EDITOR
+
+    state = runner.send_command("P")
+    assert state is SessionState.MESSAGE_EDITOR
+
+    state = runner.submit_editor_draft(subject="Subject", lines=["Line 1"])
+    assert state is SessionState.MESSAGE_EDITOR
+    assert path.exists()
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["version"] == 1
+    assert payload["records"]
+    assert payload["records"][0]["subject"] == "Subject"
+    assert payload["records"][0]["lines"] == ["Line 1"]
+
+    context = runner.editor_context
+    context.reset_selection()
+
+    state = runner.send_command("E")
+    assert state is SessionState.MESSAGE_EDITOR
+    state = runner.send_command("1")
+    assert state is SessionState.MESSAGE_EDITOR
+    state = runner.submit_editor_draft(lines=["Edited line"])
+    assert state is SessionState.MESSAGE_EDITOR
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["records"]
+    assert len(payload["records"]) == 1
+    assert payload["records"][0]["lines"] == ["Edited line"]
