@@ -78,6 +78,8 @@ def test_parse_args_defaults_to_curses_ui() -> None:
     assert args.curses_ui is True
     assert args.editor_submit_command == DEFAULT_EDITOR_SUBMIT_COMMAND
     assert args.editor_abort_command == DEFAULT_EDITOR_ABORT_COMMAND
+    assert args.board_id is None
+    assert args.user_id is None
 
 
 def test_parse_args_console_flag_disables_curses_ui() -> None:
@@ -93,11 +95,17 @@ def test_parse_args_accepts_editor_command_overrides() -> None:
             "/save",
             "--editor-abort-command",
             "/cancel",
+            "--board-id",
+            "custom-board",
+            "--user-id",
+            "custom-user",
         ]
     )
 
     assert args.editor_submit_command == "/save"
     assert args.editor_abort_command == "/cancel"
+    assert args.board_id == "custom-board"
+    assert args.user_id == "custom-user"
 
 
 def test_create_runner_applies_configuration_and_persistence(tmp_path: Path) -> None:
@@ -124,6 +132,10 @@ def test_create_runner_applies_configuration_and_persistence(tmp_path: Path) -> 
             str(config_path),
             "--messages-path",
             str(messages_path),
+            "--board-id",
+            "test-board",
+            "--user-id",
+            "test-user",
         ]
     )
 
@@ -142,8 +154,8 @@ def test_create_runner_applies_configuration_and_persistence(tmp_path: Path) -> 
     assert services is not None
     options = services.get("message_store_persistence")
     assert options == {"path": messages_path}
-    assert runner.editor_context.board_id
-    assert runner.editor_context.user_id
+    assert runner.editor_context.board_id == "test-board"
+    assert runner.editor_context.user_id == "test-user"
     assert runner.message_store_path == messages_path
     assert runner.editor_context.store is runner.message_store
 
@@ -495,6 +507,10 @@ def test_run_stream_session_bridges_telnet_and_persists_messages(tmp_path: Path)
             "/save",
             "--editor-abort-command",
             "/cancel",
+            "--board-id",
+            "async-board",
+            "--user-id",
+            "async-user",
         ]
     )
 
@@ -516,9 +532,13 @@ def test_run_stream_session_bridges_telnet_and_persists_messages(tmp_path: Path)
             *,
             store: MessageStore,
             messages_path: Path | None,
+            args: argparse.Namespace | None = None,
         ) -> SessionContext:
             return self._delegate.build_session_context(
-                defaults, store=store, messages_path=messages_path
+                defaults,
+                store=store,
+                messages_path=messages_path,
+                args=args,
             )
 
         def create_runner(self, namespace: argparse.Namespace) -> SessionRunner:
@@ -618,6 +638,8 @@ def test_run_stream_session_bridges_telnet_and_persists_messages(tmp_path: Path)
     runners = recording_factory.runners
     assert len(runners) == 1
     runner = runners[0]
+    assert runner.editor_context.board_id == "async-board"
+    assert runner.editor_context.user_id == "async-user"
 
     records = list(runner.message_store.iter_records())
     assert len(records) == 1
@@ -626,6 +648,13 @@ def test_run_stream_session_bridges_telnet_and_persists_messages(tmp_path: Path)
     assert record.lines == ("Async Body",)
 
     assert len(recording_factory.persist_calls) == 1
+    persist_args, persisted_runner = recording_factory.persist_calls[0]
+    assert persist_args.board_id == "async-board"
+    assert persist_args.user_id == "async-user"
+    assert persisted_runner is runner
+    services = runner.editor_context.services
+    assert services is not None
+    assert services.get("message_store_persistence") == {"path": messages_path}
     assert messages_path.exists()
     persisted_text = messages_path.read_text(encoding="utf-8")
     assert "Async Subject" in persisted_text

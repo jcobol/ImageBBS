@@ -25,7 +25,10 @@ from .session_runner import SessionRunner
 SessionRunnerBuilder = Callable[
     [SetupDefaults, MessageStore, SessionContext, Path | None], SessionRunner
 ]
-SessionContextBuilder = Callable[[SetupDefaults, MessageStore, Path | None], SessionContext]
+SessionContextBuilder = Callable[
+    [SetupDefaults, MessageStore, Path | None, argparse.Namespace | None],
+    SessionContext,
+]
 DefaultsBuilder = Callable[[argparse.Namespace], SetupDefaults]
 MessageStoreLoader = Callable[[argparse.Namespace], MessageStore]
 MessageStoreSaver = Callable[[MessageStore, Path], None]
@@ -65,10 +68,11 @@ class RuntimeSessionFactory:
         *,
         store: MessageStore,
         messages_path: Path | None,
+        args: argparse.Namespace | None = None,
     ) -> SessionContext:
         """Return a :class:`SessionContext` seeded with the persistence hooks."""
 
-        return self._session_context_builder(defaults, store, messages_path)
+        return self._session_context_builder(defaults, store, messages_path, args)
 
     def create_runner(self, args: argparse.Namespace) -> SessionRunner:
         """Create a :class:`SessionRunner` configured with ``args``."""
@@ -77,7 +81,7 @@ class RuntimeSessionFactory:
         store = self.build_message_store(args)
         messages_path: Path | None = getattr(args, "messages_path", None)
         session_context = self.build_session_context(
-            defaults, store=store, messages_path=messages_path
+            defaults, store=store, messages_path=messages_path, args=args
         )
         return self._runner_builder(defaults, store, session_context, messages_path)
 
@@ -180,10 +184,15 @@ def _build_session_context_from_defaults(
     defaults: SetupDefaults,
     store: MessageStore,
     messages_path: Path | None,
+    args: argparse.Namespace | None,
 ) -> SessionContext:
-    board_id = getattr(defaults, "board_identifier", None) or "main"
+    board_override = getattr(args, "board_id", None) if args is not None else None
+    user_override = getattr(args, "user_id", None) if args is not None else None
+
+    board_id = board_override or getattr(defaults, "board_identifier", None) or "main"
     sysop = getattr(defaults, "sysop", None)
-    user_id = getattr(sysop, "login_id", None) or "sysop"
+    default_user_id = getattr(sysop, "login_id", None) or "sysop"
+    user_id = user_override or default_user_id
 
     context = SessionContext(board_id=board_id, user_id=user_id, store=store)
     services = dict(context.services or {})
