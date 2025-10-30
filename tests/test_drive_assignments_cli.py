@@ -33,8 +33,9 @@ def test_render_assignments_formats_all_locators(monkeypatch: pytest.MonkeyPatch
     overrides = {0x10: "ampersand.module:flag", 0x02: "math:sin"}
 
     class FakeDiskDrive(DiskDrive):  # type: ignore[misc]
-        def __init__(self, root: Path) -> None:
+        def __init__(self, root: Path, *, read_only: bool = False) -> None:
             self.root = root
+            self._read_only = bool(read_only)
 
     class FakeContext:
         def __init__(self) -> None:

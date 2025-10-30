@@ -144,10 +144,17 @@ class Device:
 class DiskDrive(Device):
     name = "disk"
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, *, read_only: bool = False) -> None:
         root.mkdir(parents=True, exist_ok=True)
         self.root = root
         self._root = root.resolve()
+        self._read_only = bool(read_only)
+
+    @property
+    def read_only(self) -> bool:
+        """Return ``True`` when the drive should reject writes."""
+
+        return self._read_only
 
     def open(self, descriptor: ChannelDescriptor) -> LogicalChannel:
         if descriptor.secondary_address != 15:
@@ -200,6 +207,8 @@ class DiskDrive(Device):
         path, file_type, mode_token = self._parse_filename(specification)
         if file_type is not None and file_type not in {"S", "SEQ"}:
             raise DeviceError("disk: only sequential files are supported")
+        if self._read_only and mode_token in {"W", "A"}:
+            raise DeviceError("disk: drive is read-only")
         if mode_token == "R":
             if not path.exists() or not path.is_file():
                 raise DeviceError(f"disk: '{path.name}' does not exist")
@@ -225,6 +234,8 @@ class DiskDrive(Device):
             listing = "\r".join(entries)
             return f"00,{listing or '0 FILES'},00,00"
         if upper.startswith("S"):
+            if self._read_only:
+                raise DeviceError("disk: drive is read-only")
             specification = command[1:]
             if specification.startswith(":"):
                 specification = specification[1:]
@@ -1830,7 +1841,10 @@ def bootstrap_device_context(
         locator = assignment.locator
         if isinstance(locator, FilesystemDriveLocator):
             device_name = context.drive_device_name(assignment.slot)
-            context.register(device_name, DiskDrive(locator.path))
+            context.register(
+                device_name,
+                DiskDrive(locator.path, read_only=assignment.read_only),
+            )
             context.open(device_name, assignment.slot, 15)
     return context
 

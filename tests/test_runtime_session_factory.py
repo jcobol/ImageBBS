@@ -10,6 +10,7 @@ from imagebbs.runtime.cli import parse_args
 from imagebbs.runtime.message_store import MessageStore
 from imagebbs.runtime.session_factory import DEFAULT_RUNTIME_SESSION_FACTORY
 from imagebbs.setup_defaults import FilesystemDriveLocator
+from imagebbs.storage_config import StorageConfigError
 
 
 def _namespace(**kwargs: object) -> argparse.Namespace:
@@ -108,12 +109,27 @@ def test_factory_translates_storage_config_to_filesystem_drives(
     assert paths_by_slot[1] == drive8.resolve()
     assert paths_by_slot[2] == drive9.resolve()
 
+    read_only_flags = {
+        assignment.slot: assignment.read_only for assignment in filesystem_assignments
+    }
+    assert read_only_flags[1] is False
+    assert read_only_flags[2] is True
+
     assert defaults.filesystem_drive_roots == {
         8: drive8.resolve(),
         9: drive9.resolve(),
     }
     assert defaults.default_filesystem_drive == 9
     assert defaults.default_filesystem_drive_slot == 2
+
+    storage = getattr(defaults, "storage_config", None)
+    assert storage is not None
+
+    with pytest.raises(StorageConfigError, match="read-only"):
+        storage.validate_save_target("IMMUTABLE", drive=9)
+
+    target = storage.validate_save_target("WRITABLE", drive=8)
+    assert target == drive8 / "WRITABLE"
 
 
 def test_factory_registers_persistence_hook(tmp_path: Path) -> None:

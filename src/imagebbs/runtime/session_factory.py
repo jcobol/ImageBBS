@@ -149,7 +149,9 @@ def _apply_storage_config(
         ensure_slot(slot)
         assignments[slot - 1] = DriveAssignment(
             slot=slot,
-            locator=FilesystemDriveLocator(path=mapping.root),
+            locator=FilesystemDriveLocator(
+                path=mapping.root, read_only=mapping.read_only
+            ),
         )
         drive_slots[drive] = slot
 
