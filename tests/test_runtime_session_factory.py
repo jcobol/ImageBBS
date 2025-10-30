@@ -141,7 +141,7 @@ def test_factory_registers_persistence_hook(tmp_path: Path) -> None:
     store = factory.build_message_store(args)
     assert isinstance(store, MessageStore)
     context = factory.build_session_context(
-        defaults, store=store, messages_path=messages_path
+        defaults, store=store, messages_path=messages_path, args=args
     )
 
     services = context.services

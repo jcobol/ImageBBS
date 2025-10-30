@@ -105,6 +105,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=DEFAULT_EDITOR_ABORT_COMMAND,
         help="Command token that cancels the current editor buffer",
     )
+    parser.add_argument(
+        "--board-id",
+        default=None,
+        help="Override the board identifier for the session context",
+    )
+    parser.add_argument(
+        "--user-id",
+        default=None,
+        help="Override the user identifier for the session context",
+    )
     return parser.parse_args(argv)
 
 
@@ -133,11 +143,12 @@ def _build_session_context(
     *,
     store: MessageStore,
     messages_path: Path | None,
+    args: argparse.Namespace,
     factory: RuntimeSessionFactory | None = None,
 ) -> SessionContext:
     runtime_factory = _ensure_factory(factory)
     return runtime_factory.build_session_context(
-        defaults, store=store, messages_path=messages_path
+        defaults, store=store, messages_path=messages_path, args=args
     )
 
 
