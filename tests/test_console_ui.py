@@ -459,6 +459,46 @@ def test_idle_timer_scheduler_overwrites_digits_without_transcript() -> None:
     assert console.device.transcript_bytes == b""
 
 
+def test_sysop_console_app_frame_loop_updates_idle_timer_without_touching_colon() -> None:
+    console = RecordingConsoleService()
+    colon_address = 0x04DF
+    console.device.poke_screen_byte(colon_address, 0x3A)
+
+    timer_source = FakeMonotonic()
+    app = SysopConsoleApp(console)
+
+    scheduler = IdleTimerScheduler(console, time_source=timer_source)
+    scheduler.reset()
+    app.idle_timer_scheduler = scheduler
+    console.digit_history.clear()
+
+    def _run_frame() -> None:
+        app.capture_frame()
+        app._run_idle_cycle()
+
+    _run_frame()
+    assert _read_idle_digits(console) == (0x30, 0x30, 0x30)
+    assert console.screen.peek_screen_address(colon_address) == 0x3A
+
+    timer_source.advance(1.0)
+    _run_frame()
+
+    timer_source.advance(9.0)
+    _run_frame()
+
+    timer_source.advance(50.0)
+    _run_frame()
+
+    assert console.digit_history == [
+        (0x30, 0x30, 0x30),
+        (0x30, 0x30, 0x31),
+        (0x30, 0x31, 0x30),
+        (0x31, 0x30, 0x30),
+    ]
+    assert console.screen.peek_screen_address(colon_address) == 0x3A
+    assert console.device.transcript_bytes == b""
+
+
 def test_sysop_console_app_reuses_instrumentation_instances() -> None:
     console = RecordingConsoleService()
     runner = DummyRunner(console)
