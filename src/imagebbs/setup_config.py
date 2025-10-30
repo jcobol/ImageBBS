@@ -48,14 +48,29 @@ def _parse_drive_config(
         raise ValueError("drive config must define a mapping of slots to paths")
 
     overrides: Dict[int, DriveAssignment] = {}
-    for raw_slot, raw_path in raw_slots.items():
+    for raw_slot, raw_entry in raw_slots.items():
         slot = _coerce_slot(raw_slot)
-        locator_path = _normalise_drive_path(raw_path, base=base)
-        overrides[slot] = DriveAssignment(
-            slot=slot,
-            locator=FilesystemDriveLocator(path=locator_path),
-        )
+        locator = _parse_drive_locator(raw_entry, base=base)
+        overrides[slot] = DriveAssignment(slot=slot, locator=locator)
     return overrides
+
+
+def _parse_drive_locator(raw_entry: Any, *, base: Path) -> FilesystemDriveLocator:
+    if isinstance(raw_entry, Mapping):
+        try:
+            raw_path = raw_entry["path"]
+        except KeyError as exc:
+            raise ValueError("slot configuration tables must define a path") from exc
+
+        read_only = raw_entry.get("read_only", False)
+        if not isinstance(read_only, bool):
+            raise TypeError("slot read_only flag must be a boolean")
+
+        locator_path = _normalise_drive_path(raw_path, base=base)
+        return FilesystemDriveLocator(path=locator_path, read_only=read_only)
+
+    locator_path = _normalise_drive_path(raw_entry, base=base)
+    return FilesystemDriveLocator(path=locator_path)
 
 
 def _parse_ampersand_overrides(data: Mapping[str, Any]) -> Dict[int, str]:

@@ -57,6 +57,52 @@ def test_load_drive_config_applies_overrides(tmp_path: Path) -> None:
     assert config.modem_baud_limit == 2400
 
 
+def test_load_drive_config_accepts_table_slots(tmp_path: Path) -> None:
+    defaults = SetupDefaults.stub()
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "relative").mkdir()
+    read_only_dir = tmp_path / "read-only"
+    read_only_dir.mkdir()
+    extra_dir = config_dir / "extra"
+    extra_dir.mkdir()
+
+    config_path = config_dir / "storage.toml"
+    config_path.write_text(
+        "[slots]\n"
+        "1 = \"relative\"\n"
+        f"2 = {{ path = \"{read_only_dir}\", read_only = true }}\n"
+        "9 = { path = \"extra\" }\n",
+        encoding="utf-8",
+    )
+
+    config = load_drive_config(config_path)
+
+    expected_drives = {assignment.slot: assignment for assignment in defaults.drives}
+    expected_drives[1] = DriveAssignment(
+        slot=1,
+        locator=FilesystemDriveLocator(path=(config_dir / "relative").resolve()),
+    )
+    expected_drives[2] = DriveAssignment(
+        slot=2,
+        locator=FilesystemDriveLocator(path=read_only_dir.resolve(), read_only=True),
+    )
+    expected_drives[9] = DriveAssignment(
+        slot=9,
+        locator=FilesystemDriveLocator(path=extra_dir.resolve()),
+    )
+
+    assignments = {assignment.slot: assignment for assignment in config.drives}
+
+    assert assignments.keys() == expected_drives.keys()
+    for slot, expected in expected_drives.items():
+        assert assignments[slot] == expected
+
+    assert assignments[2].read_only is True
+    assert assignments[1].read_only is False
+
+
 @pytest.mark.parametrize(
     "config_text",
     [
