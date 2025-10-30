@@ -1,5 +1,5 @@
 from imagebbs import SessionKernel, SessionState
-from imagebbs.device_context import ConsoleService, LoopbackModemTransport
+from imagebbs.device_context import ConsoleService, DiskDrive, LoopbackModemTransport
 from imagebbs.runtime.file_transfers import (
     FileTransferEvent,
     FileTransferMenuState,
@@ -159,6 +159,33 @@ def test_file_transfers_rejects_unknown_command() -> None:
     overlay_screen, overlay_colour = _masked_overlay(console_service)
     assert overlay_screen[:40] == glyphs
     assert overlay_colour[:40] == colours
+
+
+def test_file_transfers_rd_lists_drive_directory(tmp_path) -> None:
+    kernel, module = _bootstrap_kernel()
+    console_service = kernel.services["console"]
+    assert isinstance(console_service, ConsoleService)
+
+    drive_slot = module.active_drive_slot
+    drive_name = kernel.context.drive_device_name(drive_slot)
+    kernel.context.register(drive_name, DiskDrive(tmp_path))
+    kernel.context.open(drive_name, drive_slot, 15)
+
+    (tmp_path / "alpha.seq").write_text("alpha")
+    (tmp_path / "beta.seq").write_text("beta")
+
+    kernel.step(FileTransferEvent.ENTER)
+    console_service.device.output.clear()
+    module.rendered_slots.clear()
+
+    state = kernel.step(FileTransferEvent.COMMAND, "RD")
+
+    assert state is SessionState.FILE_TRANSFERS
+    assert module.last_command == "RD"
+    output = "".join(console_service.device.output)
+    assert "alpha.seq" in output
+    assert "beta.seq" in output
+    assert module.rendered_slots[-1] == module.MENU_PROMPT_SLOT
 
 
 def test_file_transfers_exit_returns_to_main_menu() -> None:

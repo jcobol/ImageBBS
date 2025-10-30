@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import ClassVar, Mapping, Optional
+from typing import ClassVar, Iterable, Mapping, Optional
 
 from ..ampersand_dispatcher import AmpersandDispatcher
 from ..ampersand_registry import AmpersandRegistry
@@ -34,6 +34,7 @@ class FileTransfersModule:
     state: FileTransferMenuState = field(init=False, default=FileTransferMenuState.INTRO)
     rendered_slots: list[int] = field(init=False, default_factory=list)
     last_command: str = field(init=False, default="")
+    active_drive_slot: int = field(init=False, default=1)
     _console: ConsoleService | None = field(init=False, default=None)
     _dispatcher: AmpersandDispatcher | None = field(init=False, default=None)
 
@@ -135,6 +136,7 @@ class FileTransfersModule:
         self.last_command = ""
         self.state = FileTransferMenuState.INTRO
         self._set_binary_streaming(kernel, False)
+        self.active_drive_slot = self._resolve_initial_drive_slot(kernel)
         self._render_intro()
         return SessionState.FILE_TRANSFERS
 
@@ -169,6 +171,14 @@ class FileTransfersModule:
                 self.last_command = normalised
                 self._set_binary_streaming(kernel, False)
                 return SessionState.MAIN_MENU
+
+            if normalised == "RD":
+                self.last_command = normalised
+                lines = self._read_active_drive_directory(kernel)
+                self._stream_directory_lines(lines)
+                self._render_prompt()
+                self._set_binary_streaming(kernel, False)
+                return SessionState.FILE_TRANSFERS
 
             if normalised in self._KNOWN_COMMANDS:
                 self.last_command = normalised
@@ -253,6 +263,77 @@ class FileTransfersModule:
         setter = getattr(transport, "set_binary_mode", None)
         if callable(setter):
             setter(enabled)
+
+    def _resolve_initial_drive_slot(self, kernel: SessionKernel) -> int:
+        defaults = getattr(kernel, "defaults", None)
+        default_slot = None
+        if defaults is not None:
+            candidate = getattr(defaults, "default_filesystem_drive_slot", None)
+            if isinstance(candidate, int) and candidate > 0:
+                default_slot = candidate
+
+        available_slots = self._available_drive_slots(kernel)
+        if default_slot in available_slots:
+            return default_slot
+        if available_slots:
+            return min(available_slots)
+        if isinstance(default_slot, int) and default_slot > 0:
+            return default_slot
+        return 1
+
+    def _available_drive_slots(self, kernel: SessionKernel) -> tuple[int, ...]:
+        context = getattr(kernel, "context", None)
+        slots: set[int] = set()
+        devices = getattr(context, "devices", None)
+        if isinstance(devices, Mapping):
+            for name in devices:
+                if not isinstance(name, str):
+                    continue
+                if not name.startswith("drive"):
+                    continue
+                try:
+                    slot = int(name[5:])
+                except ValueError:
+                    continue
+                slots.add(slot)
+        if slots:
+            return tuple(sorted(slots))
+
+        defaults = getattr(kernel, "defaults", None)
+        drives = getattr(defaults, "drives", ())
+        try:
+            iterable = iter(drives)
+        except TypeError:
+            return tuple()
+        else:
+            for assignment in iterable:
+                slot = getattr(assignment, "slot", None)
+                locator = getattr(assignment, "locator", None)
+                scheme = getattr(locator, "scheme", None)
+                if isinstance(slot, int) and scheme == "fs":
+                    slots.add(slot)
+        if slots:
+            return tuple(sorted(slots))
+        return tuple()
+
+    def _read_active_drive_directory(self, kernel: SessionKernel) -> Iterable[str]:
+        context = getattr(kernel, "context", None)
+        if context is None:
+            raise RuntimeError("device context is unavailable")
+        reader = getattr(context, "drive_directory_lines", None)
+        if not callable(reader):
+            raise RuntimeError("device context does not expose directory listings")
+        return reader(self.active_drive_slot, refresh=True)
+
+    def _stream_directory_lines(self, lines: Iterable[str]) -> None:
+        if not isinstance(self._console, ConsoleService):  # pragma: no cover - guard
+            raise RuntimeError("console service is unavailable")
+        device = getattr(self._console, "device", None)
+        writer = getattr(device, "write", None)
+        if not callable(writer):
+            raise RuntimeError("console device is unavailable")
+        for line in lines:
+            writer(f"{line}\r")
 
     @staticmethod
     def _matches_event(candidate: object, expected: FileTransferEvent) -> bool:
