@@ -4,7 +4,7 @@ from typing import Sequence
 
 import pytest
 
-from imagebbs.device_context import Console, ConsoleService
+from imagebbs.device_context import Console, ConsoleFramePayload, ConsoleService
 from imagebbs.runtime.console_ui import (
     IdleTimerScheduler,
     SysopConsoleApp,
@@ -71,6 +71,105 @@ class FakeConsoleService:
                 colour_result = self._slice_colour(colour_address, colour_length)
 
         return screen_result, colour_result
+
+    def export_frame_payload(
+        self, screen_width: int, screen_height: int
+    ) -> ConsoleFramePayload:
+        width = max(0, int(screen_width))
+        height = max(0, int(screen_height))
+        total_cells = width * height
+
+        def _normalise(payload: bytes | None, length: int, fill: int) -> bytes:
+            if length <= 0:
+                return b""
+            fill_value = int(fill) & 0xFF
+            if payload is None:
+                return bytes((fill_value,) * length)
+            data = bytes(payload)
+            if len(data) < length:
+                data += bytes((fill_value,) * (length - len(data)))
+            elif len(data) > length:
+                data = data[:length]
+            return data
+
+        screen_bytes, colour_bytes = self.peek_block(
+            screen_address=ConsoleService._SCREEN_BASE,
+            screen_length=total_cells,
+            colour_address=ConsoleService._COLOUR_BASE,
+            colour_length=total_cells,
+        )
+
+        screen_payload = _normalise(screen_bytes, total_cells, 0x20)
+        colour_payload = _normalise(colour_bytes, total_cells, 0x00)
+
+        def clamp_offset(address: int) -> int:
+            offset = int(address) - ConsoleService._SCREEN_BASE
+            if total_cells <= 0:
+                return 0
+            max_offset = total_cells - 1
+            if offset < 0:
+                return 0
+            if offset > max_offset:
+                return max_offset
+            return offset
+
+        def read_screen(address: int, default: int) -> int:
+            if total_cells <= 0 or not screen_payload:
+                return int(default) & 0xFF
+            return screen_payload[clamp_offset(address)]
+
+        def indicator_active(code: int) -> bool:
+            value = int(code) & 0xFF
+            return value not in (0x00, 0x20)
+
+        pause_char = read_screen(ConsoleService._PAUSE_SCREEN_ADDRESS, 0x20)
+        abort_char = read_screen(ConsoleService._ABORT_SCREEN_ADDRESS, 0x20)
+        carrier_char = read_screen(
+            ConsoleService._CARRIER_INDICATOR_SCREEN_ADDRESS, 0x20
+        )
+        spinner_char = read_screen(ConsoleService._SPINNER_SCREEN_ADDRESS, 0x20)
+
+        idle_timer_digits = tuple(
+            read_screen(address, 0x30)
+            for address in ConsoleService._IDLE_TIMER_SCREEN_ADDRESSES
+        )
+
+        pane_length = ConsoleService._MASKED_PANE_WIDTH
+        pane_screen, pane_colour = self.peek_block(
+            screen_address=ConsoleService._MASKED_PANE_SCREEN_BASE,
+            screen_length=pane_length,
+            colour_address=ConsoleService._MASKED_PANE_COLOUR_BASE,
+            colour_length=pane_length,
+        )
+        pane_chars = _normalise(pane_screen, pane_length, 0x20)
+        pane_colours = _normalise(pane_colour, pane_length, 0x00)
+
+        overlay_length = ConsoleService._MASKED_OVERLAY_WIDTH
+        overlay_screen, overlay_colour = self.peek_block(
+            screen_address=ConsoleService._MASKED_OVERLAY_SCREEN_BASE,
+            screen_length=overlay_length,
+            colour_address=ConsoleService._MASKED_OVERLAY_COLOUR_BASE,
+            colour_length=overlay_length,
+        )
+        overlay_chars = _normalise(overlay_screen, overlay_length, 0x20)
+        overlay_colours = _normalise(overlay_colour, overlay_length, 0x00)
+
+        return ConsoleFramePayload(
+            screen_glyphs=screen_payload,
+            screen_colours=colour_payload,
+            masked_pane_chars=pane_chars,
+            masked_pane_colours=pane_colours,
+            masked_overlay_chars=overlay_chars,
+            masked_overlay_colours=overlay_colours,
+            pause_char=pause_char,
+            abort_char=abort_char,
+            carrier_char=carrier_char,
+            spinner_char=spinner_char,
+            pause_active=indicator_active(pause_char),
+            abort_active=indicator_active(abort_char),
+            carrier_active=indicator_active(carrier_char),
+            idle_timer_digits=tuple(int(digit) & 0xFF for digit in idle_timer_digits),
+        )
 
     def _slice_screen(self, address: int, length: int) -> bytes:
         if address >= ConsoleService._MASKED_OVERLAY_SCREEN_BASE:
@@ -197,6 +296,51 @@ def test_capture_frame_disables_indicators_when_blank():
 
     for digit in frame.idle_timer_digits:
         assert digit == 0x30
+
+
+def test_console_service_export_matches_console_frame() -> None:
+    pause_value = 0x50
+    abort_value = 0x41
+    spinner_value = 0x5C
+    carrier_value = 0x43
+    idle_digits = (0x31, 0x32, 0x33)
+    console = build_console(
+        pause=pause_value,
+        abort=abort_value,
+        spinner=spinner_value,
+        carrier=carrier_value,
+        idle_timer=idle_digits,
+    )
+    app = SysopConsoleApp(console)
+
+    payload = console.export_frame_payload(
+        console.screen.width, console.screen.height
+    )
+    frame = app.capture_frame()
+
+    frame_screen_flat = tuple(
+        code for row in frame.screen_chars for code in row
+    )
+    frame_colour_flat = tuple(
+        code for row in frame.screen_colours for code in row
+    )
+
+    assert payload.screen_glyphs == bytes(frame_screen_flat)
+    assert payload.screen_colours == bytes(frame_colour_flat)
+    assert tuple(payload.masked_pane_chars) == frame.masked_pane_chars
+    assert tuple(payload.masked_pane_colours) == frame.masked_pane_colours
+    assert tuple(payload.masked_overlay_chars) == frame.masked_overlay_chars
+    assert tuple(payload.masked_overlay_colours) == frame.masked_overlay_colours
+
+    assert payload.pause_active is frame.pause_active
+    assert payload.abort_active is frame.abort_active
+    assert payload.carrier_active is frame.carrier_active
+    assert payload.spinner_char == frame.spinner_char
+
+    pause_row, pause_col = frame.pause_position
+    assert payload.pause_char == frame.screen_chars[pause_row][pause_col]
+
+    assert payload.idle_timer_digits == tuple(frame.idle_timer_digits)
 
 
 @pytest.mark.parametrize(
