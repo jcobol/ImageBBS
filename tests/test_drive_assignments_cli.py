@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -61,9 +62,7 @@ def test_render_assignments_formats_all_locators(monkeypatch: pytest.MonkeyPatch
     ]
 
 
-def test_main_reports_assignments_and_overrides(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def create_sample_config(tmp_path: Path) -> Path:
     config_path = tmp_path / "config.toml"
     slot1 = tmp_path / "drive1"
     slot4 = tmp_path / "drive4"
@@ -76,6 +75,15 @@ def test_main_reports_assignments_and_overrides(
         "0x10 = \"math:cos\"\n",
         encoding="utf-8",
     )
+    return config_path
+
+
+def test_main_reports_assignments_and_overrides(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config_path = create_sample_config(tmp_path)
+    slot1 = tmp_path / "drive1"
+    slot4 = tmp_path / "drive4"
 
     exit_code = main([str(config_path)])
     assert exit_code == 0
@@ -95,3 +103,30 @@ def test_main_reports_assignments_and_overrides(
     assert "Ampersand overrides:" in output_lines
     section = output_lines.index("Ampersand overrides:")
     assert output_lines[section + 1] == "flag 0x10 -> math:cos"
+
+
+def test_main_can_emit_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    config_path = create_sample_config(tmp_path)
+
+    exit_code = main(["--json", str(config_path)])
+    assert exit_code == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    assert set(payload.keys()) == {"slots", "ampersand_overrides"}
+
+    slots = payload["slots"]
+    assert isinstance(slots, list)
+    slot_records = {slot["slot"]: slot for slot in slots}
+    assert {1, 4} <= set(slot_records)
+
+    slot1_record = slot_records[1]
+    assert slot1_record["scheme"] == "fs"
+    assert slot1_record["configured_path"].endswith("drive1")
+    assert slot1_record.get("resolved_host_path")
+
+    slot4_record = slot_records[4]
+    assert slot4_record["scheme"] == "fs"
+    assert slot4_record["configured_path"].endswith("drive4")
+
+    overrides = payload["ampersand_overrides"]
+    assert overrides == [{"flag": 0x10, "module": "math:cos"}]
