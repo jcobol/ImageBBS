@@ -17,7 +17,7 @@ from .console_ui import IdleTimerScheduler, SysopConsoleApp
 from .editor_submission import EditorSubmissionHandler, SyncEditorIO
 from .indicator_controller import IndicatorController
 from .message_store import MessageStore
-from .message_store_repository import message_store_lock
+from .message_store_repository import message_store_lock, message_store_lock_owner
 from .session_factory import (
     DEFAULT_RUNTIME_SESSION_FACTORY,
     RuntimeSessionFactory,
@@ -195,17 +195,25 @@ async def _async_runner_with_persistence(
             _persist_messages(args, runner, factory=runtime_factory)
         return
 
+    def _current_owner_id() -> int:
+        thread_id = threading.get_ident()
+        task = asyncio.current_task()
+        if task is None:
+            return thread_id
+        return (thread_id << 32) ^ id(task)
+
+    owner_id = _current_owner_id()
     lock = message_store_lock(messages_path)
-    owner_id = threading.get_ident()
     await asyncio.to_thread(lock.acquire, owner_id=owner_id)
     runner: SessionRunner | None = None
     try:
-        runner = create_runner(args, factory=runtime_factory)
-        try:
-            yield runner
-        finally:
-            if runner is not None:
-                _persist_messages(args, runner, factory=runtime_factory)
+        with message_store_lock_owner(owner_id):
+            runner = create_runner(args, factory=runtime_factory)
+            try:
+                yield runner
+            finally:
+                if runner is not None:
+                    _persist_messages(args, runner, factory=runtime_factory)
     finally:
         await asyncio.to_thread(lock.release)
 

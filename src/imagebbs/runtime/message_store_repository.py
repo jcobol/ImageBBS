@@ -12,8 +12,9 @@ import json
 import os
 import tempfile
 from collections.abc import Iterable, Mapping
+import contextvars
 from pathlib import Path
-from typing import IO, Any
+from typing import IO, Any, Iterator
 
 import errno
 import threading
@@ -29,6 +30,9 @@ from .message_store import MessageRecord, MessageStore
 
 
 _LOCK_RETRY_DELAY = 0.05
+_LOCK_OWNER: contextvars.ContextVar[int | None] = contextvars.ContextVar(
+    "message_store_lock_owner", default=None
+)
 
 
 class MessageStoreLock(contextlib.AbstractContextManager["MessageStoreLock"]):
@@ -61,7 +65,9 @@ class MessageStoreLock(contextlib.AbstractContextManager["MessageStoreLock"]):
         """Acquire the lock for ``owner_id`` (defaulting to current thread)."""
 
         if owner_id is None:
-            owner_id = threading.get_ident()
+            owner_id = _LOCK_OWNER.get()
+            if owner_id is None:
+                owner_id = threading.get_ident()
         while True:
             with self._state_lock:
                 record = self._owners.get(self._lock_path)
@@ -144,6 +150,17 @@ def message_store_lock(path: Path) -> MessageStoreLock:
     """Return a context manager guarding access to ``path``."""
 
     return MessageStoreLock(path)
+
+
+@contextlib.contextmanager
+def message_store_lock_owner(owner_id: int) -> Iterator[None]:
+    """Temporarily associate re-entrant lock acquisitions with ``owner_id``."""
+
+    token = _LOCK_OWNER.set(int(owner_id))
+    try:
+        yield
+    finally:
+        _LOCK_OWNER.reset(token)
 
 def record_to_dict(record: MessageRecord) -> dict[str, Any]:
     """Serialise ``record`` to a JSON-friendly mapping."""
@@ -318,6 +335,7 @@ __all__ = [
     "load_records",
     "merge_message_stores",
     "message_store_lock",
+    "message_store_lock_owner",
     "record_from_dict",
     "record_to_dict",
     "save_message_store",

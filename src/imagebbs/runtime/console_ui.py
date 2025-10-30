@@ -131,19 +131,16 @@ class SysopConsoleApp:
     def capture_frame(self) -> ConsoleFrame:
         """Poll :class:`ConsoleService` and translate spans into matrices."""
 
-        total_cells = self.screen_width * self.screen_height
-        screen_bytes, colour_bytes = self.console.peek_block(
-            screen_address=ConsoleService._SCREEN_BASE,
-            screen_length=total_cells,
-            colour_address=ConsoleService._COLOUR_BASE,
-            colour_length=total_cells,
+        payload = self.console.export_frame_payload(
+            self.screen_width, self.screen_height
         )
 
-        screen_payload = self._normalise_payload(screen_bytes, total_cells, fill=0x20)
-        colour_payload = self._normalise_payload(colour_bytes, total_cells, fill=0x00)
-
-        screen_matrix = self._rows_from_linear(screen_payload, self.screen_width)
-        colour_matrix = self._rows_from_linear(colour_payload, self.screen_width)
+        screen_matrix = self._rows_from_linear(
+            payload.screen_glyphs, self.screen_width
+        )
+        colour_matrix = self._rows_from_linear(
+            payload.screen_colours, self.screen_width
+        )
 
         pause_position = self._address_to_row_col(ConsoleService._PAUSE_SCREEN_ADDRESS)
         abort_position = self._address_to_row_col(ConsoleService._ABORT_SCREEN_ADDRESS)
@@ -152,64 +149,27 @@ class SysopConsoleApp:
             ConsoleService._CARRIER_INDICATOR_SCREEN_ADDRESS
         )
 
-        pause_char = screen_payload[self._offset_for(ConsoleService._PAUSE_SCREEN_ADDRESS)]
-        abort_char = screen_payload[self._offset_for(ConsoleService._ABORT_SCREEN_ADDRESS)]
-        spinner_char = screen_payload[
-            self._offset_for(ConsoleService._SPINNER_SCREEN_ADDRESS)
-        ]
-        carrier_char = screen_payload[
-            self._offset_for(ConsoleService._CARRIER_INDICATOR_SCREEN_ADDRESS)
-        ]
-
-        idle_timer_digits = tuple(
-            screen_payload[self._offset_for(address)]
-            for address in ConsoleService._IDLE_TIMER_SCREEN_ADDRESSES
-        )
         idle_timer_positions = tuple(
             self._address_to_row_col(address)
             for address in ConsoleService._IDLE_TIMER_SCREEN_ADDRESSES
         )
 
-        pane_length = ConsoleService._MASKED_PANE_WIDTH
-        pane_screen, pane_colour = self.console.peek_block(
-            screen_address=ConsoleService._MASKED_PANE_SCREEN_BASE,
-            screen_length=pane_length,
-            colour_address=ConsoleService._MASKED_PANE_COLOUR_BASE,
-            colour_length=pane_length,
-        )
-        pane_chars = tuple(self._normalise_payload(pane_screen, pane_length, fill=0x20))
-        pane_colours = tuple(self._normalise_payload(pane_colour, pane_length, fill=0x00))
-
-        overlay_length = ConsoleService._MASKED_OVERLAY_WIDTH
-        overlay_screen, overlay_colour = self.console.peek_block(
-            screen_address=ConsoleService._MASKED_OVERLAY_SCREEN_BASE,
-            screen_length=overlay_length,
-            colour_address=ConsoleService._MASKED_OVERLAY_COLOUR_BASE,
-            colour_length=overlay_length,
-        )
-        overlay_chars = tuple(
-            self._normalise_payload(overlay_screen, overlay_length, fill=0x20)
-        )
-        overlay_colours = tuple(
-            self._normalise_payload(overlay_colour, overlay_length, fill=0x00)
-        )
-
         return ConsoleFrame(
             screen_chars=screen_matrix,
             screen_colours=colour_matrix,
-            masked_pane_chars=pane_chars,
-            masked_pane_colours=pane_colours,
-            masked_overlay_chars=overlay_chars,
-            masked_overlay_colours=overlay_colours,
-            pause_active=self._indicator_active(pause_char),
-            abort_active=self._indicator_active(abort_char),
-            carrier_active=self._indicator_active(carrier_char),
-            spinner_char=spinner_char,
+            masked_pane_chars=tuple(payload.masked_pane_chars),
+            masked_pane_colours=tuple(payload.masked_pane_colours),
+            masked_overlay_chars=tuple(payload.masked_overlay_chars),
+            masked_overlay_colours=tuple(payload.masked_overlay_colours),
+            pause_active=payload.pause_active,
+            abort_active=payload.abort_active,
+            carrier_active=payload.carrier_active,
+            spinner_char=payload.spinner_char,
             pause_position=pause_position,
             abort_position=abort_position,
             carrier_position=carrier_position,
             spinner_position=spinner_position,
-            idle_timer_digits=tuple(int(digit) for digit in idle_timer_digits),
+            idle_timer_digits=tuple(int(digit) for digit in payload.idle_timer_digits),
             idle_timer_positions=idle_timer_positions,
         )
 
@@ -401,20 +361,6 @@ class SysopConsoleApp:
 
     def _indicator_active(self, code: int) -> bool:
         return int(code) not in (0x00, 0x20)
-
-    def _normalise_payload(
-        self, payload: bytes | None, length: int, *, fill: int
-    ) -> bytes:
-        if length <= 0:
-            return b""
-        if payload is None:
-            return bytes([fill] * length)
-        data = bytes(payload)
-        if len(data) < length:
-            data += bytes([fill] * (length - len(data)))
-        elif len(data) > length:
-            data = data[:length]
-        return data
 
     def _rows_from_linear(
         self, payload: bytes, width: int

@@ -815,6 +815,26 @@ class MaskedPaneBlinkScheduler:
 
 
 @dataclass
+class ConsoleFramePayload:
+    """Payload exported by :meth:`ConsoleService.export_frame_payload`."""
+
+    screen_glyphs: bytes
+    screen_colours: bytes
+    masked_pane_chars: bytes
+    masked_pane_colours: bytes
+    masked_overlay_chars: bytes
+    masked_overlay_colours: bytes
+    pause_char: int
+    abort_char: int
+    carrier_char: int
+    spinner_char: int
+    pause_active: bool
+    abort_active: bool
+    carrier_active: bool
+    idle_timer_digits: Tuple[int, int, int]
+
+
+@dataclass
 class ConsoleService:
     """Service wrapper that exposes console metadata and helpers."""
 
@@ -851,6 +871,125 @@ class ConsoleService:
         self._masked_pane_blink = MaskedPaneBlinkScheduler()
         self._masked_pane_buffers: MaskedPaneBuffers | None = None
         self._masked_pane_staging_map: "MaskedPaneStagingMap" | None = None
+
+    @staticmethod
+    def _normalise_linear_payload(
+        payload: bytes | None, length: int, *, fill: int
+    ) -> bytes:
+        """Return ``payload`` truncated or padded to ``length`` using ``fill``."""
+
+        if length <= 0:
+            return b""
+        fill_value = int(fill) & 0xFF
+        if payload is None:
+            return bytes((fill_value,) * length)
+        data = bytes(payload)
+        if len(data) < length:
+            data += bytes((fill_value,) * (length - len(data)))
+        elif len(data) > length:
+            data = data[:length]
+        return data
+
+    def export_frame_payload(
+        self, screen_width: int, screen_height: int
+    ) -> ConsoleFramePayload:
+        """Return glyph/colour spans and indicator metadata for the console."""
+
+        width = max(0, int(screen_width))
+        height = max(0, int(screen_height))
+        total_cells = width * height
+
+        screen_bytes, colour_bytes = self.peek_block(
+            screen_address=self._SCREEN_BASE,
+            screen_length=total_cells,
+            colour_address=self._COLOUR_BASE,
+            colour_length=total_cells,
+        )
+
+        screen_payload = self._normalise_linear_payload(
+            screen_bytes, total_cells, fill=0x20
+        )
+        colour_payload = self._normalise_linear_payload(
+            colour_bytes, total_cells, fill=0x00
+        )
+
+        def clamp_offset(address: int) -> int:
+            offset = int(address) - self._SCREEN_BASE
+            if total_cells <= 0:
+                return 0
+            max_offset = total_cells - 1
+            if offset < 0:
+                return 0
+            if offset > max_offset:
+                return max_offset
+            return offset
+
+        def read_screen(address: int, *, default: int) -> int:
+            if total_cells <= 0 or not screen_payload:
+                return int(default) & 0xFF
+            offset = clamp_offset(address)
+            return screen_payload[offset]
+
+        def indicator_active(code: int) -> bool:
+            value = int(code) & 0xFF
+            return value not in (0x00, 0x20)
+
+        pause_char = read_screen(self._PAUSE_SCREEN_ADDRESS, default=0x20)
+        abort_char = read_screen(self._ABORT_SCREEN_ADDRESS, default=0x20)
+        carrier_char = read_screen(
+            self._CARRIER_INDICATOR_SCREEN_ADDRESS, default=0x20
+        )
+        spinner_char = read_screen(self._SPINNER_SCREEN_ADDRESS, default=0x20)
+
+        idle_timer_digits = tuple(
+            read_screen(address, default=0x30)
+            for address in self._IDLE_TIMER_SCREEN_ADDRESSES
+        )
+
+        pane_length = self._MASKED_PANE_WIDTH
+        pane_screen, pane_colour = self.peek_block(
+            screen_address=self._MASKED_PANE_SCREEN_BASE,
+            screen_length=pane_length,
+            colour_address=self._MASKED_PANE_COLOUR_BASE,
+            colour_length=pane_length,
+        )
+        pane_chars = self._normalise_linear_payload(
+            pane_screen, pane_length, fill=0x20
+        )
+        pane_colours = self._normalise_linear_payload(
+            pane_colour, pane_length, fill=0x00
+        )
+
+        overlay_length = self._MASKED_OVERLAY_WIDTH
+        overlay_screen, overlay_colour = self.peek_block(
+            screen_address=self._MASKED_OVERLAY_SCREEN_BASE,
+            screen_length=overlay_length,
+            colour_address=self._MASKED_OVERLAY_COLOUR_BASE,
+            colour_length=overlay_length,
+        )
+        overlay_chars = self._normalise_linear_payload(
+            overlay_screen, overlay_length, fill=0x20
+        )
+        overlay_colours = self._normalise_linear_payload(
+            overlay_colour, overlay_length, fill=0x00
+        )
+
+        return ConsoleFramePayload(
+            screen_glyphs=screen_payload,
+            screen_colours=colour_payload,
+            masked_pane_chars=pane_chars,
+            masked_pane_colours=pane_colours,
+            masked_overlay_chars=overlay_chars,
+            masked_overlay_colours=overlay_colours,
+            pause_char=pause_char,
+            abort_char=abort_char,
+            carrier_char=carrier_char,
+            spinner_char=spinner_char,
+            pause_active=indicator_active(pause_char),
+            abort_active=indicator_active(abort_char),
+            carrier_active=indicator_active(carrier_char),
+            idle_timer_digits=tuple(int(digit) & 0xFF for digit in idle_timer_digits),
+        )
 
     @property
     def defaults(self) -> ml_extra_defaults.MLExtraDefaults:
@@ -1853,6 +1992,7 @@ __all__ = [
     "ChannelDescriptor",
     "Console",
     "ConsoleService",
+    "ConsoleFramePayload",
     "ConsoleRegionBuffer",
     "DeviceContext",
     "DeviceError",
