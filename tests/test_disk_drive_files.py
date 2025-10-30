@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from imagebbs.device_context import (
     DeviceContext,
+    DeviceError,
     DiskDrive,
     LoopbackModemTransport,
     Modem,
@@ -11,10 +14,10 @@ from imagebbs.device_context import (
 )
 
 
-def _bootstrap_context(root: Path, slot: int = 8) -> DeviceContext:
+def _bootstrap_context(root: Path, slot: int = 8, *, read_only: bool = False) -> DeviceContext:
     context = DeviceContext()
     device_name = context.drive_device_name(slot)
-    drive = DiskDrive(root)
+    drive = DiskDrive(root, read_only=read_only)
     context.register(device_name, drive)
     context.open(device_name, slot, 15)
     return context
@@ -66,6 +69,26 @@ def test_disk_drive_command_responses(tmp_path: Path) -> None:
     scratch_response = context.issue_command(slot, "S:DOSFILE")
     assert scratch_response == "00,OK,00,00"
     assert not host_file.exists()
+
+
+def test_read_only_drive_blocks_mutations(tmp_path: Path) -> None:
+    context = _bootstrap_context(tmp_path, read_only=True)
+    slot = 8
+
+    (tmp_path / "IMMUTABLE").write_bytes(b"PAYLOAD\n")
+
+    with pytest.raises(DeviceError, match="read-only"):
+        context.open_file(slot, 1, "IMMUTABLE,S,W", 1)
+
+    with pytest.raises(DeviceError, match="read-only"):
+        context.open_file(slot, 2, "IMMUTABLE,S,A", 2)
+
+    read_channel = context.open_file(slot, 3, "IMMUTABLE,S,R", 3)
+    assert read_channel.read() == "PAYLOAD\r"
+    context.close(3, 3)
+
+    with pytest.raises(DeviceError, match="read-only"):
+        context.issue_command(slot, "S:IMMUTABLE")
 
 
 def test_loopback_modem_transport_roundtrip() -> None:

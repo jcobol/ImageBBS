@@ -33,6 +33,7 @@ class FilesystemDriveLocator:
     """Host filesystem directory referenced by a logical drive slot."""
 
     path: Path
+    read_only: bool = False
     scheme: str = field(init=False, default="fs")
 
     def describe(self) -> str:
@@ -47,6 +48,13 @@ class DriveAssignment:
 
     slot: int
     locator: Optional[DriveLocator] = None
+
+    @property
+    def read_only(self) -> bool:
+        """Whether the backing locator should be treated as read-only."""
+
+        locator = self.locator
+        return bool(getattr(locator, "read_only", False))
 
     @property
     def device(self) -> int:
