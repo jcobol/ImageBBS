@@ -234,10 +234,13 @@ class _TelnetEditorIO(AsyncEditorIO):
         self._transport = transport
         self._reader = transport.reader
         self._encoding = transport.encoding
-        self._line_ending = "\r\n"
+        self._newline_translation = transport.newline_translation
 
     async def write_line(self, text: str = "") -> None:
-        self._transport.send(text + self._line_ending)
+        if self._newline_translation is None:
+            self._transport.send(text + "\r\n")
+        else:
+            self._transport.send(text + "\n")
 
     async def write_prompt(self, prompt: str) -> None:
         self._transport.send(prompt)
@@ -246,7 +249,9 @@ class _TelnetEditorIO(AsyncEditorIO):
         data = await self._reader.readline()
         if data == b"":
             return None
-        return data.decode(self._encoding, errors="ignore").rstrip("\r\n")
+        text = data.decode(self._encoding, errors="ignore")
+        normalized = self._transport.translate_incoming(text)
+        return normalized.rstrip("\r\n")
 
 
 class TelnetModemTransport(ModemTransport):
@@ -267,6 +272,7 @@ class TelnetModemTransport(ModemTransport):
         idle_timer_scheduler_cls: type[IdleTimerScheduler] | None = IdleTimerScheduler,
         editor_submit_command: str = DEFAULT_EDITOR_SUBMIT_COMMAND,
         editor_abort_command: str = DEFAULT_EDITOR_ABORT_COMMAND,
+        newline_translation: str | None = None,
     ) -> None:
         self.runner = runner
         self.reader = reader
@@ -277,6 +283,9 @@ class TelnetModemTransport(ModemTransport):
         self._idle_timer_scheduler_cls = idle_timer_scheduler_cls
         self._editor_submit_command = editor_submit_command
         self._editor_abort_command = editor_abort_command
+        if newline_translation == "":
+            raise ValueError("newline_translation cannot be empty")
+        self._newline_translation = newline_translation
 
         if instrumentation is not None:
             indicator_controller = instrumentation.ensure_indicator_controller()
@@ -304,6 +313,32 @@ class TelnetModemTransport(ModemTransport):
     _DONT = 0xFE
 
     # ModemTransport API -------------------------------------------------
+
+    @property
+    def newline_translation(self) -> str | None:
+        return self._newline_translation
+
+    def translate_outgoing(self, text: str) -> str:
+        if not text:
+            return text
+        translation = self._newline_translation
+        if translation is None:
+            return text
+        normalized = text.replace("\r\n", "\n")
+        if "\n" not in normalized:
+            return text
+        return normalized.replace("\n", translation)
+
+    def translate_incoming(self, text: str) -> str:
+        if not text:
+            return text
+        translation = self._newline_translation
+        if translation is None:
+            return text
+        normalized = text.replace(translation, "\n")
+        if translation != "\r\n":
+            normalized = normalized.replace("\r\n", "\n")
+        return normalized
 
     def open(self) -> None:
         if self._loop is not None:
@@ -339,8 +374,9 @@ class TelnetModemTransport(ModemTransport):
     def send(self, data: str) -> None:
         if not data:
             return
-        self._outbound.extend(data)
-        payload = data.encode(self.encoding, errors="replace")
+        translated = self.translate_outgoing(data)
+        self._outbound.extend(translated)
+        payload = translated.encode(self.encoding, errors="replace")
         self.writer.write(payload)
         if self._loop is None:
             return
@@ -534,9 +570,10 @@ class TelnetModemTransport(ModemTransport):
                 if not filtered:
                     continue
                 text = filtered.decode(self.encoding, errors="ignore")
-                self.feed(text)
-                command = text.rstrip("\r\n")
-                if command or text:
+                normalized = self.translate_incoming(text)
+                self.feed(normalized)
+                command = normalized.rstrip("\r\n")
+                if command or normalized:
                     state = self.runner.send_command(command)
                     if state is SessionState.EXIT:
                         break
