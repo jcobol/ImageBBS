@@ -8,6 +8,7 @@ dumps that predate explicit versioning.
 from __future__ import annotations
 
 import contextlib
+import contextvars
 import json
 import os
 import tempfile
@@ -29,6 +30,9 @@ from .message_store import MessageRecord, MessageStore
 
 
 _LOCK_RETRY_DELAY = 0.05
+_LOCK_OWNER_OVERRIDE: contextvars.ContextVar[int | None] = contextvars.ContextVar(
+    "_message_store_lock_owner", default=None
+)
 
 
 class MessageStoreLock(contextlib.AbstractContextManager["MessageStoreLock"]):
@@ -61,7 +65,8 @@ class MessageStoreLock(contextlib.AbstractContextManager["MessageStoreLock"]):
         """Acquire the lock for ``owner_id`` (defaulting to current thread)."""
 
         if owner_id is None:
-            owner_id = threading.get_ident()
+            override = _LOCK_OWNER_OVERRIDE.get()
+            owner_id = override if override is not None else threading.get_ident()
         while True:
             with self._state_lock:
                 record = self._owners.get(self._lock_path)
