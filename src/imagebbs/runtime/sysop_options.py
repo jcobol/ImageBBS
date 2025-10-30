@@ -89,6 +89,7 @@ class SysopOptionsModule:
         return self._macro_slot(self.ABORT_MACRO)
 
     _SAYING_COMMANDS: ClassVar[frozenset[str]] = frozenset({"SY", "S"})
+    _STATISTICS_COMMANDS: ClassVar[frozenset[str]] = frozenset({"ST"})
     _MAIN_MENU_COMMANDS: ClassVar[frozenset[str]] = frozenset({"Q"})
     _ABORT_COMMANDS: ClassVar[frozenset[str]] = frozenset({"A"})
     _EXIT_COMMANDS: ClassVar[frozenset[str]] = frozenset({"EX"})
@@ -139,6 +140,11 @@ class SysopOptionsModule:
                 self._render_saying()
                 return SessionState.SYSOP_OPTIONS
 
+            if command in self._STATISTICS_COMMANDS:
+                self.last_command = command
+                self._render_statistics(kernel)
+                return SessionState.SYSOP_OPTIONS
+
             if command in self._ABORT_COMMANDS:
                 self.last_command = command
                 self._render_macro(self.ABORT_MACRO)
@@ -173,6 +179,45 @@ class SysopOptionsModule:
         saying = self._next_saying()
         self._write_saying(saying)
         self._render_macro(self.SAYING_OUTPUT_MACRO)
+        self._render_prompt()
+
+    def _render_statistics(self, kernel: SessionKernel) -> None:
+        if not isinstance(self._console, ConsoleService):  # pragma: no cover - guard
+            raise RuntimeError("console service is unavailable")
+
+        defaults = getattr(kernel, "defaults", None)
+        statistics = getattr(defaults, "statistics", None)
+
+        if statistics is None:
+            self._console.device.write("Board statistics are unavailable.\r")
+            self._render_prompt()
+            return
+
+        total_calls = getattr(statistics, "total_calls", "n/a")
+        counts = getattr(statistics, "message_counts", ())
+        banner = getattr(statistics, "status_banner", "")
+
+        try:
+            call_text = f"{int(total_calls)}"
+        except (TypeError, ValueError):
+            call_text = "n/a"
+
+        if isinstance(counts, Sequence) and not isinstance(counts, (str, bytes)):
+            try:
+                formatted_counts = "/".join(str(int(count)) for count in counts)
+            except (TypeError, ValueError):
+                formatted_counts = "n/a"
+        else:
+            formatted_counts = "n/a"
+
+        self._console.device.write(
+            f"Total calls: {call_text}  Messages: {formatted_counts}\r"
+        )
+
+        banner_text = str(banner)
+        if banner_text:
+            self._console.device.write(f"{banner_text}\r")
+
         self._render_prompt()
 
     def _render_macro(self, macro: MaskedPaneMacro) -> None:
@@ -230,6 +275,8 @@ class SysopOptionsModule:
             return ""
         if text.startswith("SY"):
             return "SY"
+        if text.startswith("ST"):
+            return "ST"
         if text.startswith("S"):
             return "S"
         if text.startswith("EX"):
