@@ -14,6 +14,7 @@ from ..setup_defaults import SetupDefaults
 from .file_transfers import FileTransferEvent
 from .main_menu import MainMenuEvent, MainMenuModule
 from .message_store import MessageStore
+from .message_store_repository import save_message_store
 from .sysop_options import SysopOptionsEvent
 
 if TYPE_CHECKING:  # pragma: no cover - imported for type checking only
@@ -40,6 +41,7 @@ class SessionRunner:
         init=False, default=None, repr=False
     )
     _initial_message_keys: set[tuple[str, int]] = field(init=False, repr=False)
+    _dirty: bool = field(init=False, default=False, repr=False)
 
     _ENTER_EVENTS: Mapping[SessionState, object] = field(
         init=False,
@@ -200,6 +202,8 @@ class SessionRunner:
             if editor is not None:
                 editor_before_state = editor.state
         next_state = self.kernel.step(event, *args)
+        if previous_state is SessionState.MESSAGE_EDITOR:
+            self._update_dirty_flag(event, editor_before_state)
         if next_state is not SessionState.EXIT and next_state is not previous_state:
             self._enter_state(next_state)
         elif (
@@ -207,6 +211,10 @@ class SessionRunner:
             and previous_state is SessionState.MESSAGE_EDITOR
         ):
             self._handle_editor_state_change(editor_before_state)
+        if next_state is SessionState.EXIT:
+            self._persist_message_store(force=True)
+        else:
+            self._persist_message_store()
         return next_state
 
     def _enter_state(self, state: SessionState) -> None:
@@ -246,6 +254,46 @@ class SessionRunner:
         if previous_state is None or current_state is previous_state:
             return
         self._dispatch(MessageEditorEvent.ENTER, self._editor_context)
+
+    def _update_dirty_flag(
+        self, event: object, previous_state: EditorState | None
+    ) -> None:
+        if self.message_store_path is None:
+            return
+        if previous_state is None:
+            return
+        if not isinstance(event, MessageEditorEvent):
+            return
+        if event is not MessageEditorEvent.DRAFT_SUBMITTED:
+            return
+        if previous_state not in (EditorState.POST_MESSAGE, EditorState.EDIT_DRAFT):
+            return
+        editor = self._get_message_editor()
+        if editor is None:
+            return
+        if editor.state is EditorState.MAIN_MENU:
+            self._dirty = True
+
+    def _persist_message_store(self, *, force: bool = False) -> None:
+        if not self._dirty and not force:
+            return
+        path = self.message_store_path
+        if path is None:
+            self._dirty = False
+            return
+        if not self._dirty and force:
+            self._dirty = False
+            return
+        save_message_store(
+            self.message_store,
+            path,
+            initial_keys=self._initial_message_keys,
+        )
+        self._initial_message_keys = {
+            (record.board_id, record.message_id)
+            for record in self.message_store.iter_records()
+        }
+        self._dirty = False
 
     def _send_editor_command(self, text: str) -> SessionState:
         editor = self._get_message_editor()
