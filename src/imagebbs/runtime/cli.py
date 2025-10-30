@@ -168,6 +168,26 @@ def _resolve_indicator_controller_cls() -> type[IndicatorController]:
     return IndicatorController
 
 
+def _install_indicator_controller(
+    runner: SessionRunner, controller_cls: type[IndicatorController] | None
+) -> IndicatorController | None:
+    if controller_cls is None:
+        return None
+    console = getattr(runner, "console", None)
+    if console is None:
+        return None
+    controller = controller_cls(console)
+    sync_from_console = getattr(controller, "sync_from_console", None)
+    if callable(sync_from_console):
+        sync_from_console()
+    runner.set_indicator_controller(controller)
+    context = getattr(getattr(runner, "kernel", None), "context", None)
+    register_service = getattr(context, "register_service", None)
+    if callable(register_service):
+        register_service("indicator_controller", controller)
+    return controller
+
+
 def _resolve_idle_timer_scheduler_cls() -> type[IdleTimerScheduler]:
     legacy_module = sys.modules.get("scripts.prototypes.runtime.cli")
     if legacy_module is not None:
@@ -517,11 +537,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         asyncio.run(run_connect(args, host, port))
         return 0
     runtime_factory = DEFAULT_RUNTIME_SESSION_FACTORY
+    indicator_controller_cls = _resolve_indicator_controller_cls()
     with _runner_with_persistence(args, factory=runtime_factory) as runner:
+        _install_indicator_controller(runner, indicator_controller_cls)
         if args.curses_ui:
             instrumentation = SessionInstrumentation(
                 runner,
-                indicator_controller_cls=_resolve_indicator_controller_cls(),
+                indicator_controller_cls=indicator_controller_cls,
                 idle_timer_scheduler_cls=_resolve_idle_timer_scheduler_cls(),
             )
             instrumentation.ensure_indicator_controller()
