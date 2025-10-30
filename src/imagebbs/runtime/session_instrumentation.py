@@ -43,6 +43,10 @@ class SessionInstrumentation:
 
         if self._indicator_controller is not None:
             return self._indicator_controller
+        existing_controller = getattr(self.runner, "_indicator_controller", None)
+        if isinstance(existing_controller, IndicatorController):
+            self._indicator_controller = existing_controller
+            return existing_controller
         controller_cls = self._indicator_controller_cls
         if controller_cls is None:
             return None

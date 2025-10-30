@@ -497,6 +497,125 @@ def test_run_session_toggles_pause_indicator_from_control_tokens() -> None:
     assert indicator.pause_states == [True, False]
 
 
+def test_main_installs_indicator_controller_for_curses_ui() -> None:
+    from imagebbs.runtime import cli as runtime_cli
+
+    indicator_instances: list[object] = []
+    app_instances: list["RecordingConsoleApp"] = []
+    instrumentation_instances: list["RecordingInstrumentation"] = []
+
+    class RecordingIndicator:
+        def __init__(self, console: object) -> None:
+            self.console = console
+            self.sync_calls = 0
+            indicator_instances.append(self)
+
+        def sync_from_console(self) -> None:
+            self.sync_calls += 1
+
+    class RecordingContext:
+        def __init__(self) -> None:
+            self.services: dict[str, object] = {}
+
+        def register_service(self, name: str, service: object) -> None:
+            self.services[name] = service
+
+    class RecordingKernel:
+        def __init__(self) -> None:
+            self.context = RecordingContext()
+
+    class RecordingRunner:
+        def __init__(self) -> None:
+            self.console = object()
+            self.kernel = RecordingKernel()
+            self.state = SessionState.MAIN_MENU
+            self._indicator_controller: object | None = None
+            self.set_indicator_calls: list[object] = []
+
+        def set_indicator_controller(self, controller: object) -> None:
+            self._indicator_controller = controller
+            self.set_indicator_calls.append(controller)
+
+    class RecordingInstrumentation:
+        def __init__(
+            self,
+            runner: RecordingRunner,
+            *,
+            indicator_controller_cls,
+            idle_timer_scheduler_cls,
+        ) -> None:
+            self.runner = runner
+            self.indicator_controller_cls = indicator_controller_cls
+            self.idle_timer_scheduler_cls = idle_timer_scheduler_cls
+            self.ensure_calls = 0
+            self.reset_calls = 0
+            self.indicator_controller: object | None = None
+            instrumentation_instances.append(self)
+
+        def ensure_indicator_controller(self) -> object | None:
+            self.ensure_calls += 1
+            controller = getattr(self.runner, "_indicator_controller", None)
+            self.indicator_controller = controller
+            return controller
+
+        def reset_idle_timer(self) -> None:
+            self.reset_calls += 1
+
+    class RecordingConsoleApp:
+        def __init__(
+            self,
+            console: object,
+            *,
+            runner: RecordingRunner,
+            instrumentation: RecordingInstrumentation,
+        ) -> None:
+            self.console = console
+            self.runner = runner
+            self.instrumentation = instrumentation
+            self.run_calls = 0
+            app_instances.append(self)
+
+        def run(self) -> None:
+            self.run_calls += 1
+
+    runner = RecordingRunner()
+
+    class _RunnerContextManager:
+        def __enter__(self) -> RecordingRunner:
+            return runner
+
+        def __exit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+    def _fake_runner_with_persistence(*args, **kwargs):
+        return _RunnerContextManager()
+
+    with mock.patch.object(
+        runtime_cli, "_runner_with_persistence", _fake_runner_with_persistence
+    ), mock.patch.object(
+        runtime_cli,
+        "_resolve_indicator_controller_cls",
+        return_value=RecordingIndicator,
+    ), mock.patch.object(
+        runtime_cli, "SessionInstrumentation", RecordingInstrumentation
+    ), mock.patch.object(runtime_cli, "SysopConsoleApp", RecordingConsoleApp):
+        exit_code = runtime_cli.main([])
+
+    assert exit_code == 0
+    assert len(indicator_instances) == 1
+    indicator = indicator_instances[0]
+    assert getattr(indicator, "sync_calls", 0) == 1
+    assert runner.set_indicator_calls == [indicator]
+    assert runner.kernel.context.services == {"indicator_controller": indicator}
+    assert instrumentation_instances
+    instrumentation = instrumentation_instances[0]
+    assert instrumentation.indicator_controller is indicator
+    assert instrumentation.ensure_calls == 1
+    assert instrumentation.reset_calls == 1
+    assert app_instances
+    assert app_instances[0].run_calls == 1
+
+
 def test_run_stream_session_bridges_telnet_and_persists_messages(tmp_path: Path) -> None:
     messages_path = tmp_path / "messages.json"
     args = parse_args(
