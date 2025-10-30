@@ -43,12 +43,27 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
             " Defaults to docs/porting/artifacts/ml-extra-overlay-metadata.json."
         ),
     )
+    parser.add_argument(
+        "--if-changed",
+        action="store_true",
+        help="Only overwrite the metadata JSON when the contents change.",
+    )
     return parser.parse_args(argv)
 
 
-def _write_metadata_snapshot(path: Path, payload: dict[str, object]) -> None:
+def _write_metadata_snapshot(
+    path: Path, payload: dict[str, object], *, only_if_changed: bool = False
+) -> bool:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    encoded_payload = json.dumps(payload, indent=2) + "\n"
+
+    if only_if_changed and path.exists():
+        current_contents = path.read_text(encoding="utf-8")
+        if current_contents == encoded_payload:
+            return False
+
+    path.write_text(encoded_payload, encoding="utf-8")
+    return True
 
 
 def main(argv: List[str] | None = None) -> int:
@@ -67,7 +82,17 @@ def main(argv: List[str] | None = None) -> int:
     baseline_snapshot = json.loads(baseline_path.read_text(encoding="utf-8"))
 
     metadata_path: Path = args.metadata_json
-    _write_metadata_snapshot(metadata_path, metadata_snapshot)
+    snapshot_updated = _write_metadata_snapshot(
+        metadata_path, metadata_snapshot, only_if_changed=args.if_changed
+    )
+
+    if args.if_changed:
+        if snapshot_updated:
+            print(f"Metadata snapshot updated: {metadata_path}")
+        else:
+            print(f"Metadata snapshot already up to date: {metadata_path}")
+    else:
+        print(f"Metadata snapshot written to: {metadata_path}")
 
     diff = ml_extra_sanity.diff_metadata_snapshots(baseline_snapshot, metadata_snapshot)
     print(ml_extra_snapshot_guard.render_diff_summary(baseline_path, diff))
