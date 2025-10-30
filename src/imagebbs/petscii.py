@@ -189,7 +189,23 @@ class PetsciiStreamDecoder:
     _line_emitted_length: int = 0
     _pending: list[str] = field(default_factory=list)
 
-    def decode(self, payload: Iterable[int]) -> str:
+    def __post_init__(self) -> None:
+        self.reset()
+
+    def reset(self) -> None:
+        """Restore the decoder to its initial cursor and mode state."""
+
+        self._cursor_x = 0
+        self._cursor_y = 0
+        self._lowercase_mode = False
+        self._reverse_mode = False
+        self._current_line = []
+        self._line_emitted_length = 0
+        self._pending = []
+
+    def feed(self, payload: Iterable[int]) -> str:
+        """Process ``payload`` and return the newly rendered ASCII output."""
+
         for raw in payload:
             byte = int(raw) & 0xFF
             if self._handle_control(byte):
@@ -198,6 +214,9 @@ class PetsciiStreamDecoder:
         output = "".join(self._pending)
         self._pending.clear()
         return output
+
+    def decode(self, payload: Iterable[int]) -> str:
+        return self.feed(payload)
 
     def _handle_control(self, byte: int) -> bool:
         if byte == 0x93:  # clear

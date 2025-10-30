@@ -36,3 +36,28 @@ def test_decoder_ignores_unprintable_and_handles_backspace() -> None:
     payload = [0x01, ord("A"), ord("B"), 0x14, ord("C")]
     assert decoder.decode(payload) == "AB\rA \rAC"
 
+
+def test_decoder_feed_is_incremental() -> None:
+    decoder = petscii.PetsciiStreamDecoder()
+    first = decoder.feed([ord("A"), 0x0D])
+    second = decoder.feed([ord("B"), ord("C")])
+
+    assert first == "A\n"
+    assert second == "BC"
+
+
+def test_decoder_feed_wraps_and_handles_reverse_toggle() -> None:
+    decoder = petscii.PetsciiStreamDecoder(width=4)
+
+    assert decoder.feed([0x12, ord("A"), ord("B")]) == "AB"
+    assert decoder.feed([ord("C"), 0x92, ord("D")]) == "CD\n"
+
+
+def test_decoder_reset_restores_state() -> None:
+    decoder = petscii.PetsciiStreamDecoder(width=3)
+
+    decoder.feed([ord("X"), ord("Y"), ord("Z")])
+    decoder.reset()
+
+    assert decoder.feed([ord("A")]) == "A"
+
