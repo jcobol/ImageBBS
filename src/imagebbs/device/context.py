@@ -1244,6 +1244,24 @@ class ConsoleService:
         if buffers.width != self._MASKED_OVERLAY_WIDTH:
             raise ValueError("masked pane buffers must span 40 bytes")
 
+        next_screen = bytes(buffers.staged_screen)
+        next_colour = bytes(buffers.staged_colour)
+
+        pending_payload = buffers.consume_pending_payload()
+        if pending_payload is not None:
+            pending_screen, pending_colour = pending_payload
+            live_screen = self._pad_linear_span(
+                pending_screen, buffers.width, fill_glyph
+            )
+            colour_fill = (
+                self.screen_colour if fill_colour is None else int(fill_colour)
+            ) & 0xFF
+            live_colour = self._pad_linear_span(
+                pending_colour, buffers.width, colour_fill
+            )
+            buffers.live_screen[:] = live_screen
+            buffers.live_colour[:] = live_colour
+
         self.poke_block(
             screen_address=self._MASKED_OVERLAY_SCREEN_BASE,
             screen_bytes=buffers.live_screen,
@@ -1254,8 +1272,6 @@ class ConsoleService:
         )
         buffers.dirty = False
 
-        next_screen = bytes(buffers.staged_screen)
-        next_colour = bytes(buffers.staged_colour)
         buffers.live_screen[:] = next_screen
         buffers.live_colour[:] = next_colour
 
