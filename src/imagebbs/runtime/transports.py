@@ -385,6 +385,8 @@ class TelnetModemTransport(_IndicatorAwareTransportMixin, ModemTransport):
     _WONT = 0xFC
     _DO = 0xFD
     _DONT = 0xFE
+    _SB = 0xFA
+    _SE = 0xF0
 
     # ModemTransport API -------------------------------------------------
 
@@ -652,6 +654,31 @@ class TelnetModemTransport(_IndicatorAwareTransportMixin, ModemTransport):
             if command == self._IAC:
                 filtered.append(self._IAC)
                 del buffer[:2]
+                continue
+
+            if command == self._SB:
+                if len(buffer) < 3:
+                    break
+                end = 3
+                frame_complete = False
+                while end < len(buffer):
+                    byte = buffer[end]
+                    if byte != self._IAC:
+                        end += 1
+                        continue
+                    if end + 1 >= len(buffer):
+                        break
+                    marker = buffer[end + 1]
+                    if marker == self._SE:
+                        del buffer[: end + 2]
+                        frame_complete = True
+                        break
+                    if marker == self._IAC:
+                        end += 2
+                        continue
+                    end += 2
+                if not frame_complete:
+                    break
                 continue
 
             if command in (self._WILL, self._WONT, self._DO, self._DONT):
