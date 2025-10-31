@@ -195,8 +195,10 @@ def test_file_transfers_rd_lists_drive_directory(tmp_path) -> None:
     assert state is SessionState.FILE_TRANSFERS
     assert module.last_command == "RD"
     output = "".join(console_service.device.output)
-    assert "alpha.seq" in output
-    assert "beta.seq" in output
+    expected_alpha = DiskDrive._format_petscii_name("alpha.seq")
+    expected_beta = DiskDrive._format_petscii_name("beta.seq")
+    assert f'"{expected_alpha}"' in output
+    assert f'"{expected_beta}"' in output
     assert module.rendered_slots[-1] == module.MENU_PROMPT_SLOT
 
 

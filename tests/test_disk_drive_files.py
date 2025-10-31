@@ -60,11 +60,22 @@ def test_disk_drive_command_responses(tmp_path: Path) -> None:
     assert command_channel.dump().endswith("00,OK,00,00\r")
 
     host_file = tmp_path / "DOSFILE"
-    host_file.write_text("PAYLOAD", encoding="latin-1")
+    payload = b"PAYLOAD" * 50
+    host_file.write_bytes(payload)
 
     directory_response = context.issue_command(slot, "$")
     assert directory_response.startswith("00,")
-    assert "DOSFILE" in directory_response
+    assert directory_response.endswith(",00,00")
+    parts = directory_response.split(",", 3)
+    assert parts[:1] == ["00"]
+    assert parts[2:] == ["00", "00"]
+    listing_lines = parts[1].split("\r")
+    expected_disk_name = DiskDrive._format_petscii_name(tmp_path.name or "DISK")
+    assert listing_lines[0] == f'0 "{expected_disk_name}" 00 2A'
+    expected_blocks = DiskDrive._blocks_for_size(len(payload))
+    expected_entry = f"{expected_blocks:>3} \"{DiskDrive._format_petscii_name(host_file.name)}\" SEQ"
+    assert expected_entry in listing_lines
+    assert listing_lines[-1].endswith("BLOCKS FREE")
 
     scratch_response = context.issue_command(slot, "S:DOSFILE")
     assert scratch_response == "00,OK,00,00"
