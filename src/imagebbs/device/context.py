@@ -13,6 +13,7 @@ from collections import defaultdict, deque
 from importlib import import_module
 from dataclasses import dataclass, field
 from pathlib import Path
+from math import ceil
 from types import MappingProxyType
 from typing import (
     TYPE_CHECKING,
@@ -144,6 +145,9 @@ class Device:
 class DiskDrive(Device):
     name = "disk"
 
+    _BLOCK_PAYLOAD_SIZE = 254
+    _DEFAULT_CAPACITY = 664
+
     def __init__(self, root: Path, *, read_only: bool = False) -> None:
         root.mkdir(parents=True, exist_ok=True)
         self.root = root
@@ -221,6 +225,53 @@ class DiskDrive(Device):
             file_mode = "ab"
         return SequentialFileChannel(descriptor, path, file_mode)
 
+    @staticmethod
+    def _format_petscii_name(name: str) -> str:
+        """Approximate PETSCII filename rendering for directory listings."""
+
+        sanitized = name.replace('\\', '/')
+        sanitized = sanitized.replace('/', '.')
+        translated: list[str] = []
+        for char in sanitized:
+            if char == '"':
+                translated.append("'")
+                continue
+            if "a" <= char <= "z":
+                translated.append(char.upper())
+                continue
+            code = ord(char)
+            if 0x20 <= code <= 0x7E:
+                translated.append(char)
+            else:
+                translated.append("?")
+        return "".join(translated)[:16]
+
+    @classmethod
+    def _blocks_for_size(cls, size: int) -> int:
+        """Map host byte lengths to 1541-style block counts."""
+
+        if size <= 0:
+            return 0
+        return int(ceil(size / cls._BLOCK_PAYLOAD_SIZE))
+
+    def _directory_listing_lines(self) -> list[str]:
+        """Generate the 1541-style directory listing lines."""
+
+        disk_name = self._format_petscii_name(self._root.name or "DISK")
+        lines = [f'0 "{disk_name}" 00 2A']
+        used_blocks = 0
+        for path in sorted(self._root.glob("**/*")):
+            if not path.is_file():
+                continue
+            relative_name = path.name
+            petscii_name = self._format_petscii_name(relative_name)
+            block_count = self._blocks_for_size(path.stat().st_size)
+            used_blocks += block_count
+            lines.append(f"{block_count:>3} \"{petscii_name}\" SEQ")
+        blocks_free = max(0, self._DEFAULT_CAPACITY - used_blocks)
+        lines.append(f"{blocks_free:>3} BLOCKS FREE")
+        return lines
+
     def command(self, raw: str) -> str:
         command = raw.strip()
         if not command:
@@ -229,10 +280,9 @@ class DiskDrive(Device):
         if upper == "I":
             return "00,OK,00,00"
         if upper == "$":
-            # Simplistic directory listing for prototype purposes.
-            entries = sorted(p.name for p in self.root.glob("**/*") if p.is_file())
-            listing = "\r".join(entries)
-            return f"00,{listing or '0 FILES'},00,00"
+            listing_lines = self._directory_listing_lines()
+            listing = "\r".join(listing_lines)
+            return f"00,{listing},00,00"
         if upper.startswith("S"):
             if self._read_only:
                 raise DeviceError("disk: drive is read-only")
