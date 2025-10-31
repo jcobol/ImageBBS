@@ -10,29 +10,7 @@ from typing import Dict, Iterable, List, Sequence, Tuple
 
 from . import ml_extra_defaults
 from . import ml_extra_reporting
-
-
-@dataclass
-class StubMacroEntry:
-    """Concrete macro payload recovered from ``ml_extra_stub.asm``."""
-
-    slot: int
-    address: int
-    payload: Sequence[int]
-
-    def decoded_text(self) -> str:
-        """Return the PETSCII rendering of :attr:`payload`."""
-
-        return ml_extra_defaults.ml_extra_extract.decode_petscii(self.payload)
-
-    def byte_preview(self, limit: int = 8) -> str:
-        """Return a short hex preview of the payload."""
-
-        prefix = (f"${value:02x}" for value in self.payload[:limit])
-        preview = ", ".join(prefix)
-        if len(self.payload) > limit:
-            preview += ", …"
-        return preview
+from . import ml_extra_stub_parser
 
 
 @dataclass
@@ -48,179 +26,26 @@ class MacroComparison:
     stub_preview: str | None
 
 
-@dataclass
-class StubStaticData:
-    """Structured view of fixed data copied into ``ml_extra_stub.asm``."""
-
-    lightbar: Tuple[int, ...]
-    underline: Tuple[int, ...]
-    palette: Tuple[int, ...]
-    flag_directory_block: Tuple[int, ...]
-    flag_directory_tail: Tuple[int, ...]
-
-    @property
-    def flag_tail_text(self) -> str:
-        return ml_extra_defaults.ml_extra_extract.decode_petscii(self.flag_directory_tail)
-
-
 def _payload_hash(payload: Sequence[int]) -> str:
     """Return a stable checksum for the provided payload."""
 
     return hashlib.sha256(bytes(payload)).hexdigest()
 
 
-def _parse_numeric_value(token: str) -> int:
-    chunk = token.strip()
-    if not chunk:
-        raise ValueError("empty numeric token")
-    if chunk.startswith("$"):
-        return int(chunk[1:], 16)
-    if chunk.lower().startswith("0x"):
-        return int(chunk[2:], 16)
-    if chunk.startswith("%"):
-        return int(chunk[1:], 2)
-    return int(chunk, 10)
-
-
-def _parse_numeric_tokens(spec: str) -> List[int]:
-    """Return integer values extracted from a ``.byte``/``.word`` line."""
-
-    values: list[int] = []
-    for token in spec.split(","):
-        chunk = token.strip()
-        if not chunk:
-            continue
-        values.append(_parse_numeric_value(chunk))
-    return values
-
-
-def _parse_stub_numeric_tokens(spec: str, symbols: Dict[str, int]) -> List[int]:
-    values: list[int] = []
-    for token in spec.split(","):
-        chunk = token.strip()
-        if not chunk:
-            continue
-        if chunk in symbols:
-            values.append(symbols[chunk])
-        else:
-            values.append(_parse_numeric_value(chunk))
-    return values
-
-
-def _parse_label_tokens(spec: str) -> List[str]:
-    """Return label names extracted from a ``.word`` directive."""
-
-    labels: list[str] = []
-    for token in spec.split(","):
-        name = token.strip()
-        if name:
-            labels.append(name)
-    return labels
-
-
-def parse_stub_macro_directory(stub_path: Path) -> List[StubMacroEntry]:
-    """Return concrete macro payloads recovered from the stub module."""
-
-    slot_ids: list[int] = []
-    runtime_targets: list[int] = []
-    directory_labels: list[str] = []
-    payloads: Dict[str, List[int]] = {}
-
-    current_label: str | None = None
-    for raw_line in stub_path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.split(";", 1)[0].rstrip()
-        if not line:
-            continue
-        if line.endswith(":"):
-            current_label = line[:-1]
-            continue
-        if current_label is None:
-            continue
-        stripped = line.strip()
-        if current_label == "macro_slot_ids" and stripped.startswith(".byte"):
-            slot_ids.extend(_parse_numeric_tokens(stripped[len(".byte") :]))
-        elif current_label == "macro_runtime_targets" and stripped.startswith(".word"):
-            runtime_targets.extend(_parse_numeric_tokens(stripped[len(".word") :]))
-        elif current_label == "macro_payload_directory" and stripped.startswith(".word"):
-            directory_labels.extend(_parse_label_tokens(stripped[len(".word") :]))
-        elif current_label.startswith("macro_payload_") and stripped.startswith(".byte"):
-            payloads.setdefault(current_label, []).extend(
-                _parse_numeric_tokens(stripped[len(".byte") :])
-            )
-
-    if not slot_ids or not directory_labels or not runtime_targets:
-        raise ValueError("failed to parse macro directory from stub")
-    if not (
-        len(slot_ids) == len(directory_labels) == len(runtime_targets)
-    ):
-        raise ValueError("stub macro directory has mismatched counts")
-
-    entries: list[StubMacroEntry] = []
-    for slot, label, address in zip(slot_ids, directory_labels, runtime_targets):
-        if label not in payloads:
-            raise ValueError(f"macro payload {label} missing from stub")
-        payload = tuple(payloads[label])
-        entries.append(StubMacroEntry(slot=slot, address=address, payload=payload))
-    return entries
-
-
-def parse_stub_static_data(stub_path: Path) -> StubStaticData:
-    """Recover fixed data tables stored in ``ml_extra_stub.asm``."""
-
-    targets = {
-        "lightbar_default_bitmaps": [],
-        "underline_default": [],
-        "editor_palette_default": [],
-        "flag_directory_block": [],
-        "flag_directory_tail_decoded": [],
-    }
-
-    current_label: str | None = None
-    symbols: Dict[str, int] = {}
-    for raw_line in stub_path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.split(";", 1)[0].rstrip()
-        if not line:
-            continue
-        stripped = line.strip()
-        if "=" in stripped and not stripped.startswith(".") and ":" not in stripped:
-            name, value = (part.strip() for part in stripped.split("=", 1))
-            if name and value:
-                try:
-                    symbols[name] = _parse_numeric_value(value)
-                except ValueError:
-                    pass
-        if line.endswith(":"):
-            current_label = line[:-1]
-            continue
-        if current_label not in targets:
-            continue
-        if stripped.startswith(".byte"):
-            targets[current_label].extend(
-                _parse_stub_numeric_tokens(stripped[len(".byte") :], symbols)
-            )
-
-    missing = [label for label, values in targets.items() if not values]
-    if missing:
-        raise ValueError(
-            "failed to recover stub tables: " + ", ".join(sorted(missing))
-        )
-
-    return StubStaticData(
-        lightbar=tuple(targets["lightbar_default_bitmaps"]),
-        underline=tuple(targets["underline_default"]),
-        palette=tuple(targets["editor_palette_default"]),
-        flag_directory_block=tuple(targets["flag_directory_block"]),
-        flag_directory_tail=tuple(targets["flag_directory_tail_decoded"]),
-    )
 
 
 def summarise_macros(
     defaults: ml_extra_defaults.MLExtraDefaults,
-    stub_macros: Sequence[StubMacroEntry],
-) -> tuple[List[MacroComparison], List[StubMacroEntry]]:
+    stub_macros: Sequence[ml_extra_stub_parser.StubMacroEntry],
+) -> tuple[
+    List[MacroComparison],
+    List[ml_extra_stub_parser.StubMacroEntry],
+]:
     """Return comparison rows and stub-only entries for reporting."""
 
-    stub_map: Dict[int, StubMacroEntry] = {entry.slot: entry for entry in stub_macros}
+    stub_map: Dict[int, ml_extra_stub_parser.StubMacroEntry] = {
+        entry.slot: entry for entry in stub_macros
+    }
     seen_slots: set[int] = set()
     comparisons: list[MacroComparison] = []
 
@@ -448,8 +273,9 @@ def run_checks(overlay_path: Path | None = None) -> dict[str, object]:
 
     defaults = ml_extra_defaults.MLExtraDefaults.from_overlay(overlay_path)
     stub_path = ml_extra_defaults._REPO_ROOT / "v1.2/source/ml_extra_stub.asm"
-    stub_macros = parse_stub_macro_directory(stub_path)
-    stub_static = parse_stub_static_data(stub_path)
+    stub_source = ml_extra_stub_parser.load_stub_source(stub_path)
+    stub_macros = ml_extra_stub_parser.parse_stub_macro_directory(stub_source)
+    stub_static = ml_extra_stub_parser.parse_stub_static_data(stub_source)
     metadata_snapshot = ml_extra_reporting.collect_overlay_metadata(defaults)
 
     comparisons, stub_only = summarise_macros(defaults, stub_macros)
