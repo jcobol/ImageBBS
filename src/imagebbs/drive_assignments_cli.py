@@ -26,6 +26,7 @@ class SlotRecord(TypedDict, total=False):
     resolved_host_path: str
     device: int
     drive: int
+    read_only: bool
 
 
 class AmpersandOverrideRecord(TypedDict):
@@ -109,6 +110,7 @@ def build_assignment_payload(
                 "description": details,
             }
 
+        record["read_only"] = assignment.read_only
         records.append(record)
 
     overrides: list[AmpersandOverrideRecord] = []
@@ -143,9 +145,14 @@ def render_assignments(
             line = (
                 f"slot {slot} (drive{slot}): filesystem -> {configured_path}"
             )
+            annotations: list[str] = []
+            if record.get("read_only"):
+                annotations.append("read-only")
             resolved = record.get("resolved_host_path")
             if resolved and resolved != configured_path:
-                line = f"{line} (mounted at {resolved})"
+                annotations.append(f"mounted at {resolved}")
+            if annotations:
+                line = f"{line} ({'; '.join(annotations)})"
         elif scheme == "cbm":
             line = (
                 f"slot {slot}: cbm device {record.get('device')} "

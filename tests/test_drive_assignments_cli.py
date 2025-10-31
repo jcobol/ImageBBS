@@ -25,7 +25,12 @@ class CustomLocator:
 
 def test_render_assignments_formats_all_locators(monkeypatch: pytest.MonkeyPatch) -> None:
     assignments = [
-        DriveAssignment(slot=1, locator=FilesystemDriveLocator(path=Path("/configured/path"))),
+        DriveAssignment(
+            slot=1,
+            locator=FilesystemDriveLocator(
+                path=Path("/configured/path"), read_only=True
+            ),
+        ),
         DriveAssignment(slot=2, locator=CommodoreDeviceDrive(device=8, drive=1)),
         DriveAssignment(slot=3, locator=None),
         DriveAssignment(slot=4, locator=CustomLocator()),
@@ -52,7 +57,7 @@ def test_render_assignments_formats_all_locators(monkeypatch: pytest.MonkeyPatch
 
     assert lines == [
         "Configured drive slots:",
-        "slot 1 (drive1): filesystem -> /configured/path (mounted at /mounted/path)",
+        "slot 1 (drive1): filesystem -> /configured/path (read-only; mounted at /mounted/path)",
         "slot 2: cbm device 8 drive 1",
         "slot 3: <unassigned>",
         "slot 4: custom -> custom description",
@@ -70,7 +75,7 @@ def create_sample_config(tmp_path: Path) -> Path:
     config_path.write_text(
         "[slots]\n"
         f"1 = \"{slot1}\"\n"
-        f"4 = \"{slot4}\"\n"
+        f"4 = {{ path = \"{slot4}\", read_only = true }}\n"
         "\n"
         "[ampersand_overrides]\n"
         "0x10 = \"math:cos\"\n",
@@ -97,9 +102,15 @@ def test_main_reports_assignments_and_overrides(
     assert (
         f"slot 1 (drive1): filesystem -> {resolved_slot1}" in output_lines
     ), output_lines
-    assert (
-        f"slot 4 (drive4): filesystem -> {resolved_slot4}" in output_lines
-    ), output_lines
+    slot4_line = next(
+        (line for line in output_lines if line.startswith("slot 4 (drive4):")),
+        None,
+    )
+    assert slot4_line is not None, output_lines
+    assert slot4_line.startswith(
+        f"slot 4 (drive4): filesystem -> {resolved_slot4}"
+    ), slot4_line
+    assert "(read-only" in slot4_line, slot4_line
 
     assert "Ampersand overrides:" in output_lines
     section = output_lines.index("Ampersand overrides:")
@@ -124,10 +135,12 @@ def test_main_can_emit_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) 
     assert slot1_record["scheme"] == "fs"
     assert slot1_record["configured_path"].endswith("drive1")
     assert slot1_record.get("resolved_host_path")
+    assert slot1_record["read_only"] is False
 
     slot4_record = slot_records[4]
     assert slot4_record["scheme"] == "fs"
     assert slot4_record["configured_path"].endswith("drive4")
+    assert slot4_record["read_only"] is True
 
     overrides = payload["ampersand_overrides"]
     assert overrides == [{"flag": 0x10, "module": "math:cos"}]
