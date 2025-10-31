@@ -1,5 +1,5 @@
-from imagebbs import SessionKernel, SessionState
 from imagebbs.device_context import ConsoleService, DiskDrive, LoopbackModemTransport
+from imagebbs.session_kernel import SessionKernel, SessionState
 from imagebbs.runtime.file_transfers import (
     FileTransferEvent,
     FileTransferMenuState,

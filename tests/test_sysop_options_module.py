@@ -1,6 +1,7 @@
 import sys
-from imagebbs import BoardStatistics, SessionKernel, SessionState
+from imagebbs import BoardStatistics
 from imagebbs.device_context import ConsoleService
+from imagebbs.session_kernel import SessionKernel, SessionState
 from imagebbs.runtime.sysop_options import (
     SysopOptionsEvent,
     SysopOptionsModule,

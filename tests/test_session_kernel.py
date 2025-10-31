@@ -1,4 +1,4 @@
-"""Tests for the prototype session kernel coordinator."""
+"""Tests for the in-tree session kernel coordinator."""
 
 from __future__ import annotations
 
@@ -10,10 +10,9 @@ from imagebbs import (
     DeviceContext,
     MessageEditor,
     SessionContext,
-    SessionKernel,
-    SessionState,
     SetupDefaults,
 )
+from imagebbs.session_kernel import SessionKernel, SessionState
 from imagebbs.message_editor import Event
 
 
