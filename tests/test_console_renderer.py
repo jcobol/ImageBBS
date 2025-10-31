@@ -16,6 +16,9 @@ from imagebbs.console_renderer import (
     GlyphRun,
     PetsciiScreen,
     VicRegisterTimelineEntry,
+    _CursorState,
+    _resolve_palette_colour,
+    _vic_address_to_coordinates,
     render_petscii_payload,
 )
 from imagebbs.device_context import Console
@@ -855,6 +858,49 @@ def vic_register_state(
     return _resolve_vic_register_state(editor_defaults)
 
 
+def test_cursor_state_wraps_and_signals_scroll() -> None:
+    cursor = _CursorState(width=PetsciiScreen.width, height=PetsciiScreen.height)
+    cursor.set_position(PetsciiScreen.width - 1, PetsciiScreen.height - 1)
+
+    assert cursor.move_right() is True
+    cursor.apply_scroll()
+    assert cursor.x == 0
+    assert cursor.y == PetsciiScreen.height - 1
+
+
+def test_vic_address_to_coordinates_clamps_to_screen_bounds() -> None:
+    width = PetsciiScreen.width
+    height = PetsciiScreen.height
+
+    top_left = _vic_address_to_coordinates(
+        0x0400 - 4, base=0x0400, end=0x07E7, width=width, height=height
+    )
+    bottom_right = _vic_address_to_coordinates(
+        0x0800, base=0x0400, end=0x07E7, width=width, height=height
+    )
+    colour_bottom_right = _vic_address_to_coordinates(
+        0xDBFF, base=0xD800, end=0xDBFF, width=width, height=height
+    )
+    colour_underflow = _vic_address_to_coordinates(
+        0xD800 - 2, base=0xD800, end=0xDBFF, width=width, height=height
+    )
+
+    assert top_left == (0, 0)
+    assert bottom_right == (width - 1, height - 1)
+    assert colour_bottom_right == (width - 1, height - 1)
+    assert colour_underflow == (0, 0)
+
+
+def test_palette_helper_resolves_indices_and_values(
+    petscii_screen: PetsciiScreen,
+) -> None:
+    palette = petscii_screen.palette
+
+    assert _resolve_palette_colour(palette[1], palette, default_index=0) == palette[1]
+    assert _resolve_palette_colour(1, palette, default_index=0) == palette[1]
+    assert _resolve_palette_colour(0xFE, palette, default_index=2) == palette[2]
+
+
 def test_screen_seeds_overlay_palette(editor_defaults: ml_extra_defaults.MLExtraDefaults) -> None:
     screen = PetsciiScreen()
     assert screen.palette == editor_defaults.palette.colours
@@ -942,7 +988,6 @@ def test_console_renders_startup_banner(editor_defaults: ml_extra_defaults.MLExt
         for code in expected_codes
     )
     assert tuple(glyph_indices[15:24]) == expected_indices
-
     glyphs = snapshot["glyphs"][11]
     assert glyphs == screen.glyph_matrix[11]
     expected_glyphs = tuple(
@@ -998,6 +1043,22 @@ def test_console_renders_startup_banner(editor_defaults: ml_extra_defaults.MLExt
 
     assert console.transcript_bytes == banner_sequence
     assert console.transcript == decode_petscii_for_cli(banner_sequence)
+
+
+def test_screen_cursor_scrolls_after_wrapping_last_cell(
+    petscii_screen: PetsciiScreen,
+) -> None:
+    screen = petscii_screen
+    original_timeline = screen.vic_register_timeline
+    screen.clear()
+    screen.set_cursor(screen.width - 1, screen.height - 1)
+
+    screen.write("XY")
+
+    assert screen.characters[-2][-1] == "X"
+    assert screen.characters[-1][0] == "Y"
+    assert screen.cursor_position == (1, screen.height - 1)
+    assert screen.vic_register_timeline == original_timeline
 
 
 def _load_overlay_metadata() -> dict[str, object]:
@@ -1306,13 +1367,7 @@ def test_console_poke_block_validates_arguments() -> None:
 
 
 def _resolve_expected_colour(screen: PetsciiScreen, value: int, *, default_index: int = 0) -> int:
-    resolved = int(value) & 0xFF
-    palette = screen.palette
-    if resolved in palette:
-        return resolved
-    if 0 <= resolved < len(palette):
-        return palette[resolved]
-    return palette[default_index]
+    return _resolve_palette_colour(value, screen.palette, default_index=default_index)
 
 
 def test_console_poke_block_updates_chat_region_with_reverse_and_underline_state() -> None:
