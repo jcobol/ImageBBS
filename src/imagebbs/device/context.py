@@ -236,14 +236,13 @@ class DiskDrive(Device):
             if char == '"':
                 translated.append("'")
                 continue
-            if "a" <= char <= "z":
-                translated.append(char.upper())
-                continue
             code = ord(char)
             if 0x20 <= code <= 0x7E:
                 translated.append(char)
             else:
                 translated.append("?")
+        # Preserve host-side casing so directory listings mirror the files that
+        # will be opened by upload/download commands.
         return "".join(translated)[:16]
 
     @classmethod
