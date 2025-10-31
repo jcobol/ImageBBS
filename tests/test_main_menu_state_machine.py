@@ -1,9 +1,9 @@
 from __future__ import annotations
-
-from imagebbs import MessageEditor, SessionKernel, SessionState
+from imagebbs import MessageEditor
 from imagebbs.device_context import ConsoleService
 from imagebbs.runtime.main_menu import MainMenuEvent, MainMenuModule
 from imagebbs.runtime.sysop_options import SysopOptionsModule
+from imagebbs.session_kernel import SessionKernel, SessionState
 
 
 def _bootstrap_kernel() -> tuple[SessionKernel, MainMenuModule]:

@@ -11,6 +11,7 @@ for _name in __all__:
 
 from .runtime.main_menu import MainMenuEvent, MainMenuModule, MenuCommand, MenuState
 from .runtime.session_runner import SessionRunner
+from .session_kernel import SessionKernel, SessionModule, SessionState
 
 from . import device_context as _device_context
 from . import setup_config as _setup_config
@@ -21,6 +22,9 @@ globals().update(
     MainMenuModule=MainMenuModule,
     MenuCommand=MenuCommand,
     MenuState=MenuState,
+    SessionKernel=SessionKernel,
+    SessionModule=SessionModule,
+    SessionState=SessionState,
     SessionRunner=SessionRunner,
 )
 
@@ -29,6 +33,9 @@ for _override in (
     "MainMenuModule",
     "MenuCommand",
     "MenuState",
+    "SessionKernel",
+    "SessionModule",
+    "SessionState",
     "SessionRunner",
 ):
     if _override not in __all__:
