@@ -45,6 +45,147 @@ _COLOR_CODES: dict[int, int] = {
 }
 
 
+@dataclass
+class _CursorState:
+    """Track the cursor position and mode flags for a PETSCII screen."""
+
+    width: int
+    height: int
+    x: int = 0
+    y: int = 0
+    lowercase_mode: bool = False
+    reverse_mode: bool = False
+
+    def home(self) -> None:
+        """Return the cursor to the top-left corner of the screen."""
+
+        self.x = 0
+        self.y = 0
+
+    def set_position(self, x: int, y: int) -> None:
+        """Clamp ``(x, y)`` to the visible screen bounds and update state."""
+
+        self.x, self.y = _clamp_screen_coordinates(
+            x, y, width=self.width, height=self.height
+        )
+
+    def move_left(self) -> None:
+        """Move the cursor one column to the left without wrapping."""
+
+        if self.x > 0:
+            self.x -= 1
+
+    def move_right(self) -> bool:
+        """Advance the cursor to the right, wrapping at the end of the row."""
+
+        if self.x < self.width - 1:
+            self.x += 1
+            return False
+        self.x = 0
+        self.y += 1
+        return self.requires_scroll()
+
+    def move_up(self) -> None:
+        """Move the cursor up one row, clamping to the top edge."""
+
+        if self.y > 0:
+            self.y -= 1
+
+    def move_down(self) -> bool:
+        """Move the cursor down one row and report if scrolling is required."""
+
+        self.y += 1
+        return self.requires_scroll()
+
+    def carriage_return(self) -> bool:
+        """Return the cursor to column zero and advance to the next row."""
+
+        self.x = 0
+        self.y += 1
+        return self.requires_scroll()
+
+    def line_feed(self) -> bool:
+        """Advance the cursor to the next row without altering the column."""
+
+        self.y += 1
+        return self.requires_scroll()
+
+    def backspace(self) -> None:
+        """Move the cursor left when processing ``{delete}`` control codes."""
+
+        if self.x > 0:
+            self.x -= 1
+
+    def requires_scroll(self) -> bool:
+        """Return ``True`` when the cursor moved beyond the bottom row."""
+
+        return self.y >= self.height
+
+    def apply_scroll(self) -> None:
+        """Adjust the cursor after the backing buffer scrolls."""
+
+        if self.height:
+            self.y = self.height - 1
+        else:
+            self.y = 0
+
+
+def _clamp_screen_coordinates(
+    x: int, y: int, *, width: int, height: int
+) -> tuple[int, int]:
+    """Clamp ``(x, y)`` to the 40×25 text plane exposed by the VIC-II."""
+
+    clamped_x = max(0, min(int(x), width - 1))
+    clamped_y = max(0, min(int(y), height - 1))
+    return clamped_x, clamped_y
+
+
+def _vic_address_to_coordinates(
+    address: int,
+    *,
+    base: int,
+    end: int,
+    width: int,
+    height: int,
+) -> tuple[int, int]:
+    """Translate a VIC-II RAM address into zero-based screen coordinates.
+
+    Image BBS mirrors the Commodore 64 layout where screen RAM resides at
+    ``$0400-$07E7`` and colour RAM at ``$D800-$DBFF``.  The helper clamps the
+    incoming address to that range before translating it into the 40×25
+    character grid used by the overlay.
+    """
+
+    clamped = max(base, min(int(address), end)) - base
+    cells = width * height
+    if clamped >= cells:
+        clamped = cells - 1
+    x = clamped % width
+    y = clamped // width
+    return x, y
+
+
+def _resolve_palette_colour(
+    value: int, palette: Sequence[int], *, default_index: int
+) -> int:
+    """Return a palette-safe VIC-II colour derived from the overlay defaults.
+
+    The overlay seeds exactly four VIC-II entries (foreground, unused, background,
+    border).  Rendering may supply either a direct colour index or a palette slot
+    reference; this helper normalises both forms and falls back to
+    ``default_index`` when the value lies outside the configured table.
+    """
+
+    resolved = int(value) & 0xFF
+    if resolved in palette:
+        return resolved
+    if 0 <= resolved < len(palette):
+        return palette[resolved]
+    if not 0 <= default_index < len(palette):
+        raise ValueError("default_index must reference a palette entry")
+    return palette[default_index]
+
+
 @dataclass(frozen=True)
 class VicRegisterTimelineEntry:
     """Concrete register write emitted during the overlay bootstrap."""
@@ -120,26 +261,23 @@ class PetsciiScreen:
             lightbar.page2_right,
         ]
         self._underline_char: int = lightbar.underline_char & 0xFF
-        self._underline_colour: int = self._resolve_palette_colour(
-            lightbar.underline_color, default_index=0
+        self._underline_colour: int = _resolve_palette_colour(
+            lightbar.underline_color, self._palette, default_index=0
         )
 
-        self._screen_colour: int = self._resolve_palette_colour(
-            self._palette[0], default_index=0
+        self._screen_colour: int = _resolve_palette_colour(
+            self._palette[0], self._palette, default_index=0
         )
-        self._background_colour: int = self._resolve_palette_colour(
-            self._palette[2], default_index=2
+        self._background_colour: int = _resolve_palette_colour(
+            self._palette[2], self._palette, default_index=2
         )
-        self._border_colour: int = self._resolve_palette_colour(
-            self._palette[3], default_index=3
+        self._border_colour: int = _resolve_palette_colour(
+            self._palette[3], self._palette, default_index=3
         )
 
         for entry in self._vic_register_timeline:
             self._apply_vic_register_default(entry.address, entry.value)
-        self._cursor_x: int = 0
-        self._cursor_y: int = 0
-        self._lowercase_mode = False
-        self._reverse_mode = False
+        self._cursor = _CursorState(width=self.width, height=self.height)
         self._chars: list[list[str]] = [[" " for _ in range(self.width)] for _ in range(self.height)]
         self._colours: list[list[int]] = [
             [self._screen_colour for _ in range(self.width)] for _ in range(self.height)
@@ -153,23 +291,18 @@ class PetsciiScreen:
             [False for _ in range(self.width)] for _ in range(self.height)
         ]
 
-    def _clamp_coordinates(self, x: int, y: int) -> tuple[int, int]:
-        clamped_x = max(0, min(int(x), self.width - 1))
-        clamped_y = max(0, min(int(y), self.height - 1))
-        return clamped_x, clamped_y
-
     def _address_to_coordinates(
         self, address: int, *, colour_ram: bool = False
     ) -> tuple[int, int]:
         base = self._COLOUR_BASE if colour_ram else self._SCREEN_BASE
         end = self._COLOUR_END if colour_ram else self._SCREEN_END
-        clamped = max(base, min(int(address), end)) - base
-        cells = self.width * self.height
-        if clamped >= cells:
-            clamped = cells - 1
-        x = clamped % self.width
-        y = clamped // self.width
-        return x, y
+        return _vic_address_to_coordinates(
+            address,
+            base=base,
+            end=end,
+            width=self.width,
+            height=self.height,
+        )
 
     @property
     def defaults(self) -> ml_extra_defaults.MLExtraDefaults:
@@ -222,21 +355,17 @@ class PetsciiScreen:
     def cursor_position(self) -> tuple[int, int]:
         """Return the current cursor position as ``(x, y)`` coordinates."""
 
-        return self._cursor_x, self._cursor_y
+        return self._cursor.x, self._cursor.y
 
     def home_cursor(self) -> None:
         """Home the cursor without clearing the backing character matrix."""
 
-        self._cursor_x = 0
-        self._cursor_y = 0
+        self._cursor.home()
 
     def set_cursor(self, x: int, y: int) -> None:
         """Position the cursor, clamping to the renderer's visible bounds."""
 
-        clamped_x = max(0, min(int(x), self.width - 1))
-        clamped_y = max(0, min(int(y), self.height - 1))
-        self._cursor_x = clamped_x
-        self._cursor_y = clamped_y
+        self._cursor.set_position(int(x), int(y))
 
     @property
     def screen_colour(self) -> int:
@@ -259,28 +388,38 @@ class PetsciiScreen:
     def set_screen_colour(self, value: int) -> None:
         """Update the current screen colour using palette-aware clamping."""
 
-        self._screen_colour = self._resolve_palette_colour(value, default_index=0)
+        self._screen_colour = _resolve_palette_colour(
+            value, self._palette, default_index=0
+        )
 
     def set_background_colour(self, value: int) -> None:
         """Update the current background colour using palette-aware clamping."""
 
-        self._background_colour = self._resolve_palette_colour(value, default_index=2)
+        self._background_colour = _resolve_palette_colour(
+            value, self._palette, default_index=2
+        )
 
     def set_border_colour(self, value: int) -> None:
         """Update the current border colour using palette-aware clamping."""
 
-        self._border_colour = self._resolve_palette_colour(value, default_index=3)
+        self._border_colour = _resolve_palette_colour(
+            value, self._palette, default_index=3
+        )
 
     def peek_screen(self, x: int, y: int) -> int:
         """Return the PETSCII code stored at ``(x, y)``."""
 
-        clamped_x, clamped_y = self._clamp_coordinates(x, y)
+        clamped_x, clamped_y = _clamp_screen_coordinates(
+            x, y, width=self.width, height=self.height
+        )
         return self._codes[clamped_y][clamped_x]
 
     def poke_screen(self, x: int, y: int, value: int) -> None:
         """Stage ``value`` at ``(x, y)`` without moving the cursor."""
 
-        clamped_x, clamped_y = self._clamp_coordinates(x, y)
+        clamped_x, clamped_y = _clamp_screen_coordinates(
+            x, y, width=self.width, height=self.height
+        )
         raw_code = int(value) & 0xFF
         char = self._translate_character(raw_code)
         glyph_bank = self._resolve_glyph_bank(None)
@@ -311,14 +450,20 @@ class PetsciiScreen:
     def peek_colour(self, x: int, y: int) -> int:
         """Return the VIC-II colour index stored at ``(x, y)``."""
 
-        clamped_x, clamped_y = self._clamp_coordinates(x, y)
+        clamped_x, clamped_y = _clamp_screen_coordinates(
+            x, y, width=self.width, height=self.height
+        )
         return self._colours[clamped_y][clamped_x]
 
     def poke_colour(self, x: int, y: int, value: int) -> None:
         """Update the colour RAM entry at ``(x, y)``."""
 
-        clamped_x, clamped_y = self._clamp_coordinates(x, y)
-        resolved_colour = self._resolve_palette_colour(value, default_index=0)
+        clamped_x, clamped_y = _clamp_screen_coordinates(
+            x, y, width=self.width, height=self.height
+        )
+        resolved_colour = _resolve_palette_colour(
+            value, self._palette, default_index=0
+        )
         underline_flag = self._underline_flags[clamped_y][clamped_x]
         active_colour = self._underline_colour if underline_flag else resolved_colour
         self._write_cell(
@@ -438,16 +583,20 @@ class PetsciiScreen:
     def resolved_colour_matrix(self) -> tuple[tuple[tuple[int, int], ...], ...]:
         """Return the foreground/background colour pairs for each cell."""
 
-        background = self._resolve_palette_colour(
-            self._background_colour, default_index=2
+        background = _resolve_palette_colour(
+            self._background_colour, self._palette, default_index=2
         )
         return tuple(
             tuple(
                 (
-                    background if reverse else self._resolve_palette_colour(
-                        colour, default_index=0
+                    background
+                    if reverse
+                    else _resolve_palette_colour(
+                        colour, self._palette, default_index=0
                     ),
-                    self._resolve_palette_colour(colour, default_index=0)
+                    _resolve_palette_colour(
+                        colour, self._palette, default_index=0
+                    )
                     if reverse
                     else background,
                 )
@@ -474,8 +623,8 @@ class PetsciiScreen:
         if char is not None:
             self._underline_char = int(char) & 0xFF
         if colour is not None:
-            self._underline_colour = self._resolve_palette_colour(
-                int(colour), default_index=0
+            self._underline_colour = _resolve_palette_colour(
+                int(colour), self._palette, default_index=0
             )
 
     def clear(self) -> None:
@@ -493,8 +642,7 @@ class PetsciiScreen:
                     reverse=False,
                     underline=False,
                 )
-        self._cursor_x = 0
-        self._cursor_y = 0
+        self._cursor.home()
 
     def write(self, payload: bytes | bytearray | memoryview | str) -> None:
         """Render the supplied PETSCII payload to the buffer."""
@@ -515,54 +663,41 @@ class PetsciiScreen:
             self.clear()
             return True
         if byte == 0x13:  # home
-            self._cursor_x = 0
-            self._cursor_y = 0
+            self._cursor.home()
             return True
         if byte == 0x0D:  # carriage return
-            self._cursor_x = 0
-            self._cursor_y += 1
-            self._clamp_cursor()
+            self._ensure_scroll(self._cursor.carriage_return())
             return True
         if byte == 0x0A:  # line feed
-            self._cursor_y += 1
-            self._clamp_cursor()
+            self._ensure_scroll(self._cursor.line_feed())
             return True
         if byte == 0x11:  # cursor down
-            self._cursor_y += 1
-            self._clamp_cursor()
+            self._ensure_scroll(self._cursor.move_down())
             return True
         if byte == 0x91:  # cursor up
-            if self._cursor_y > 0:
-                self._cursor_y -= 1
+            self._cursor.move_up()
             return True
         if byte == 0x1D:  # cursor right
-            if self._cursor_x < self.width - 1:
-                self._cursor_x += 1
-            else:
-                self._cursor_x = 0
-                self._cursor_y += 1
-                self._clamp_cursor()
+            self._ensure_scroll(self._cursor.move_right())
             return True
         if byte == 0x9D:  # cursor left
-            if self._cursor_x > 0:
-                self._cursor_x -= 1
+            self._cursor.move_left()
             return True
         if byte == 0x14:  # delete/backspace
-            if self._cursor_x > 0:
-                self._cursor_x -= 1
+            self._cursor.backspace()
             self._put_character(0x20, " ", glyph_bank=0, reverse=False)
             return True
         if byte == 0x12:  # reverse on
-            self._reverse_mode = True
+            self._cursor.reverse_mode = True
             return True
         if byte == 0x92:  # reverse off
-            self._reverse_mode = False
+            self._cursor.reverse_mode = False
             return True
         if byte == 0x0E:  # switch to lowercase/uppercase
-            self._lowercase_mode = True
+            self._cursor.lowercase_mode = True
             return True
         if byte == 0x8E:  # switch to uppercase/graphics
-            self._lowercase_mode = False
+            self._cursor.lowercase_mode = False
             return True
         return False
 
@@ -570,17 +705,19 @@ class PetsciiScreen:
         colour = _COLOR_CODES.get(byte)
         if colour is None:
             return False
-        self._screen_colour = self._resolve_palette_colour(colour, default_index=0)
+        self._screen_colour = _resolve_palette_colour(
+            colour, self._palette, default_index=0
+        )
         return True
+
+    def _ensure_scroll(self, needs_scroll: bool) -> None:
+        if needs_scroll:
+            self._scroll()
 
     def _draw_character(self, byte: int) -> None:
         char = self._translate_character(byte)
         self._put_character(byte, char)
-        self._cursor_x += 1
-        if self._cursor_x >= self.width:
-            self._cursor_x = 0
-            self._cursor_y += 1
-            self._clamp_cursor()
+        self._ensure_scroll(self._cursor.move_right())
 
     def _put_character(
         self,
@@ -591,9 +728,12 @@ class PetsciiScreen:
         reverse: bool | None = None,
         underline: bool | None = None,
     ) -> None:
-        if 0 <= self._cursor_y < self.height and 0 <= self._cursor_x < self.width:
+        x, y = self._cursor.x, self._cursor.y
+        if 0 <= y < self.height and 0 <= x < self.width:
             bank = self._resolve_glyph_bank(glyph_bank)
-            reverse_flag = self._reverse_mode if reverse is None else reverse
+            reverse_flag = (
+                self._cursor.reverse_mode if reverse is None else reverse
+            )
             raw_code = byte & 0xFF
             underline_flag = (
                 bool(underline)
@@ -604,8 +744,8 @@ class PetsciiScreen:
                 self._underline_colour if underline_flag else self._screen_colour
             )
             self._write_cell(
-                self._cursor_x,
-                self._cursor_y,
+                x,
+                y,
                 code=raw_code,
                 char=char,
                 glyph_bank=bank,
@@ -613,11 +753,6 @@ class PetsciiScreen:
                 reverse=reverse_flag,
                 underline=underline_flag,
             )
-
-    def _clamp_cursor(self) -> None:
-        if self._cursor_y < self.height:
-            return
-        self._scroll()
 
     def _scroll(self) -> None:
         self._chars.pop(0)
@@ -638,7 +773,7 @@ class PetsciiScreen:
         self._glyph_bank.append(blank_bank)
         self._reverse_flags.append(blank_reverse)
         self._underline_flags.append(blank_underline)
-        self._cursor_y = self.height - 1
+        self._cursor.apply_scroll()
 
     def _translate_character(self, byte: int) -> str:
         if byte == 0xA0:
@@ -652,22 +787,10 @@ class PetsciiScreen:
         if 0xE0 <= byte <= 0xFA:
             base = byte - 0xA0
             char = chr(base)
-            if not self._lowercase_mode:
+            if not self._cursor.lowercase_mode:
                 return char.upper()
             return char
         return " "
-
-    def _resolve_palette_colour(self, value: int, *, default_index: int) -> int:
-        """Clamp ``value`` to one of the four palette entries."""
-
-        resolved = int(value) & 0xFF
-        if resolved in self._palette:
-            return resolved
-        if 0 <= resolved < len(self._palette):
-            return self._palette[resolved]
-        if not 0 <= default_index < len(self._palette):
-            raise ValueError("default_index must reference a palette entry")
-        return self._palette[default_index]
 
     def _write_cell(
         self,
@@ -683,7 +806,9 @@ class PetsciiScreen:
     ) -> None:
         if not (0 <= x < self.width and 0 <= y < self.height):
             return
-        resolved_colour = self._resolve_palette_colour(colour, default_index=0)
+        resolved_colour = _resolve_palette_colour(
+            colour, self._palette, default_index=0
+        )
         self._chars[y][x] = char
         self._colours[y][x] = resolved_colour
         self._codes[y][x] = code & 0xFF
@@ -694,7 +819,7 @@ class PetsciiScreen:
     def _resolve_glyph_bank(self, glyph_bank: int | None) -> int:
         if glyph_bank is not None:
             return int(glyph_bank) & 0x01
-        return 1 if self._lowercase_mode else 0
+        return 1 if self._cursor.lowercase_mode else 0
 
     def _apply_vic_register_default(self, address: int, value: int | None) -> None:
         if value is None:
@@ -727,7 +852,7 @@ class _TracingPetsciiScreen(PetsciiScreen):
         glyph_bank: int | None = None,
         reverse: bool | None = None,
     ) -> None:
-        x, y = self._cursor_x, self._cursor_y
+        x, y = self._cursor.x, self._cursor.y
         super()._put_character(
             byte,
             char,
