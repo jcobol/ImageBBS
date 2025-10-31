@@ -569,6 +569,117 @@ def test_telnet_transport_handles_negotiation_sequences() -> None:
     ]
 
 
+def test_telnet_transport_discards_subnegotiation_sequences() -> None:
+    class SubnegotiationReader:
+        def __init__(self, payloads: list[bytes]) -> None:
+            self._payloads = list(payloads)
+
+        async def readline(self) -> bytes:
+            await asyncio.sleep(0)
+            if self._payloads:
+                return self._payloads.pop(0)
+            return b""
+
+    class SubnegotiationRunner:
+        def __init__(self) -> None:
+            self.console = object()
+            self.state = SessionState.MAIN_MENU
+            self.commands: list[str] = []
+
+        def read_output(self) -> str:
+            return ""
+
+        def send_command(self, text: str) -> SessionState:
+            self.commands.append(text)
+            return self.state
+
+        def requires_editor_submission(self) -> bool:
+            return False
+
+    async def _exercise() -> tuple[SubnegotiationRunner, FakeWriter]:
+        reader = SubnegotiationReader(
+            [
+                b"\xff\xfa\x18\x01\x02\xff\xf0\xff\xfb\x01HELLO\r\n",
+                b"",
+            ]
+        )
+        runner = SubnegotiationRunner()
+        writer = FakeWriter()
+        transport = RecordingTelnetTransport(
+            runner,
+            reader,  # type: ignore[arg-type]
+            writer,  # type: ignore[arg-type]
+            poll_interval=0.0,
+            idle_timer_scheduler_cls=None,
+        )
+
+        transport.open()
+        pump_reader = transport.scheduled_coroutines[1]
+        await asyncio.wait_for(pump_reader, timeout=0.1)
+        transport.scheduled_coroutines[0].close()
+        return runner, writer
+
+    runner, writer = asyncio.run(_exercise())
+    assert runner.commands == ["HELLO"]
+    assert writer.buffer == [b"\xff\xfe\x01"]
+
+
+def test_telnet_transport_discards_split_subnegotiation_sequences() -> None:
+    class SplitSubnegReader:
+        def __init__(self, payloads: list[bytes]) -> None:
+            self._payloads = list(payloads)
+
+        async def readline(self) -> bytes:
+            await asyncio.sleep(0)
+            if self._payloads:
+                return self._payloads.pop(0)
+            return b""
+
+    class SplitSubnegRunner:
+        def __init__(self) -> None:
+            self.console = object()
+            self.state = SessionState.MAIN_MENU
+            self.commands: list[str] = []
+
+        def read_output(self) -> str:
+            return ""
+
+        def send_command(self, text: str) -> SessionState:
+            self.commands.append(text)
+            return self.state
+
+        def requires_editor_submission(self) -> bool:
+            return False
+
+    async def _exercise() -> tuple[SplitSubnegRunner, FakeWriter]:
+        reader = SplitSubnegReader(
+            [
+                b"\xff\xfa\x18\x01\x02",
+                b"\xff\xf0\xff\xfd\x07BYE\r\n",
+                b"",
+            ]
+        )
+        runner = SplitSubnegRunner()
+        writer = FakeWriter()
+        transport = RecordingTelnetTransport(
+            runner,
+            reader,  # type: ignore[arg-type]
+            writer,  # type: ignore[arg-type]
+            poll_interval=0.0,
+            idle_timer_scheduler_cls=None,
+        )
+
+        transport.open()
+        pump_reader = transport.scheduled_coroutines[1]
+        await asyncio.wait_for(pump_reader, timeout=0.1)
+        transport.scheduled_coroutines[0].close()
+        return runner, writer
+
+    runner, writer = asyncio.run(_exercise())
+    assert runner.commands == ["BYE"]
+    assert writer.buffer == [b"\xff\xfc\x07"]
+
+
 def test_telnet_transport_binary_mode_preserves_payload() -> None:
     class BinaryReader:
         def __init__(self, payloads: list[bytes]):
