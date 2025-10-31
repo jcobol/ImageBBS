@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
 from typing import List
 
 from . import ml_extra_sanity
 from . import ml_extra_snapshot_guard
+from . import ml_extra_metadata_io
 
 __all__ = ["DEFAULT_BASELINE", "parse_args", "main"]
 
@@ -51,21 +51,6 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _write_metadata_snapshot(
-    path: Path, payload: dict[str, object], *, only_if_changed: bool = False
-) -> bool:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    encoded_payload = json.dumps(payload, indent=2) + "\n"
-
-    if only_if_changed and path.exists():
-        current_contents = path.read_text(encoding="utf-8")
-        if current_contents == encoded_payload:
-            return False
-
-    path.write_text(encoded_payload, encoding="utf-8")
-    return True
-
-
 def main(argv: List[str] | None = None) -> int:
     """Entry point for the ``ml_extra_refresh_pipeline`` CLI."""
 
@@ -79,10 +64,10 @@ def main(argv: List[str] | None = None) -> int:
     if not baseline_path.exists():
         raise SystemExit(f"baseline metadata not found: {baseline_path}")
 
-    baseline_snapshot = json.loads(baseline_path.read_text(encoding="utf-8"))
+    baseline_snapshot = ml_extra_metadata_io.read_metadata_snapshot(baseline_path)
 
     metadata_path: Path = args.metadata_json
-    snapshot_updated = _write_metadata_snapshot(
+    snapshot_updated = ml_extra_metadata_io.write_metadata_snapshot(
         metadata_path, metadata_snapshot, only_if_changed=args.if_changed
     )
 
