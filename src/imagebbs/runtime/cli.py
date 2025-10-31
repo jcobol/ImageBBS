@@ -32,6 +32,19 @@ from .session_runner import SessionRunner
 from .transports import BaudLimitedTransport, TelnetModemTransport
 
 
+_TELNET_NEWLINE_MAP = {
+    "crlf": "\r\n",
+    "lf": "\n",
+    "none": None,
+}
+
+
+def _resolve_telnet_newline(choice: str) -> str | None:
+    """Convert the CLI newline option into the transport expectation."""
+
+    return _TELNET_NEWLINE_MAP[choice]
+
+
 def _parse_host_port(value: str) -> Tuple[str, int]:
     try:
         host, port_text = value.rsplit(":", 1)
@@ -94,6 +107,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=int,
         default=None,
         help="Limit modem throughput to the specified bits per second",
+    )
+    parser.add_argument(
+        "--telnet-newline",
+        choices=("crlf", "lf", "none"),
+        default="crlf",
+        help=(
+            "Newline translation applied to Telnet sessions "
+            "(default: CRLF translation)"
+        ),
     )
     parser.add_argument(
         "--editor-submit-command",
@@ -288,6 +310,7 @@ async def run_stream_session(
     """Create a runner and bridge it to ``reader``/``writer``."""
 
     runtime_factory = _ensure_factory(factory)
+    newline_translation = _resolve_telnet_newline(args.telnet_newline)
     async with _async_runner_with_persistence(args, factory=runtime_factory) as runner:
         instrumentation = SessionInstrumentation(
             runner,
@@ -304,6 +327,7 @@ async def run_stream_session(
                     instrumentation=instrumentation,
                     editor_submit_command=args.editor_submit_command,
                     editor_abort_command=args.editor_abort_command,
+                    newline_translation=newline_translation,
                 )
             )
         telnet_transport = telnet_transport_factory(

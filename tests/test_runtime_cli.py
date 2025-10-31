@@ -5,7 +5,10 @@ import io
 from collections import deque
 import unittest.mock as mock
 from pathlib import Path
+import types
+import typing
 
+import pytest
 from imagebbs.runtime.cli import (
     create_runner,
     drive_session,
@@ -80,6 +83,7 @@ def test_parse_args_defaults_to_curses_ui() -> None:
     assert args.editor_abort_command == DEFAULT_EDITOR_ABORT_COMMAND
     assert args.board_id is None
     assert args.user_id is None
+    assert args.telnet_newline == "crlf"
 
 
 def test_parse_args_console_flag_disables_curses_ui() -> None:
@@ -106,6 +110,131 @@ def test_parse_args_accepts_editor_command_overrides() -> None:
     assert args.editor_abort_command == "/cancel"
     assert args.board_id == "custom-board"
     assert args.user_id == "custom-user"
+
+
+def test_parse_args_accepts_telnet_newline_choice() -> None:
+    args = parse_args(["--telnet-newline", "none"])
+
+    assert args.telnet_newline == "none"
+
+
+def test_parse_args_rejects_invalid_telnet_newline() -> None:
+    with pytest.raises(SystemExit):
+        parse_args(["--telnet-newline", "cr"])
+
+
+def test_run_stream_session_honours_telnet_newline_setting() -> None:
+    args = parse_args(["--telnet-newline", "lf"])
+
+    class StubRunner:
+        def __init__(self) -> None:
+            modem_defaults = types.SimpleNamespace(baud_limit=None)
+            self.defaults = types.SimpleNamespace(modem=modem_defaults)
+            context = types.SimpleNamespace()
+            context.register_modem_device = mock.Mock()
+            kernel = types.SimpleNamespace(context=context)
+            self.kernel = kernel
+            self.console = object()
+
+        def set_indicator_controller(self, controller: object) -> None:
+            pass
+
+        def read_output(self) -> str:
+            return ""
+
+    class StubInstrumentation:
+        def __init__(self, runner: StubRunner, **_: object) -> None:
+            self.runner = runner
+
+        def ensure_indicator_controller(self) -> None:
+            return None
+
+    class RecordingTelnetTransport:
+        instances: list["RecordingTelnetTransport"] = []
+
+        def __init__(
+            self,
+            runner: StubRunner,
+            reader: asyncio.StreamReader,
+            writer: asyncio.StreamWriter,
+            *,
+            instrumentation: StubInstrumentation,
+            editor_submit_command: str,
+            editor_abort_command: str,
+            newline_translation: str | None,
+        ) -> None:
+            self.runner = runner
+            self.reader = reader
+            self.writer = writer
+            self.instrumentation = instrumentation
+            self.editor_submit_command = editor_submit_command
+            self.editor_abort_command = editor_abort_command
+            self.newline_translation = newline_translation
+            self.open_calls = 0
+            self.close_calls = 0
+            RecordingTelnetTransport.instances.append(self)
+
+        def open(self) -> None:
+            self.open_calls += 1
+
+        async def wait_closed(self) -> None:
+            return None
+
+        def close(self) -> None:
+            self.close_calls += 1
+
+    @contextlib.asynccontextmanager
+    async def _stub_async_runner(*_: object, **__: object) -> typing.Iterator[StubRunner]:
+        runner = StubRunner()
+        yield runner
+
+    class _StubReader:
+        pass
+
+    class _StubWriter:
+        def __init__(self) -> None:
+            self.closed = False
+
+        def write(self, data: bytes) -> None:
+            pass
+
+        async def drain(self) -> None:
+            return None
+
+        def close(self) -> None:
+            self.closed = True
+
+        async def wait_closed(self) -> None:
+            return None
+
+        def is_closing(self) -> bool:
+            return self.closed
+
+    reader = typing.cast(asyncio.StreamReader, _StubReader())
+    writer = _StubWriter()
+
+    with mock.patch(
+        "imagebbs.runtime.cli._async_runner_with_persistence",
+        _stub_async_runner,
+    ), mock.patch(
+        "imagebbs.runtime.cli.SessionInstrumentation",
+        StubInstrumentation,
+    ), mock.patch(
+        "imagebbs.runtime.cli.TelnetModemTransport",
+        RecordingTelnetTransport,
+    ):
+        asyncio.run(
+            run_stream_session(
+                args,
+                reader,
+                typing.cast(asyncio.StreamWriter, writer),
+            )
+        )
+
+    assert RecordingTelnetTransport.instances
+    telnet = RecordingTelnetTransport.instances[0]
+    assert telnet.newline_translation == "\n"
+
 
 
 def test_create_runner_applies_configuration_and_persistence(tmp_path: Path) -> None:
@@ -192,7 +321,14 @@ def test_listen_session_serves_banner_and_exits_cleanly() -> None:
 
     async def _exercise() -> None:
         expected_runner = create_runner(args)
-        expected_banner = expected_runner.read_output().encode("latin-1")
+        banner_text = expected_runner.read_output()
+        translation_map = {"crlf": "\r\n", "lf": "\n", "none": None}
+        translation = translation_map[args.telnet_newline]
+        if translation is None:
+            expected_banner = banner_text.encode("latin-1")
+        else:
+            normalized = banner_text.replace("\r\n", "\n")
+            expected_banner = normalized.replace("\n", translation).encode("latin-1")
 
         server = await start_session_server(args, "127.0.0.1", 0)
         sockets = server.sockets or []
