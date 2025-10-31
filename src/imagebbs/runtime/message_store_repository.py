@@ -213,22 +213,29 @@ def merge_message_stores(
     updates: MessageStore,
     *,
     initial_keys: set[tuple[str, int]] | None = None,
+    deleted_keys: set[tuple[str, int]] | None = None,
 ) -> MessageStore:
     """Return a store combining ``persisted`` with ``updates`` records."""
 
     if initial_keys is None:
         initial_keys = set()
+    if deleted_keys is None:
+        deleted_keys = set()
 
     merged: dict[tuple[str, int], MessageRecord] = {}
     next_ids: dict[str, int] = {}
     for record in persisted.iter_records():
         key = (record.board_id, record.message_id)
+        if key in deleted_keys:
+            continue
         merged[key] = record
         next_ids[record.board_id] = max(
             next_ids.get(record.board_id, 1), record.message_id + 1
         )
     for record in updates.iter_records():
         key = (record.board_id, record.message_id)
+        if key in deleted_keys:
+            continue
         existing = merged.get(key)
         if existing is None:
             merged[key] = record
@@ -299,7 +306,10 @@ def save_message_store(
         if path.exists():
             persisted_store = load_message_store(path)
             store = merge_message_stores(
-                persisted_store, store, initial_keys=initial_keys
+                persisted_store,
+                store,
+                initial_keys=initial_keys,
+                deleted_keys=getattr(store, "deleted_keys", None),
             )
         payload = {"version": 1, "records": dump_records(store)}
         try:

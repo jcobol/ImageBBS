@@ -127,3 +127,35 @@ def test_save_message_store_atomic_failure(tmp_path: Path, monkeypatch: pytest.M
     assert remaining[0] == "messages.json"
     assert set(remaining).issubset({"messages.json", "messages.json.lock"})
 
+
+def test_save_message_store_persists_deletions(tmp_path: Path) -> None:
+    path = tmp_path / "messages.json"
+    store = MessageStore()
+    record = store.append(board_id="main", subject="Hello", author_handle="Sysop")
+
+    save_message_store(store, path)
+
+    reloaded = load_message_store(path)
+    initial_keys = {
+        (loaded.board_id, loaded.message_id)
+        for loaded in reloaded.iter_records()
+    }
+
+    reloaded.delete("main", record.message_id)
+    assert reloaded.deleted_keys == {("main", record.message_id)}
+
+    save_message_store(reloaded, path, initial_keys=initial_keys)
+
+    after_delete = load_message_store(path)
+    assert after_delete.list("main") == []
+
+    subsequent_initial_keys = {
+        (loaded.board_id, loaded.message_id)
+        for loaded in after_delete.iter_records()
+    }
+
+    save_message_store(after_delete, path, initial_keys=subsequent_initial_keys)
+
+    final = load_message_store(path)
+    assert final.list("main") == []
+
