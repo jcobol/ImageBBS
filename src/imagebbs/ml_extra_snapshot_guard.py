@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import List
 
 from . import ml_extra_sanity
+from . import ml_extra_metadata_io
 
 __all__ = [
     "DEFAULT_BASELINE",
@@ -105,7 +106,7 @@ def main(argv: List[str] | None = None) -> int:
     if not baseline_path.exists():
         raise SystemExit(f"baseline metadata not found: {baseline_path}")
 
-    baseline_snapshot = json.loads(baseline_path.read_text(encoding="utf-8"))
+    baseline_snapshot = ml_extra_metadata_io.read_metadata_snapshot(baseline_path)
     diff = ml_extra_sanity.diff_metadata_snapshots(baseline_snapshot, metadata_snapshot)
 
     if args.json:
@@ -114,12 +115,14 @@ def main(argv: List[str] | None = None) -> int:
         print(render_diff_summary(baseline_path, diff))
 
     if args.update_baseline:
-        baseline_path.parent.mkdir(parents=True, exist_ok=True)
-        baseline_path.write_text(
-            json.dumps(metadata_snapshot, indent=2) + "\n", encoding="utf-8"
+        baseline_updated = ml_extra_metadata_io.write_metadata_snapshot(
+            baseline_path, metadata_snapshot, only_if_changed=True
         )
         if not args.json:
-            print(f"Refreshed baseline snapshot at {baseline_path}")
+            if baseline_updated:
+                print(f"Refreshed baseline snapshot at {baseline_path}")
+            else:
+                print(f"Baseline snapshot already up to date: {baseline_path}")
         return 0
 
     return 0 if diff.get("matches", False) else 1
