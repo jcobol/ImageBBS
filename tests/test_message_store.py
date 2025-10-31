@@ -134,3 +134,21 @@ def test_fetch_missing_board_and_message_raise_keyerror() -> None:
     with pytest.raises(KeyError):
         store.fetch("general", 999)
 
+
+def test_delete_tracks_removed_records() -> None:
+    store = MessageStore()
+    record = store.append(
+        board_id="general",
+        subject="Temporary",
+        author_handle="SYSOP",
+        lines=["body"],
+    )
+
+    removed = store.delete("general", record.message_id)
+
+    assert removed == record
+    assert store.list("general") == []
+    assert store.deleted_keys == {("general", record.message_id)}
+    with pytest.raises(KeyError):
+        store.fetch("general", record.message_id)
+

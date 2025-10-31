@@ -64,6 +64,7 @@ class MessageStore:
     def __init__(self, *, records: Optional[Iterable[MessageRecord]] = None) -> None:
         self._messages: MutableMapping[str, Dict[int, MessageRecord]] = {}
         self._next_message_ids: MutableMapping[str, int] = {}
+        self._deleted_keys: set[tuple[str, int]] = set()
         if records is not None:
             for record in records:
                 self._add_record(record)
@@ -139,6 +140,17 @@ class MessageStore:
         self._messages[board_id][message_id] = updated
         return updated
 
+    def delete(self, board_id: str, message_id: int) -> MessageRecord:
+        """Remove ``message_id`` from ``board_id`` and record the deletion."""
+
+        record = self.fetch(board_id, message_id)
+        board_messages = self._messages[board_id]
+        del board_messages[message_id]
+        if not board_messages:
+            del self._messages[board_id]
+        self._deleted_keys.add((board_id, message_id))
+        return record
+
     def iter_records(self) -> Iterator[MessageRecord]:
         """Yield all records in board/message order."""
 
@@ -146,6 +158,12 @@ class MessageStore:
             board_messages = self._messages[board_id]
             for message_id in sorted(board_messages):
                 yield board_messages[message_id]
+
+    @property
+    def deleted_keys(self) -> set[tuple[str, int]]:
+        """Return the set of deleted ``(board_id, message_id)`` pairs."""
+
+        return set(self._deleted_keys)
 
     # Internal helpers -------------------------------------------------
 
@@ -159,6 +177,7 @@ class MessageStore:
         board_messages[record.message_id] = record
         next_id = max(self._next_message_ids.get(record.board_id, 1), record.message_id + 1)
         self._next_message_ids[record.board_id] = next_id
+        self._deleted_keys.discard((record.board_id, record.message_id))
 
 
 __all__ = [
