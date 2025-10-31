@@ -180,6 +180,33 @@ class FileTransfersModule:
                 self._set_binary_streaming(kernel, False)
                 return SessionState.FILE_TRANSFERS
 
+            if normalised == "DR":
+                self.last_command = normalised
+                parsed_ok, requested_slot = self._parse_drive_slot_selection(selection)
+                available_slots = self._available_drive_slots(kernel)
+                if not parsed_ok:
+                    self._render_macro(self.INVALID_SELECTION_MACRO)
+                    self._render_prompt()
+                    self._set_binary_streaming(kernel, False)
+                    return SessionState.FILE_TRANSFERS
+
+                target_slot = (
+                    requested_slot
+                    if requested_slot is not None
+                    else self._next_available_drive_slot(available_slots)
+                )
+
+                if target_slot in available_slots:
+                    self.active_drive_slot = target_slot
+                    self._render_prompt()
+                    self._set_binary_streaming(kernel, False)
+                    return SessionState.FILE_TRANSFERS
+
+                self._render_macro(self.INVALID_SELECTION_MACRO)
+                self._render_prompt()
+                self._set_binary_streaming(kernel, False)
+                return SessionState.FILE_TRANSFERS
+
             if normalised in self._KNOWN_COMMANDS:
                 self.last_command = normalised
                 self._render_prompt()
@@ -252,6 +279,35 @@ class FileTransfersModule:
                 return prefix
             return token
         return text[:2]
+
+    def _parse_drive_slot_selection(
+        self, selection: Optional[str]
+    ) -> tuple[bool, Optional[int]]:
+        """Validate and extract the slot requested by a ``DR`` command."""
+
+        if not selection:
+            return True, None
+        text = selection.strip().upper()
+        if not text.startswith("DR"):
+            return False, None
+        suffix = text[2:].strip()
+        if not suffix:
+            return True, None
+        try:
+            return True, int(suffix)
+        except ValueError:
+            return False, None
+
+    def _next_available_drive_slot(self, slots: tuple[int, ...]) -> int:
+        """Return the next configured slot after :attr:`active_drive_slot`."""
+
+        if not slots:
+            return self.active_drive_slot
+        try:
+            index = slots.index(self.active_drive_slot)
+        except ValueError:
+            return slots[0]
+        return slots[(index + 1) % len(slots)]
 
     def _set_binary_streaming(self, kernel: SessionKernel, enabled: bool) -> None:
         context = getattr(kernel, "context", None)
