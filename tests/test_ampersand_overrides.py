@@ -52,6 +52,13 @@ def _register_indicator_controller(registry) -> IndicatorController:
     return controller
 
 
+def test_builtin_ampersand_overrides_reference_runtime_module() -> None:
+    module_prefix = "imagebbs.runtime.ampersand_overrides:"
+    for flag_index, import_path in BUILTIN_AMPERSAND_OVERRIDES.items():
+        assert import_path.startswith(module_prefix)
+    assert 0x1C in BUILTIN_AMPERSAND_OVERRIDES
+
+
 def test_chkflags_syncs_indicator_controller_with_session_runtime() -> None:
     runner = SessionRunner()
     instrumentation = SessionInstrumentation(runner)
