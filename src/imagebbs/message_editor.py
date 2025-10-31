@@ -339,7 +339,12 @@ class MessageEditor:
     ) -> AmpersandResult:
         """Dispatch a registry handler and honour overrides."""
 
-        context = {"session": session, "event": event}
+        context = {
+            "session": session,
+            "event": event,
+            "registry": self.ampersand_registry,
+            "services": self.services,
+        }
         result = self.ampersand_registry.dispatch(flag_index, context)
         rendered = result.rendered_text
         if rendered is not None:

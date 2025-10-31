@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from unittest import mock
+
 import pytest
 
 from imagebbs.ampersand_dispatcher import (
@@ -57,6 +59,7 @@ def test_builtin_ampersand_overrides_reference_runtime_module() -> None:
     for flag_index, import_path in BUILTIN_AMPERSAND_OVERRIDES.items():
         assert import_path.startswith(module_prefix)
     assert 0x1C in BUILTIN_AMPERSAND_OVERRIDES
+    assert 0x15 in BUILTIN_AMPERSAND_OVERRIDES
 
 
 def test_chkflags_syncs_indicator_controller_with_session_runtime() -> None:
@@ -413,3 +416,66 @@ def test_outscn_ignores_empty_masked_pane_staging() -> None:
 
     assert after_screen == before_screen
     assert after_colour == before_colour
+
+
+def test_disp3_commits_pending_payload_and_resets_blink() -> None:
+    dispatcher = _build_dispatcher()
+    registry = dispatcher.registry
+    console_service = registry.services["console"]
+    assert isinstance(console_service, ConsoleService)
+
+    buffers = registry.services["masked_pane_buffers"]
+    assert isinstance(buffers, MaskedPaneBuffers)
+
+    width = buffers.width
+    screen_payload = bytes((0x55 + i) % 256 for i in range(width))
+    colour_payload = bytes(((i + 7) % 16) for i in range(width))
+
+    console_service.stage_masked_pane_overlay(screen_payload, colour_payload)
+
+    pending = buffers.peek_pending_payload()
+    assert pending is not None
+    assert pending[0] == screen_payload
+    assert pending[1] == colour_payload
+
+    console_service.advance_masked_pane_blink()
+    before_state = console_service._masked_pane_blink.peek()  # type: ignore[attr-defined]
+    assert before_state.countdown != console_service._masked_pane_blink._reset_value  # type: ignore[attr-defined]
+
+    with mock.patch.object(
+        console_service,
+        "rotate_masked_pane_buffers",
+        wraps=console_service.rotate_masked_pane_buffers,
+    ) as rotate_spy:
+        result = dispatcher.dispatch("&,21")
+
+    assert result.flag_index == 0x15
+    assert rotate_spy.call_count == 1
+
+    screen_bytes, colour_bytes = console_service.peek_block(
+        screen_address=ConsoleService._MASKED_OVERLAY_SCREEN_BASE,
+        screen_length=width,
+        colour_address=ConsoleService._MASKED_OVERLAY_COLOUR_BASE,
+        colour_length=width,
+    )
+
+    palette = console_service.screen.palette
+    resolved_colour = bytes(
+        _resolve_palette_colour(value, palette) for value in colour_payload
+    )
+
+    assert screen_bytes == screen_payload
+    assert colour_bytes == resolved_colour
+    assert tuple(buffers.live_screen[:width]) == tuple(screen_payload)
+    assert tuple(buffers.live_colour[:width]) == tuple(colour_payload)
+
+    fill_colour = console_service.screen_colour & 0xFF
+    assert tuple(buffers.staged_screen[:width]) == (0x20,) * width
+    assert tuple(buffers.staged_colour[:width]) == (fill_colour,) * width
+    assert buffers.peek_pending_payload() is None
+    assert buffers.has_pending_payload() is False
+    assert buffers.dirty is False
+
+    blink_state = console_service._masked_pane_blink.peek()  # type: ignore[attr-defined]
+    reset_value = console_service._masked_pane_blink._reset_value  # type: ignore[attr-defined]
+    assert blink_state.countdown == reset_value

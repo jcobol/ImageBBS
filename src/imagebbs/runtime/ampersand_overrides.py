@@ -23,6 +23,7 @@ BUILTIN_AMPERSAND_OVERRIDES: Mapping[int, str] = MappingProxyType(
     {
         0x1C: f"{__name__}:handle_file_transfer_sequence",
         0x34: f"{__name__}:handle_chkflags",
+        0x15: f"{__name__}:handle_disp3",
         0x32: f"{__name__}:handle_outscn",
         0x08: f"{__name__}:handle_dskdir",
         0x03: f"{__name__}:handle_read0",
@@ -63,18 +64,23 @@ def handle_chkflags(context: AmpersandDispatchContext) -> AmpersandResult:
     return result
 
 
-def handle_dskdir(context: AmpersandDispatchContext) -> AmpersandResult:
+def handle_dskdir(context: AmpersandDispatchContext | Mapping[str, object]) -> AmpersandResult:
     """Emulate ``dskdir`` (``&,8``) while honouring fallback text payloads."""
 
     registry = _require_registry(context)
     services = _resolve_services(context, registry)
-    result = registry.dispatch(context.invocation.routine, context, use_default=True)
+    payload_mapping = _context_payload(context)
+    invocation = _context_invocation(
+        context, default_routine=0x08, default_expression="&,8"
+    )
 
-    fallback_text = _extract_fallback_text(context.payload)
+    result = registry.dispatch(invocation.routine, context, use_default=True)
+
+    fallback_text = _extract_fallback_text(payload_mapping)
     if fallback_text is not None:
         return replace(result, rendered_text=fallback_text)
 
-    device_context = _resolve_device_context(services, context.payload)
+    device_context = _resolve_device_context(services, payload_mapping)
     if device_context is None:
         return result
 
@@ -99,44 +105,26 @@ def handle_dskdir(context: AmpersandDispatchContext) -> AmpersandResult:
     return replace(result, rendered_text=combined)
 
 
-def handle_outscn(context: AmpersandDispatchContext) -> AmpersandResult:
+def handle_outscn(context: AmpersandDispatchContext | Mapping[str, object]) -> AmpersandResult:
     """Emulate ``outscn`` (``&,50``) by committing masked pane staging."""
 
     registry = _require_registry(context)
     services = _resolve_services(context, registry)
     console = _resolve_console_service(services)
-    buffers = _resolve_masked_pane_buffers(services, context.payload)
+    payload_mapping = _context_payload(context)
+    buffers = _resolve_masked_pane_buffers(services, payload_mapping)
 
-    result = registry.dispatch(context.invocation.routine, context, use_default=True)
+    invocation = _context_invocation(
+        context, default_routine=0x32, default_expression="&,50"
+    )
+
+    result = registry.dispatch(invocation.routine, context, use_default=True)
 
     if console is None or buffers is None:
         return result
 
-    pending_payload = buffers.consume_pending_payload()
-    staged = False
-
-    if pending_payload is not None:
-        console.capture_masked_pane_buffers(buffers)
-        screen_payload, colour_payload = pending_payload
-        staging_map = console.masked_pane_staging_map
-        spec = _resolve_staging_map_spec_for_payload(
-            console,
-            staging_map,
-            screen_payload,
-            colour_payload,
-            width=buffers.width,
-        )
-        if spec is not None:
-            staging_map.stage_macro(console, spec.macro)
-            staged = True
-        if not staged:
-            console.stage_masked_pane_overlay(screen_payload, colour_payload)
-
-    fill_glyph = _SPACE_GLYPH
-    fill_colour = console.screen_colour & 0xFF
-
-    has_payload = (pending_payload is not None) or _masked_pane_has_payload(
-        buffers, fill_glyph, fill_colour
+    has_payload, fill_glyph, fill_colour = _restage_masked_pane_payload(
+        console, buffers
     )
 
     if has_payload:
@@ -149,15 +137,52 @@ def handle_outscn(context: AmpersandDispatchContext) -> AmpersandResult:
     return result
 
 
-def handle_read0(context: AmpersandDispatchContext) -> AmpersandResult:
+def handle_disp3(context: AmpersandDispatchContext | Mapping[str, object]) -> AmpersandResult:
+    """Emulate ``disp3`` (``&,21``) while resetting masked-pane blink state."""
+
+    registry = _require_registry(context)
+    services = _resolve_services(context, registry)
+    console = _resolve_console_service(services)
+    payload_mapping = _context_payload(context)
+    buffers = _resolve_masked_pane_buffers(services, payload_mapping)
+    invocation = _context_invocation(
+        context, default_routine=0x15, default_expression="&,21"
+    )
+
+    if console is None or buffers is None:
+        return registry.dispatch(invocation.routine, context, use_default=True)
+
+    has_payload, fill_glyph, fill_colour = _restage_masked_pane_payload(
+        console, buffers
+    )
+
+    if has_payload:
+        console.reset_masked_pane_blink()
+        console.commit_masked_pane_staging(
+            fill_glyph=fill_glyph, fill_colour=fill_colour
+        )
+
+    result = registry.dispatch(invocation.routine, context, use_default=True)
+
+    buffers.clear_pending_payload()
+
+    return result
+
+
+def handle_read0(context: AmpersandDispatchContext | Mapping[str, object]) -> AmpersandResult:
     """Emulate ``read0`` (``&,3``) by staging editor output into the message store."""
 
     registry = _require_registry(context)
     services = _resolve_services(context, registry)
-    store = _resolve_message_store(services, context.payload)
-    session = _resolve_session(context.payload)
+    payload_mapping = _context_payload(context)
+    store = _resolve_message_store(services, payload_mapping)
+    session = _resolve_session(payload_mapping)
 
-    result = registry.dispatch(context.invocation.routine, context, use_default=True)
+    invocation = _context_invocation(
+        context, default_routine=0x03, default_expression="&,3"
+    )
+
+    result = registry.dispatch(invocation.routine, context, use_default=True)
 
     if store is None or session is None:
         return result
@@ -204,8 +229,34 @@ def _payload_mapping(payload: object | None) -> Mapping[str, object]:
     return _EMPTY_MAPPING
 
 
-def _require_registry(context: AmpersandDispatchContext) -> AmpersandRegistry:
-    payload = _payload_mapping(context.payload)
+def _context_payload(context: object) -> Mapping[str, object]:
+    if isinstance(context, AmpersandDispatchContext):
+        return _payload_mapping(context.payload)
+    if isinstance(context, Mapping):
+        return cast(Mapping[str, object], context)
+    return _EMPTY_MAPPING
+
+
+def _context_invocation(
+    context: AmpersandDispatchContext | Mapping[str, object],
+    *,
+    default_routine: int,
+    default_expression: str,
+) -> AmpersandInvocation:
+    if isinstance(context, AmpersandDispatchContext):
+        return context.invocation
+    return AmpersandInvocation(
+        routine=default_routine,
+        argument_x=0,
+        argument_y=0,
+        expression=default_expression,
+    )
+
+
+def _require_registry(
+    context: AmpersandDispatchContext | Mapping[str, object]
+) -> AmpersandRegistry:
+    payload = _context_payload(context)
     registry = payload.get("registry")
     if isinstance(registry, AmpersandRegistry):
         return registry
@@ -213,9 +264,10 @@ def _require_registry(context: AmpersandDispatchContext) -> AmpersandRegistry:
 
 
 def _resolve_services(
-    context: AmpersandDispatchContext, registry: AmpersandRegistry
+    context: AmpersandDispatchContext | Mapping[str, object],
+    registry: AmpersandRegistry,
 ) -> Mapping[str, object]:
-    payload = _payload_mapping(context.payload)
+    payload = _context_payload(context)
     services = payload.get("services")
     if isinstance(services, Mapping):
         return services
@@ -512,6 +564,41 @@ def _expected_macro_overlay(
     return glyph_bytes[:width], colour_bytes[:width]
 
 
+def _restage_masked_pane_payload(
+    console: ConsoleService, buffers: MaskedPaneBuffers
+) -> Tuple[bool, int, int]:
+    """Restage cached masked-pane payloads prior to a commit."""
+
+    pending_payload = buffers.consume_pending_payload()
+    staged = False
+
+    if pending_payload is not None:
+        console.capture_masked_pane_buffers(buffers)
+        screen_payload, colour_payload = pending_payload
+        staging_map = console.masked_pane_staging_map
+        spec = _resolve_staging_map_spec_for_payload(
+            console,
+            staging_map,
+            screen_payload,
+            colour_payload,
+            width=buffers.width,
+        )
+        if spec is not None:
+            staging_map.stage_macro(console, spec.macro)
+            staged = True
+        if not staged:
+            console.stage_masked_pane_overlay(screen_payload, colour_payload)
+
+    fill_glyph = _SPACE_GLYPH
+    fill_colour = console.screen_colour & 0xFF
+
+    has_payload = (pending_payload is not None) or _masked_pane_has_payload(
+        buffers, fill_glyph, fill_colour
+    )
+
+    return has_payload, fill_glyph, fill_colour
+
+
 def _normalise_ampersand_sequence_key(
     invocation: AmpersandInvocation,
 ) -> str:
@@ -533,6 +620,7 @@ __all__ = [
     "BUILTIN_AMPERSAND_OVERRIDES",
     "handle_chkflags",
     "handle_dskdir",
+    "handle_disp3",
     "handle_outscn",
     "handle_read0",
     "handle_file_transfer_sequence",
