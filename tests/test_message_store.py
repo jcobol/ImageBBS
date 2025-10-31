@@ -152,3 +152,57 @@ def test_delete_tracks_removed_records() -> None:
     with pytest.raises(KeyError):
         store.fetch("general", record.message_id)
 
+
+def test_search_messages_filters_by_subject_prefix() -> None:
+    store = MessageStore()
+    store.append(board_id="general", subject="Announcement", author_handle="SYSOP")
+    store.append(board_id="general", subject="Annex", author_handle="SYSOP")
+    store.append(board_id="general", subject="Meeting", author_handle="SYSOP")
+
+    matches = store.search_messages("general", subject_contains="Ann")
+
+    assert [record.subject for record in matches] == ["Announcement", "Annex"]
+
+
+def test_search_messages_filters_by_author_handle() -> None:
+    store = MessageStore()
+    store.append(board_id="general", subject="One", author_handle="SYSOP")
+    store.append(board_id="general", subject="Two", author_handle="Guest")
+    store.append(board_id="general", subject="Three", author_handle="Moderator")
+
+    matches = store.search_messages("general", author_contains="mod")
+
+    assert [record.subject for record in matches] == ["Three"]
+
+
+def test_search_messages_with_callable_predicate_and_summaries() -> None:
+    store = MessageStore()
+    store.append(
+        board_id="general",
+        subject="Short",
+        author_handle="SYSOP",
+        lines=["line"],
+    )
+    store.append(
+        board_id="general",
+        subject="Long",
+        author_handle="SYSOP",
+        lines=["line1", "line2"],
+    )
+
+    matches = store.search_messages(
+        "general",
+        summaries=True,
+        predicate=lambda summary: summary.line_count > 1,
+    )
+
+    assert [summary.subject for summary in matches] == ["Long"]
+
+
+def test_search_messages_handles_missing_or_empty_boards() -> None:
+    store = MessageStore()
+    store.append(board_id="general", subject="Hello", author_handle="SYSOP")
+
+    assert store.search_messages("general", subject_contains="Z") == []
+    assert store.search_messages("absent", subject_contains="anything") == []
+

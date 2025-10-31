@@ -3,7 +3,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from typing import Dict, Iterable, Iterator, List, MutableMapping, Optional, Tuple
+from typing import (
+    Callable,
+    Dict,
+    Iterable,
+    Iterator,
+    List,
+    MutableMapping,
+    Optional,
+    Tuple,
+    Union,
+)
 
 
 @dataclass(frozen=True)
@@ -84,6 +94,41 @@ class MessageStore:
             for record in sorted(records.values(), key=lambda r: r.message_id)
         ]
         return summaries
+
+    # Provide targeted lookups without exposing internal mappings.
+    def search_messages(
+        self,
+        board_id: str,
+        *,
+        subject_contains: Optional[str] = None,
+        author_contains: Optional[str] = None,
+        predicate: Optional[Callable[[Union[MessageRecord, MessageSummary]], bool]] = None,
+        summaries: bool = False,
+    ) -> List[Union[MessageRecord, MessageSummary]]:
+        """Locate board messages using case-insensitive substring filters and optional predicate."""
+
+        subject_filter = subject_contains.lower() if subject_contains is not None else None
+        author_filter = author_contains.lower() if author_contains is not None else None
+
+        if summaries:
+            entries: Iterable[Union[MessageRecord, MessageSummary]] = self.list(board_id)
+        else:
+            entries = (
+                record
+                for record in self.iter_records()
+                if record.board_id == board_id
+            )
+
+        results: List[Union[MessageRecord, MessageSummary]] = []
+        for entry in entries:
+            if subject_filter is not None and subject_filter not in entry.subject.lower():
+                continue
+            if author_filter is not None and author_filter not in entry.author_handle.lower():
+                continue
+            if predicate is not None and not predicate(entry):
+                continue
+            results.append(entry)
+        return results
 
     def fetch(self, board_id: str, message_id: int) -> MessageRecord:
         try:
