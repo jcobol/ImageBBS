@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from imagebbs.device_context import ConsoleService, DiskDrive, LoopbackModemTransport
 from imagebbs.session_kernel import SessionKernel, SessionState
 from imagebbs.runtime.file_transfers import (
@@ -11,6 +13,16 @@ def _bootstrap_kernel() -> tuple[SessionKernel, FileTransfersModule]:
     module = FileTransfersModule()
     kernel = SessionKernel(module=module)
     return kernel, module
+
+
+def _register_drive_slot(context, slot: int, root: Path) -> DiskDrive:
+    """Install a host-backed drive so tests can exercise slot switching."""
+
+    device_name = context.drive_device_name(slot)
+    drive = DiskDrive(root)
+    context.register(device_name, drive)
+    context.open(device_name, slot, 15)
+    return drive
 
 
 def _expected_overlay(
@@ -186,6 +198,90 @@ def test_file_transfers_rd_lists_drive_directory(tmp_path) -> None:
     assert "alpha.seq" in output
     assert "beta.seq" in output
     assert module.rendered_slots[-1] == module.MENU_PROMPT_SLOT
+
+
+def test_file_transfers_dr_cycles_to_next_drive(tmp_path) -> None:
+    kernel, module = _bootstrap_kernel()
+    transport = RecordingLoopbackTransport()
+    kernel.context.register_modem_device(transport=transport)
+    console_service = kernel.services["console"]
+    assert isinstance(console_service, ConsoleService)
+
+    root8 = tmp_path / "drive8"
+    root9 = tmp_path / "drive9"
+    _register_drive_slot(kernel.context, 8, root8)
+    _register_drive_slot(kernel.context, 9, root9)
+    (root8 / "slot8.seq").write_text("slot8")
+    (root9 / "slot9.seq").write_text("slot9")
+
+    module.active_drive_slot = 8
+    kernel.step(FileTransferEvent.ENTER)
+    module.rendered_slots.clear()
+    transport.binary_modes.clear()
+    console_service.device.output.clear()
+
+    state = kernel.step(FileTransferEvent.COMMAND, "DR")
+
+    assert state is SessionState.FILE_TRANSFERS
+    assert module.last_command == "DR"
+    assert module.active_drive_slot == 9
+    assert module.rendered_slots[-1] == module.MENU_PROMPT_SLOT
+    assert transport.binary_modes == [False]
+
+    state = kernel.step(FileTransferEvent.COMMAND, "RD")
+
+    assert state is SessionState.FILE_TRANSFERS
+    output = "".join(console_service.device.output)
+    assert "slot9.seq" in output
+    assert "slot8.seq" not in output
+
+
+def test_file_transfers_dr_selects_explicit_slot(tmp_path) -> None:
+    kernel, module = _bootstrap_kernel()
+    transport = RecordingLoopbackTransport()
+    kernel.context.register_modem_device(transport=transport)
+
+    root8 = tmp_path / "drive8"
+    root9 = tmp_path / "drive9"
+    _register_drive_slot(kernel.context, 8, root8)
+    _register_drive_slot(kernel.context, 9, root9)
+
+    module.active_drive_slot = 9
+    kernel.step(FileTransferEvent.ENTER)
+    module.rendered_slots.clear()
+    transport.binary_modes.clear()
+
+    state = kernel.step(FileTransferEvent.COMMAND, "DR 8")
+
+    assert state is SessionState.FILE_TRANSFERS
+    assert module.last_command == "DR"
+    assert module.active_drive_slot == 8
+    assert module.rendered_slots[-1] == module.MENU_PROMPT_SLOT
+    assert transport.binary_modes == [False]
+
+
+def test_file_transfers_dr_rejects_invalid_slot(tmp_path) -> None:
+    kernel, module = _bootstrap_kernel()
+    transport = RecordingLoopbackTransport()
+    kernel.context.register_modem_device(transport=transport)
+
+    root8 = tmp_path / "drive8"
+    _register_drive_slot(kernel.context, 8, root8)
+
+    module.active_drive_slot = 8
+    kernel.step(FileTransferEvent.ENTER)
+    module.rendered_slots.clear()
+    transport.binary_modes.clear()
+
+    state = kernel.step(FileTransferEvent.COMMAND, "DR 99")
+
+    assert state is SessionState.FILE_TRANSFERS
+    assert module.active_drive_slot == 8
+    assert module.rendered_slots[-2:] == [
+        module.INVALID_SELECTION_SLOT,
+        module.MENU_PROMPT_SLOT,
+    ]
+    assert transport.binary_modes == [False]
 
 
 def test_file_transfers_exit_returns_to_main_menu() -> None:
