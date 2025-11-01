@@ -1,23 +1,37 @@
 #!/bin/bash
 set -euo pipefail
 
-# Expectations:
-# - "plusplus 2.prg" becomes "++ 2.prg" when slash translation is enabled.
-# - "plusslashMM_load.lbl" becomes "+/MM.load.lbl" when slash translation is enabled.
-# - "slashslashslash_" becomes "---." when slash translation is disabled.
-
 use_slashes=1
+verbose=0
 
-# Why: Provide consistent translation logic reused by tests to validate scenario outputs.
+# Why: Perform the Commodore filename translation for validation scenarios.
 translate_filename() {
         local stringZ="$1"
-        local result="${stringZ//plus/+}"
-        if [[ "$use_slashes" == "1" ]]; then
+        local result="$stringZ"
+
+        if (( verbose )); then
+                printf 'Input : %s\n' "$stringZ" >&2
+        fi
+
+        result="${result//plus/+}"
+        if (( verbose )); then
+                printf 'Step 1: %s\n' "$result" >&2
+        fi
+
+        if (( use_slashes )); then
                 result="${result//slash/\/}"
         else
                 result="${result//slash/-}"
         fi
+        if (( verbose )); then
+                printf 'Step 2: %s\n' "$result" >&2
+        fi
+
         result="${result//_/.}"
+        if (( verbose )); then
+                printf 'Step 3: %s\n' "$result" >&2
+        fi
+
         printf '%s' "$result"
 }
 
@@ -44,5 +58,17 @@ printf 'Setting use_slashes to 0 for final assertion.\n'
 use_slashes=0
 result=$(translate_filename "slashslashslash_")
 assert_equals "---." "$result" "translate slashslashslash_ without slashes"
+
+printf 'Checking verbose debug output emission.\n'
+use_slashes=1
+verbose=0
+debug_output=$( { translate_filename "plusslashfile_" 1>/dev/null; } 2>&1 )
+assert_equals "" "$debug_output" "no verbose output by default"
+verbose=1
+verbose_output=$( { translate_filename "plusslashfile_" 1>/dev/null; } 2>&1 )
+assert_equals $'Input : plusslashfile_\nStep 1: +slashfile_\nStep 2: +/file_\nStep 3: +/file.' "$verbose_output" "verbose output emitted"
+
+result=$(translate_filename "plusslashfile_" 2>/dev/null)
+assert_equals "+/file." "$result" "translate plusslashfile_ while verbose"
 
 printf 'All translate tests passed.\n'

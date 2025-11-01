@@ -1,57 +1,132 @@
 #!/bin/bash
+set -euo pipefail
 
-# https://stackoverflow.com/questions/192249/how-do-i-parse-command-line-arguments-in-bash
-
-# echo "$? params"
-# echo "$argv value"
-
-# http://tldp.org/LDP/abs/html/string-manipulation.html
-# (Substring Replacement)
+quiet=0
 use_slashes=1
+verbose=0
 
-function translate_filename()
-# this translates the filename given and returns in $test
-{
-	stringZ="$1"
-# // delimiter replaces globally; / replaces first occurrence
-	echo "Input : $stringZ"
-	test=${stringZ//plus/+}		# plus to +
-	echo "Step 1: $test"
-		if [ "$use_slashes" == "1" ]; then
-			test=${test//slash/\/}		# slash to / -- escape /!
-		else
-			test=${test//slash/-}		# slash to -
-		fi;
-	echo "Step 2: $test"
-	test=${test//_/.}		# _ to .
-	echo "Step 3: $test"
+# Why: Provide user guidance when invocation parameters are invalid.
+print_usage() {
+        cat <<'USAGE'
+Usage: test-translate.sh [options] <input_lbl> <disk_image>
+
+Options:
+  -s, --no-slash    Replace occurrences of "slash" with "-" instead of "/".
+  -q, --quiet       Suppress non-essential informational output.
+  -v, --verbose     Emit debug details while translating filenames.
+  -h, --help        Show this help message and exit.
+USAGE
 }
 
-disk_image=$2
+# Why: Emit optional informational messages without breaking quiet mode semantics.
+log_info() {
+        local message="$1"
+        if (( quiet == 0 )); then
+                printf '%s\n' "$message"
+        fi
+}
 
-input_lbl=$1 # "plusslashMM_load.lbl"
-input_prg=${input_lbl//.lbl/.prg}		# change .lbl extension to .prg
+# Why: Perform the Commodore filename translation used across tooling.
+translate_filename() {
+        local input="$1"
+        local result="$input"
 
-translate_filename "$input_lbl" # "+/MM.load.lbl"
-C64_FILE=${test//.lbl/}	# remove .lbl extension
+        if (( verbose )); then
+                printf 'Input : %s\n' "$input" >&2
+        fi
 
-# translate_filename "plusplus 2" # "++ 2.prg"
+        result="${result//plus/+}"
+        if (( verbose )); then
+                printf 'Step 1: %s\n' "$result" >&2
+        fi
 
-echo "input_lbl=$input_lbl"
-echo "C64_FILE=$C64_FILE"
+        if (( use_slashes )); then
+                result="${result//slash/\/}"
+        else
+                result="${result//slash/-}"
+        fi
+        if (( verbose )); then
+                printf 'Step 2: %s\n' "$result" >&2
+        fi
 
-# quote filenames since some have spaces in them
-echo "wine c64list3_05.exe \"$input_lbl\" -prg -ovr"
-echo "c1541 \"$disk_image\" \
--del \"$C64_FILE\" \
--write \"$input_prg\" \"$C64_FILE\""
+        result="${result//_/.}"
+        if (( verbose )); then
+                printf 'Step 3: %s\n' "$result" >&2
+        fi
 
-wine c64list3_05.exe \"$input_lbl\" -prg -ovr
+        printf '%s' "$result"
+}
+
+while getopts ':sqvh-:' opt; do
+        case "$opt" in
+        s)
+                use_slashes=0
+                ;;
+        q)
+                quiet=1
+                ;;
+        v)
+                verbose=1
+                ;;
+        h)
+                print_usage
+                exit 0
+                ;;
+        -)
+                case "$OPTARG" in
+                no-slash)
+                        use_slashes=0
+                        ;;
+                quiet)
+                        quiet=1
+                        ;;
+                verbose)
+                        verbose=1
+                        ;;
+                help)
+                        print_usage
+                        exit 0
+                        ;;
+                *)
+                        print_usage >&2
+                        exit 1
+                        ;;
+                esac
+                ;;
+        :)
+                print_usage >&2
+                exit 1
+                ;;
+        *)
+                print_usage >&2
+                exit 1
+                ;;
+        esac
+done
+shift $((OPTIND - 1))
+
+if (( $# != 2 )); then
+        print_usage >&2
+        exit 1
+fi
+
+input_lbl="$1"
+disk_image="$2"
+input_prg="${input_lbl//.lbl/.prg}"
+translated_lbl="$(translate_filename "$input_lbl")"
+C64_FILE="${translated_lbl//.lbl/}"
+
+if (( quiet == 0 )); then
+        log_info "input_lbl=$input_lbl"
+        log_info "translated_lbl=$translated_lbl"
+        log_info "C64_FILE=$C64_FILE"
+        log_info "wine c64list3_05.exe \"$input_lbl\" -prg -ovr"
+        log_info "c1541 \"$disk_image\""
+        log_info "    -del \"$C64_FILE\""
+        log_info "    -write \"$input_prg\" \"$C64_FILE\""
+fi
+
+wine c64list3_05.exe "$input_lbl" -prg -ovr
 c1541 "$disk_image" \
--del "$C64_FILE" \
--write "$input_prg" "$C64_FILE"
-
-# echo "Setting 'use_slashes' to 0."
-# use_slashes=0
-# translate_filename "slashslashslash_" # "---."
-# FILE=$test; echo $FILE
+        -del "$C64_FILE" \
+        -write "$input_prg" "$C64_FILE"
