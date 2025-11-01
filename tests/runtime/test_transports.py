@@ -114,7 +114,7 @@ def test_telnet_transport_applies_custom_idle_interval() -> None:
 
 
 class StubIndicatorController:
-    def __init__(self, console: object) -> None:
+    def __init__(self, console: object, **kwargs) -> None:
         self.console = console
         self.tick_count = 0
         self.carrier_states: list[bool] = []

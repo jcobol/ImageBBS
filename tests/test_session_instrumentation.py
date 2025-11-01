@@ -1,6 +1,10 @@
+from dataclasses import replace
+
+from imagebbs.console_renderer import _resolve_palette_colour
 from imagebbs.runtime.indicator_controller import IndicatorController
 from imagebbs.runtime.session_instrumentation import SessionInstrumentation
 from imagebbs.runtime.session_runner import SessionRunner
+from imagebbs.setup_defaults import IndicatorDefaults, SetupDefaults
 
 
 def test_session_instrumentation_syncs_indicator_controller_from_console() -> None:
@@ -103,3 +107,75 @@ def test_session_instrumentation_releases_cache_after_runner_reset() -> None:
     third_controller = instrumentation.ensure_indicator_controller()
     assert third_controller is external_controller
     assert instrumentation.indicator_controller is external_controller
+
+
+def test_session_instrumentation_applies_indicator_overrides() -> None:
+    base_defaults = SetupDefaults.stub()
+    overrides = IndicatorDefaults(
+        pause_colour=0x0E,
+        abort_colour=0x0D,
+        spinner_colour=0x0C,
+        carrier_leading_colour=0x0B,
+        carrier_indicator_colour=0x0A,
+        spinner_frames=(0x21, 0x22, 0x23),
+    )
+    runner = SessionRunner(defaults=replace(base_defaults, indicator=overrides))
+    console = runner.console
+
+    console.set_pause_indicator(0x20, colour=0x01)
+    console.set_abort_indicator(0x20, colour=0x02)
+
+    instrumentation = SessionInstrumentation(runner)
+    controller = instrumentation.ensure_indicator_controller()
+    assert controller is not None
+
+    controller.set_pause(True)
+    pause_colour_addr = console._colour_address_for(console._PAUSE_SCREEN_ADDRESS)
+    palette = console.palette
+    expected_pause_colour = _resolve_palette_colour(
+        overrides.pause_colour, palette, default_index=0
+    )
+    assert console.screen.peek_colour_address(pause_colour_addr) == expected_pause_colour
+
+    controller.set_abort(True)
+    abort_colour_addr = console._colour_address_for(console._ABORT_SCREEN_ADDRESS)
+    expected_abort_colour = _resolve_palette_colour(
+        overrides.abort_colour, palette, default_index=0
+    )
+    assert console.screen.peek_colour_address(abort_colour_addr) == expected_abort_colour
+
+    controller.set_spinner_enabled(True)
+    spinner_colour_addr = console._colour_address_for(
+        console._SPINNER_SCREEN_ADDRESS
+    )
+    expected_spinner_colour = _resolve_palette_colour(
+        overrides.spinner_colour, palette, default_index=0
+    )
+    assert (
+        console.screen.peek_colour_address(spinner_colour_addr)
+        == expected_spinner_colour
+    )
+    assert controller.spinner_frames == overrides.spinner_frames
+
+    controller.set_carrier(True)
+    controller.set_carrier(False)
+    carrier_leading_addr = console._colour_address_for(
+        console._CARRIER_LEADING_SCREEN_ADDRESS
+    )
+    carrier_indicator_addr = console._colour_address_for(
+        console._CARRIER_INDICATOR_SCREEN_ADDRESS
+    )
+    expected_leading_colour = _resolve_palette_colour(
+        overrides.carrier_leading_colour, palette, default_index=0
+    )
+    expected_indicator_colour = _resolve_palette_colour(
+        overrides.carrier_indicator_colour, palette, default_index=0
+    )
+    assert (
+        console.screen.peek_colour_address(carrier_leading_addr)
+        == expected_leading_colour
+    )
+    assert (
+        console.screen.peek_colour_address(carrier_indicator_addr)
+        == expected_indicator_colour
+    )

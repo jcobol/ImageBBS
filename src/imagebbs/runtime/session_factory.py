@@ -122,7 +122,7 @@ def _build_defaults_from_args(args: argparse.Namespace) -> SetupDefaults:
         raise SystemExit(f"drive configuration not found: {config_path}")
 
     config = load_drive_config(config_path)
-    defaults = replace(defaults, drives=config.drives)
+    defaults = replace(defaults, drives=config.drives, indicator=config.indicator)
     ampersand_overrides = dict(config.ampersand_overrides)
     modem_override = config.modem_baud_limit
     baud_override = getattr(args, "baud_limit", None)

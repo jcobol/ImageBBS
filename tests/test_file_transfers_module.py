@@ -435,9 +435,9 @@ def test_file_transfers_respects_abort_flag() -> None:
     assert kernel.defaults.last_file_transfer_protocol == "Xmodem CRC"
 
 class RecordingIndicatorController(IndicatorController):
-    def __init__(self, console: ConsoleService) -> None:
-        # Why: capture controller toggles while preserving the console wiring.
-        super().__init__(console)
+    def __init__(self, console: ConsoleService, **kwargs) -> None:
+        # Why: capture controller toggles while preserving the console wiring and recording injected palette overrides.
+        super().__init__(console, **kwargs)
         self.pause_states: list[bool] = []
         self.abort_states: list[bool] = []
         self.pause_colours: list[int | None] = []

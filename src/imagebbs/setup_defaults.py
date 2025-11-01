@@ -175,6 +175,35 @@ class ModemDefaults:
 
 
 @dataclass(frozen=True)
+class IndicatorDefaults:
+    """Optional indicator overrides surfaced by the setup stub."""
+
+    pause_colour: Optional[int] = None
+    abort_colour: Optional[int] = None
+    spinner_colour: Optional[int] = None
+    carrier_leading_colour: Optional[int] = None
+    carrier_indicator_colour: Optional[int] = None
+    spinner_frames: Tuple[int, ...] | None = None
+
+    # Why: translate indicator defaults into constructor kwargs so instrumentation wiring can honour host preferences.
+    def controller_kwargs(self) -> Dict[str, object]:
+        payload: Dict[str, object] = {}
+        if self.pause_colour is not None:
+            payload["pause_colour"] = int(self.pause_colour) & 0xFF
+        if self.abort_colour is not None:
+            payload["abort_colour"] = int(self.abort_colour) & 0xFF
+        if self.spinner_colour is not None:
+            payload["spinner_colour"] = int(self.spinner_colour) & 0xFF
+        if self.carrier_leading_colour is not None:
+            payload["carrier_leading_colour"] = int(self.carrier_leading_colour) & 0xFF
+        if self.carrier_indicator_colour is not None:
+            payload["carrier_indicator_colour"] = int(self.carrier_indicator_colour) & 0xFF
+        if self.spinner_frames is not None:
+            payload["spinner_frames"] = tuple(int(code) & 0xFF for code in self.spinner_frames)
+        return payload
+
+
+@dataclass(frozen=True)
 class FileLibraryEntry:
     """Structured metadata describing a single upload/download record."""
 
@@ -222,6 +251,7 @@ class SetupConfig:
     drives: Tuple[DriveAssignment, ...]
     ampersand_overrides: Dict[int, str]
     modem_baud_limit: Optional[int] = None
+    indicator: IndicatorDefaults = field(default_factory=IndicatorDefaults)
 
     def __post_init__(self) -> None:
         # Ensure mutable values are not shared between instances.
@@ -247,6 +277,7 @@ class SetupDefaults:
     chat_mode_messages: ChatModeMessages
     macro_modules: Tuple[str, ...]
     modem: ModemDefaults = field(default_factory=ModemDefaults)
+    indicator: IndicatorDefaults = field(default_factory=IndicatorDefaults)
     library_macros: Mapping[str, str] = field(default_factory=dict)
     file_libraries: Tuple[FileLibraryDescriptor, ...] = field(
         default_factory=tuple
@@ -330,6 +361,7 @@ class SetupDefaults:
     def stub(cls) -> "SetupDefaults":
         """Return the deterministic defaults recorded alongside ``setup``."""
 
+        # Why: decode the stub manifest so host tooling can rebuild runtime defaults deterministically.
         defaults = load_stub_defaults()
         raw_assignments = tuple(tuple(entry) for entry in defaults["drives"])
         drives = tuple(
@@ -350,6 +382,7 @@ class SetupDefaults:
         chat_messages = ChatModeMessages(**defaults["chat_mode_messages"])
         raw_modem = defaults.get("modem")
         modem_defaults = _derive_modem_defaults(raw_modem)
+        indicator_defaults = _coerce_indicator_defaults(defaults.get("indicator"))
         library_macros = _coerce_library_macros(defaults.get("library_macros", {}))
         library_descriptors = _coerce_library_descriptors(
             defaults.get("libraries", ())
@@ -379,6 +412,7 @@ class SetupDefaults:
             prime_time=prime_time,
             chat_mode_messages=chat_messages,
             modem=modem_defaults,
+            indicator=indicator_defaults,
             macro_modules=macro_modules,
             library_macros=library_macros,
             file_libraries=library_descriptors,
@@ -422,6 +456,7 @@ __all__ = [
     "ChatModeMessages",
     "PrimeTimeWindow",
     "ModemDefaults",
+    "IndicatorDefaults",
     "SetupConfig",
     "SetupDefaults",
     "SysopProfile",
@@ -453,6 +488,8 @@ _DEFAULT_PATTERN = re.compile(
 )
 _DATA_PATTERN = re.compile(r"^\s*\d+\s+data\s+(.+)$", re.IGNORECASE)
 
+_MISSING = object()
+
 
 def _literal_eval(value: str, *, key: str, source: Path) -> Any:
     """Evaluate ``value`` using :func:`ast.literal_eval` with context."""
@@ -473,6 +510,48 @@ def _coerce_optional_int(value: Any) -> Optional[int]:
         return int(value)
     except (TypeError, ValueError) as exc:  # pragma: no cover - defensive guard
         raise ValueError(f"expected integer value, received {value!r}") from exc
+
+
+# Why: normalise stub indicator overrides so runtime wiring honours configured palette and spinner choices.
+def _coerce_indicator_defaults(raw: Any) -> IndicatorDefaults:
+    if not isinstance(raw, Mapping):
+        return IndicatorDefaults()
+
+    def _coerce_colour(value: Any) -> Optional[int]:
+        colour = _coerce_optional_int(value)
+        if colour is None:
+            return None
+        if not 0 <= colour <= 0xFF:
+            raise ValueError("indicator colours must be between 0 and 255")
+        return colour
+
+    overrides: Dict[str, Any] = {}
+    for key in (
+        "pause_colour",
+        "abort_colour",
+        "spinner_colour",
+        "carrier_leading_colour",
+        "carrier_indicator_colour",
+    ):
+        if key in raw:
+            overrides[key] = _coerce_colour(raw.get(key))
+
+    frames_raw = raw.get("spinner_frames", _MISSING)
+    if frames_raw is not _MISSING:
+        if frames_raw is None:
+            overrides["spinner_frames"] = None
+        else:
+            if not isinstance(frames_raw, (list, tuple)):
+                raise TypeError("indicator spinner_frames must be a list or tuple")
+            frames: list[int] = []
+            for entry in frames_raw:
+                frame = int(entry)
+                if not 0 <= frame <= 0xFF:
+                    raise ValueError("indicator spinner frames must be between 0 and 255")
+                frames.append(frame)
+            overrides["spinner_frames"] = tuple(frames)
+
+    return IndicatorDefaults(**overrides)
 
 
 # Why: normalise stub macro mappings so runtime modules can replay entry banners.

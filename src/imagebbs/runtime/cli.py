@@ -8,7 +8,7 @@ import contextlib
 import sys
 import threading
 from pathlib import Path
-from typing import IO, Callable, Iterator, Sequence, Tuple
+from typing import IO, Callable, Dict, Iterator, Sequence, Tuple
 
 from ..message_editor import SessionContext
 from ..session_kernel import SessionState
@@ -205,7 +205,13 @@ def _install_indicator_controller(
     console = getattr(runner, "console", None)
     if console is None:
         return None
-    controller = controller_cls(console)
+    indicator_kwargs: Dict[str, object] = {}
+    indicator_defaults = getattr(getattr(runner, "defaults", None), "indicator", None)
+    controller_kwargs = getattr(indicator_defaults, "controller_kwargs", None)
+    if callable(controller_kwargs):
+        # Why: forward configured indicator colours so CLI installations respect host customisations.
+        indicator_kwargs = dict(controller_kwargs())
+    controller = controller_cls(console, **indicator_kwargs)
     sync_from_console = getattr(controller, "sync_from_console", None)
     if callable(sync_from_console):
         sync_from_console()
