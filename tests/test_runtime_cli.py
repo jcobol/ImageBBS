@@ -309,6 +309,13 @@ def test_parse_args_indicator_colour_and_frames_overrides() -> None:
     assert args.indicator_spinner_frames == (0xB0, 0xB1, 178)
 
 
+# Why: allow operators to disable indicator instrumentation entirely when terminals lack overlay support.
+def test_parse_args_no_indicators_flag() -> None:
+    args = parse_args(["--no-indicators"])
+
+    assert args.no_indicators is True
+
+
 # Why: reject out-of-range indicator overrides so invalid palettes fail fast.
 def test_parse_args_indicator_colour_rejects_out_of_range() -> None:
     with pytest.raises(SystemExit):
@@ -1068,6 +1075,64 @@ def test_install_indicator_controller_applies_indicator_overrides() -> None:
     assert controller.abort_colour == overrides.abort_colour
     assert controller.spinner_colour == overrides.spinner_colour
     assert controller.spinner_frames == overrides.spinner_frames
+
+
+# Why: skip indicator registration when the CLI disables controller wiring.
+def test_install_indicator_controller_skips_when_disabled() -> None:
+    args = parse_args(["--no-indicators"])
+    runner = create_runner(args)
+
+    controller = _install_indicator_controller(
+        runner,
+        IndicatorController,
+        indicators_enabled=not args.no_indicators,
+    )
+
+    assert controller is None
+    assert "indicator_controller" not in runner.kernel.context.services
+    assert getattr(runner, "_indicator_controller", object()) is None
+
+
+# Why: ensure pause and abort toggles hit console fallbacks when controllers are absent.
+def test_indicator_fallback_updates_console_when_disabled() -> None:
+    args = parse_args(["--no-indicators"])
+    runner = create_runner(args)
+
+    class RecordingConsole:
+        def __init__(self) -> None:
+            self.pause_calls: list[tuple[int, int | None]] = []
+            self.abort_calls: list[tuple[int, int | None]] = []
+
+        def set_pause_indicator(self, value: int, *, colour: int | None = None) -> None:
+            self.pause_calls.append(
+                (int(value) & 0xFF, None if colour is None else int(colour) & 0xFF)
+            )
+
+        def set_abort_indicator(self, value: int, *, colour: int | None = None) -> None:
+            self.abort_calls.append(
+                (int(value) & 0xFF, None if colour is None else int(colour) & 0xFF)
+            )
+
+    recording_console = RecordingConsole()
+    runner.console = recording_console  # type: ignore[assignment]
+    runner.defaults = replace(
+        runner.defaults,
+        indicator=IndicatorDefaults(pause_colour=2, abort_colour=3),
+    )
+
+    _install_indicator_controller(
+        runner,
+        IndicatorController,
+        indicators_enabled=not args.no_indicators,
+    )
+
+    runner.set_pause_indicator_state(True)
+    runner.set_abort_indicator_state(True)
+    runner.set_pause_indicator_state(False)
+    runner.set_abort_indicator_state(False)
+
+    assert recording_console.pause_calls == [(0xD0, 0x02), (0x20, 0x02)]
+    assert recording_console.abort_calls == [(0xC1, 0x03), (0x20, 0x03)]
 
 
 def test_run_stream_session_bridges_telnet_and_persists_messages(tmp_path: Path) -> None:
