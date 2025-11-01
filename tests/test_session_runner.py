@@ -5,6 +5,7 @@ import pytest
 
 from imagebbs import SessionRunner, SessionState
 from imagebbs.message_editor import EditorState, MessageEditor
+from imagebbs.runtime.file_library import FileLibraryModule
 from imagebbs.runtime.file_transfers import FileTransfersModule
 from imagebbs.runtime.main_menu import MainMenuModule
 from imagebbs.runtime.message_store import MessageStore
@@ -155,6 +156,50 @@ def _enter_message_editor(runner: SessionRunner) -> SessionState:
     state = runner.send_command("MF")
     assert state is SessionState.MESSAGE_EDITOR
     return state
+
+
+# Why: normalise the navigation required to reach the file library menu under test.
+def _enter_file_library(
+    runner: SessionRunner,
+) -> tuple[FileTransfersModule, FileLibraryModule]:
+    runner.read_output()
+    first_state = runner.send_command("UD")
+    assert first_state is SessionState.FILE_TRANSFERS
+    file_transfers = runner.kernel._modules[SessionState.FILE_TRANSFERS]
+    assert isinstance(file_transfers, FileTransfersModule)
+
+    second_state = runner.send_command("UD")
+    assert second_state is SessionState.FILE_LIBRARY
+    library_module = runner.kernel._modules[SessionState.FILE_LIBRARY]
+    assert isinstance(library_module, FileLibraryModule)
+    return file_transfers, library_module
+
+
+# Why: confirm file-library commands routed by the runner return to file transfers cleanly.
+def test_session_runner_routes_file_library_commands(
+    runner: SessionRunner,
+) -> None:
+    file_transfers, library_module = _enter_file_library(runner)
+
+    state = runner.send_command("Q")
+    assert state is SessionState.FILE_TRANSFERS
+    assert file_transfers.last_command == "UD"
+    assert library_module.last_command == "Q"
+
+
+# Why: ensure the library dispatcher receives command events and refreshes its prompt.
+def test_session_runner_refreshes_file_library_prompt(
+    runner: SessionRunner,
+) -> None:
+    _, library_module = _enter_file_library(runner)
+    runner.read_output()
+
+    state = runner.send_command("S")
+    assert state is SessionState.FILE_LIBRARY
+    assert library_module.last_command == "S"
+
+    output = runner.read_output()
+    assert "UD> \r" in output
 
 
 def test_session_runner_lists_and_reads_messages(runner: SessionRunner) -> None:
