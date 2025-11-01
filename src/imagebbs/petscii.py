@@ -173,6 +173,25 @@ _PRINTABLE_ASCII: Final[set[int]] = set(range(0x20, 0x7F))
 _PRINTABLE_EXTRA: Final[dict[int, str]] = {0x0D: "\n", 0x8D: "\n"}
 
 
+_CONTROL_BYTE_TOKENS: Final[dict[int, str]] = {
+    0x05: "{WHITE}",
+    0x07: "{BELL}",
+    0x0E: "{RVS-ON}",
+    0x11: "{CURSOR-DOWN}",
+    0x12: "{RVS-ON}",
+    0x13: "{HOME}",
+    0x14: "{DEL}",
+    0x1D: "{CURSOR-RIGHT}",
+    0x90: "{BLACK}",
+    0x91: "{CURSOR-UP}",
+    0x92: "{RVS-OFF}",
+    0x93: "{CLR}",
+    0x94: "{INS}",
+    0x9D: "{CURSOR-LEFT}",
+    0xFF: "{SHIFT-POUND}",
+}
+
+
 _IGNORED_EDITOR_CONTROL_BYTES: Final[frozenset[int]] = frozenset({0x03, 0x04, 0x05, 0x06, 0x07})
 
 
@@ -325,7 +344,11 @@ class PetsciiStreamDecoder:
             self._line_emitted_length = current_length
 
     def _translate_character(self, byte: int) -> str | None:
+        # Why: Translate raw PETSCII codes into printable CLI glyphs so decoded transcripts capture screen intent.
         raw = int(byte) & 0xFF
+        label = _CONTROL_BYTE_TOKENS.get(raw)
+        if label is not None:
+            return label
         if raw == 0x00:
             return None
         if raw == 0xA0:
@@ -362,12 +385,17 @@ def decode_petscii_stream(payload: Iterable[int], *, width: int = 40) -> str:
 def petscii_to_cli_glyph(byte: int) -> str:
     """Map ``byte`` to a printable glyph suitable for CLI output."""
 
+    # Why: Expose stable textual tokens so diagnostics mirror how PETSCII payloads affect the CLI renderer.
     raw = int(byte) & 0xFF
+    if raw in _CONTROL_BYTE_TOKENS:
+        return _CONTROL_BYTE_TOKENS[raw]
     if raw in _PRINTABLE_EXTRA:
         return _PRINTABLE_EXTRA[raw]
     if raw in _PRINTABLE_ASCII:
         return chr(raw)
     candidate = raw & 0x7F
+    if candidate in _CONTROL_BYTE_TOKENS:
+        return _CONTROL_BYTE_TOKENS[candidate]
     if candidate in _PRINTABLE_ASCII:
         return chr(candidate)
     if candidate in _PRINTABLE_EXTRA:
