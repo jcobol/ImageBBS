@@ -21,6 +21,14 @@ class FakePetsciiScreen:
 
 
 class FakeConsoleService:
+    _SCREEN_BASE = ConsoleService._SCREEN_BASE
+    _COLOUR_BASE = ConsoleService._COLOUR_BASE
+    _PAUSE_SCREEN_ADDRESS = ConsoleService._PAUSE_SCREEN_ADDRESS
+    _ABORT_SCREEN_ADDRESS = ConsoleService._ABORT_SCREEN_ADDRESS
+    _SPINNER_SCREEN_ADDRESS = ConsoleService._SPINNER_SCREEN_ADDRESS
+    _CARRIER_LEADING_SCREEN_ADDRESS = ConsoleService._CARRIER_LEADING_SCREEN_ADDRESS
+    _CARRIER_INDICATOR_SCREEN_ADDRESS = ConsoleService._CARRIER_INDICATOR_SCREEN_ADDRESS
+
     def __init__(
         self,
         *,
@@ -31,6 +39,7 @@ class FakeConsoleService:
         overlay_screen: bytes,
         overlay_colour: bytes,
     ) -> None:
+        # Supply fixed buffers so console UI tests can emulate overlay state without a live ConsoleService.
         self._screen_bytes = bytes(screen_bytes)
         self._colour_bytes = bytes(colour_bytes)
         self._pane_screen = bytes(pane_screen)
