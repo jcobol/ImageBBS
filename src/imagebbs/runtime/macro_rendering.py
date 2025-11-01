@@ -31,6 +31,7 @@ def render_macro_with_overlay_commit(
             glyphs,
             colours,
             fill_colour=fill_colour,
+            slot=slot,
         )
 
     stage_once()

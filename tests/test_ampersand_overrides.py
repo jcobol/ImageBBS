@@ -435,8 +435,10 @@ def test_disp3_commits_pending_payload_and_resets_blink() -> None:
 
     pending = buffers.peek_pending_payload()
     assert pending is not None
-    assert pending[0] == screen_payload
-    assert pending[1] == colour_payload
+    pending_screen, pending_colour = pending
+    assert pending_screen == screen_payload
+    assert pending_colour == colour_payload
+    assert buffers.peek_pending_slot() is None
 
     console_service.advance_masked_pane_blink()
     before_state = console_service._masked_pane_blink.peek()  # type: ignore[attr-defined]

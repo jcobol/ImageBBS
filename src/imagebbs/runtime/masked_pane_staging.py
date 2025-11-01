@@ -137,6 +137,7 @@ class MaskedPaneStagingMap:
                 glyphs,
                 colours,
                 fill_colour=fill_colour,
+                slot=spec.slot,
             )
 
     def stage_flag_index(
