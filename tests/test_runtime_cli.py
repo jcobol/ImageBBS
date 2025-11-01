@@ -63,6 +63,64 @@ def test_drive_session_handles_exit_sequence() -> None:
     assert runner.defaults.modem.baud_limit == DEFAULT_MODEM_BAUD_LIMIT
 
 
+# Why: ensure paused console output surfaces even if the session exits while paused.
+def test_drive_session_flushes_pause_buffer_on_exit(monkeypatch: pytest.MonkeyPatch) -> None:
+    class StubInstrumentation:
+        def __init__(self, runner: object, **_: object) -> None:
+            self.runner = runner
+
+        def ensure_indicator_controller(self) -> None:
+            return None
+
+        def reset_idle_timer(self) -> None:
+            return None
+
+        def on_idle_cycle(self) -> None:
+            return None
+
+    class StubRunner:
+        def __init__(self) -> None:
+            self.state = SessionState.MAIN_MENU
+            self.read_calls = 0
+            self.pause_states: list[bool] = []
+            self.commands: list[str] = []
+
+        def read_output(self) -> str:
+            self.read_calls += 1
+            if self.read_calls == 2:
+                self.state = SessionState.EXIT
+                return "buffered message"
+            return ""
+
+        def set_indicator_controller(self, controller: object) -> None:
+            self.controller = controller
+
+        def set_pause_indicator_state(self, active: bool) -> None:
+            self.pause_states.append(active)
+
+        def requires_editor_submission(self) -> bool:
+            return False
+
+        def send_command(self, command: str) -> None:
+            self.commands.append(command)
+
+    monkeypatch.setattr(
+        "imagebbs.runtime.cli.SessionInstrumentation", StubInstrumentation
+    )
+
+    runner = StubRunner()
+    input_stream = io.StringIO("\x13")
+    output_stream = io.StringIO()
+
+    final_state = drive_session(
+        runner, input_stream=input_stream, output_stream=output_stream
+    )
+
+    assert final_state is SessionState.EXIT
+    assert runner.pause_states == [True]
+    assert output_stream.getvalue() == "buffered message"
+
+
 def test_run_session_acquires_lock_and_persists(tmp_path: Path) -> None:
     messages_path = tmp_path / "messages.json"
     args = parse_args(["--messages-path", str(messages_path)])
