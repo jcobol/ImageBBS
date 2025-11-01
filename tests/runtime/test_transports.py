@@ -541,6 +541,237 @@ def test_telnet_transport_forwards_indicator_controller_without_instrumentation(
     assert console.spinner_glyphs[-1] == 0x20
 
 
+def test_telnet_transport_updates_indicator_on_first_idle_tick() -> None:
+    # Why: ensure direct-controller transports refresh carrier and spinner state immediately after opening.
+
+    class RecordingConsole(ConsoleService):
+        def __init__(self) -> None:
+            # Why: expose carrier and spinner writes so the test can inspect the first idle tick.
+            super().__init__(Console())
+            self.carrier_updates: list[tuple[int, int]] = []
+            self.spinner_glyphs: list[int] = []
+
+        def set_carrier_indicator(
+            self,
+            *,
+            leading_cell: int,
+            indicator_cell: int,
+            leading_colour=None,
+            indicator_colour=None,
+        ) -> None:
+            # Why: capture carrier glyphs so the test can confirm immediate synchronisation.
+            super().set_carrier_indicator(
+                leading_cell=leading_cell,
+                indicator_cell=indicator_cell,
+                leading_colour=leading_colour,
+                indicator_colour=indicator_colour,
+            )
+            self.carrier_updates.append((leading_cell & 0xFF, indicator_cell & 0xFF))
+
+        def set_spinner_glyph(self, glyph: int, *, colour=None) -> None:
+            # Why: record spinner frames emitted by the first idle cycle.
+            super().set_spinner_glyph(glyph, colour=colour)
+            self.spinner_glyphs.append(glyph & 0xFF)
+
+    class SingleIdleRunner:
+        def __init__(self, console: RecordingConsole) -> None:
+            # Why: expose the console and initial state required by the transport pumps.
+            self.console = console
+            self.state = SessionState.MAIN_MENU
+            self._indicator = None
+            self._cycles = 0
+
+        def read_output(self) -> str:
+            # Why: allow exactly one idle iteration before signalling exit to the transport loop.
+            self._cycles += 1
+            if self._cycles >= 5:
+                self.state = SessionState.EXIT
+            return ""
+
+        def send_command(self, command: str) -> SessionState:  # pragma: no cover - unused
+            # Why: satisfy the transport interface when pause tokens are forwarded.
+            return self.state
+
+        def set_indicator_controller(self, controller) -> None:  # pragma: no cover - unused
+            # Why: record bindings so instrumentation compatibility checks continue to succeed.
+            self._indicator = controller
+            self._indicator_controller = controller
+
+        def requires_editor_submission(self) -> bool:  # pragma: no cover - unused
+            # Why: maintain the editor interface contract without triggering submissions.
+            return False
+
+        def set_pause_indicator_state(self, active: bool) -> None:  # pragma: no cover - unused
+            # Why: accept pause toggles even though the test never exercises them.
+            pass
+
+    class BlockingReader:
+        def __init__(self) -> None:
+            # Why: keep the reader coroutine idle until the test releases it during shutdown.
+            self._release = asyncio.Event()
+
+        async def readline(self) -> bytes:
+            # Why: mimic a telnet reader that stalls until the transport closes the connection.
+            await self._release.wait()
+            return b""
+
+        def release(self) -> None:
+            # Why: allow the pump to exit once the transport finishes its idle tick.
+            self._release.set()
+
+    async def _exercise() -> tuple[RecordingConsole, IndicatorController | None, IndicatorController | None]:
+        console = RecordingConsole()
+        runner = SingleIdleRunner(console)
+        controller = IndicatorController(console)
+        reader = BlockingReader()
+        writer = FakeWriter()
+        transport = TelnetModemTransport(
+            runner,
+            reader,  # type: ignore[arg-type]
+            writer,  # type: ignore[arg-type]
+            poll_interval=0.05,
+            indicator_controller=controller,
+            idle_timer_scheduler_cls=None,
+        )
+
+        transport.open()
+        await asyncio.sleep(0.01)
+        indicator_during = transport.indicator_controller
+        reader.release()
+        transport.close()
+        await transport.wait_closed()
+        indicator_after = transport.indicator_controller
+        return console, indicator_during, indicator_after
+
+    console, indicator_during, indicator_after = asyncio.run(_exercise())
+    assert indicator_during is not None
+    assert indicator_after is None
+    assert console.carrier_updates
+    assert console.carrier_updates[0] == (0xA0, 0xFA)
+    assert console.spinner_glyphs
+    assert console.spinner_glyphs[0] == 0xB0
+
+
+def test_telnet_transport_ensures_indicator_controller_on_open_and_clears_cache() -> None:
+    # Why: confirm instrumentation-backed transports synchronise controllers on open and drop cached instances on close.
+
+    class IdleRunner:
+        def __init__(self) -> None:
+            # Why: provide the minimal hooks the transport expects while avoiding prolonged idle loops.
+            self.console = object()
+            self.state = SessionState.MAIN_MENU
+            self._indicator = None
+            self._cycles = 0
+
+        def read_output(self) -> str:
+            # Why: keep the pump idle while allowing the transport to remain open for observation.
+            self._cycles += 1
+            if self._cycles >= 5:
+                self.state = SessionState.EXIT
+            return ""
+
+        def send_command(self, command: str) -> SessionState:  # pragma: no cover - unused
+            # Why: satisfy the transport interface contract during shutdown.
+            return self.state
+
+        def set_indicator_controller(self, controller) -> None:
+            # Why: expose bindings so instrumentation cache comparisons remain valid.
+            self._indicator = controller
+            self._indicator_controller = controller
+
+        def requires_editor_submission(self) -> bool:  # pragma: no cover - unused
+            # Why: prevent editor handshakes from triggering in the idle-only harness.
+            return False
+
+        def set_pause_indicator_state(self, active: bool) -> None:  # pragma: no cover - unused
+            # Why: accept pause toggles to satisfy the transport interface.
+            pass
+
+    class BlockingReader:
+        def __init__(self) -> None:
+            # Why: let the reader task block until the test signals shutdown.
+            self._release = asyncio.Event()
+
+        async def readline(self) -> bytes:
+            # Why: emulate a telnet stream that remains idle until the transport closes.
+            await self._release.wait()
+            return b""
+
+        def release(self) -> None:
+            # Why: allow the reader coroutine to exit once the transport begins closing.
+            self._release.set()
+
+    class RecordingInstrumentation:
+        def __init__(self, controller: StubIndicatorController) -> None:
+            # Why: capture controller lifecycle calls so the test can assert ordering.
+            self.controller = controller
+            self.calls: list[object] = []
+
+        def ensure_indicator_controller(self) -> StubIndicatorController:
+            # Why: record ensure invocations triggered by the transport on open.
+            self.calls.append("ensure")
+            return self.controller
+
+        def set_carrier(self, active: bool) -> None:
+            # Why: mirror instrumentation behaviour while keeping an audit trail for assertions.
+            self.calls.append(("carrier", bool(active)))
+
+        def reset_idle_timer(self) -> None:
+            # Why: log reset requests so ordering can be checked.
+            self.calls.append("reset")
+
+        def ensure_idle_timer_scheduler(self):  # type: ignore[override]
+            # Why: confirm transports request schedulers even when instrumentation supplies them.
+            self.calls.append("scheduler")
+            return None
+
+    class TrackingTelnetTransport(TelnetModemTransport):
+        def __init__(self, *args, **kwargs) -> None:
+            # Why: expose ensure counters so the test can confirm open-time synchronisation.
+            self.ensure_calls = 0
+            super().__init__(*args, **kwargs)
+
+        def _indicator_ensure_controller(self) -> IndicatorController | None:  # type: ignore[override]
+            # Why: count ensure invocations before delegating to the mixin implementation.
+            self.ensure_calls += 1
+            return super()._indicator_ensure_controller()
+
+    async def _exercise() -> tuple[list[object], int, IndicatorController | None, IndicatorController | None]:
+        runner = IdleRunner()
+        controller = StubIndicatorController(console=object())
+        instrumentation = RecordingInstrumentation(controller)
+        reader = BlockingReader()
+        writer = FakeWriter()
+        transport = TrackingTelnetTransport(
+            runner,
+            reader,  # type: ignore[arg-type]
+            writer,  # type: ignore[arg-type]
+            poll_interval=0.05,
+            instrumentation=instrumentation,  # type: ignore[arg-type]
+            idle_timer_scheduler_cls=None,
+        )
+
+        instrumentation.calls.clear()
+        transport.ensure_calls = 0
+        transport.open()
+        indicator_before_close = transport.indicator_controller
+        await asyncio.sleep(0.01)
+        reader.release()
+        transport.close()
+        await transport.wait_closed()
+        indicator_after_close = transport.indicator_controller
+        return instrumentation.calls, transport.ensure_calls, indicator_before_close, indicator_after_close
+
+    calls, ensure_count, indicator_before_close, indicator_after_close = asyncio.run(_exercise())
+    assert calls
+    assert calls[0] == "ensure"
+    assert ("carrier", True) in calls
+    assert calls[-1] == ("carrier", False)
+    assert ensure_count == 1
+    assert indicator_before_close is not None
+    assert indicator_after_close is None
+
+
 def test_telnet_transport_filters_pause_tokens_and_updates_indicator() -> None:
     class ScriptedReader:
         def __init__(self, payloads: list[bytes]):
