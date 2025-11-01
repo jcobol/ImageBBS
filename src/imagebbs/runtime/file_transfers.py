@@ -3,11 +3,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum, auto
+from pathlib import Path
 from typing import ClassVar, Iterable, Mapping, Optional, Literal
 
 from ..ampersand_dispatcher import AmpersandDispatcher
 from ..ampersand_registry import AmpersandRegistry
-from ..device_context import ConsoleService, DeviceError, ModemTransport
+from ..device_context import ConsoleService, DeviceError, DiskDrive, ModemTransport
 from ..session_kernel import SessionKernel, SessionState
 from .file_library import FileLibraryModule
 from .file_transfer_protocols import (
@@ -255,6 +256,7 @@ class FileTransfersModule:
                 return SessionState.FILE_TRANSFERS
 
             normalised = self._normalise_command(selection)
+            selection_text = selection if isinstance(selection, str) else ""
             if not normalised:
                 self._render_prompt()
                 self._set_binary_streaming(kernel, False)
@@ -271,7 +273,9 @@ class FileTransfersModule:
                 fallback_code = self._LIBRARY_COMMAND_CODES.get(normalised)
                 self._set_binary_streaming(kernel, True)
                 try:
-                    self._execute_transfer_command(kernel, normalised, spec)
+                    self._execute_transfer_command(
+                        kernel, normalised, spec, selection_text
+                    )
                 except FileTransferError:
                     if fallback_code is not None:
                         self._set_binary_streaming(kernel, False)
@@ -399,6 +403,7 @@ class FileTransfersModule:
         kernel: SessionKernel,
         command: str,
         spec: TransferCommandSpec,
+        selection: str,
     ) -> None:
         state = self.transfer_state
         protocol = self._resolve_protocol_for_command(kernel, command, spec)
@@ -411,7 +416,9 @@ class FileTransfersModule:
         )
         try:
             if spec.direction == "upload":
-                payload = self._upload_payload_for(state, command)
+                payload = self._upload_payload_for(
+                    kernel, state, command, selection
+                )
                 driver.upload(
                     transport,
                     payload,
@@ -501,14 +508,111 @@ class FileTransfersModule:
         if defaults is not None:
             object.__setattr__(defaults, "last_file_transfer_protocol", protocol)
 
-    # Why: load staged upload data without tying tests to disk image plumbing.
+    # Why: prefer host-backed uploads while retaining support for staged payloads in tests.
     def _upload_payload_for(
-        self, state: TransferSessionState, command: str
+        self,
+        kernel: SessionKernel,
+        state: TransferSessionState,
+        command: str,
+        selection: str,
     ) -> bytes:
+        host_payload = self._resolve_upload_source(kernel, command, selection)
+        if host_payload is not None:
+            return host_payload
         payload = state.upload_payloads.get(command)
         if payload is None:
             payload = state.upload_payloads.get("*", b"")
         return bytes(payload or b"")
+
+    # Why: read filesystem-backed upload targets using the active drive slot when callers supply filenames.
+    def _resolve_upload_source(
+        self, kernel: SessionKernel, command: str, selection: str
+    ) -> bytes | None:
+        filename = self._extract_upload_filename(selection, command)
+        if not filename:
+            return None
+
+        slots = self._available_drive_slots(kernel)
+        drive_slot = self.active_drive_slot
+        if drive_slot not in slots:
+            return None
+
+        defaults = getattr(kernel, "defaults", None)
+        storage = getattr(defaults, "storage_config", None)
+        path: Path | None = None
+        read_only = False
+
+        if storage is not None:
+            try:
+                mapping = storage.require_drive(drive_slot)
+            except KeyError:
+                pass
+            else:
+                read_only = bool(getattr(mapping, "read_only", False))
+                path = mapping.resolve_path(filename)
+
+        if path is None:
+            context = getattr(kernel, "context", None)
+            if context is None:
+                return None
+            devices = getattr(context, "devices", None)
+            if not isinstance(devices, Mapping):
+                return None
+            device_name = context.drive_device_name(drive_slot)
+            device = devices.get(device_name)
+            if not isinstance(device, DiskDrive):
+                return None
+            read_only = bool(getattr(device, "read_only", False))
+            root = Path(device.root).resolve()
+            try:
+                candidate = (root / filename).resolve()
+            except OSError as exc:  # pragma: no cover - defensive guard
+                raise FileTransferError(
+                    f"unable to resolve '{filename}' on drive {drive_slot}"
+                ) from exc
+            try:
+                candidate.relative_to(root)
+            except ValueError as exc:
+                raise FileTransferError(
+                    f"filename '{filename}' escapes drive {drive_slot} root"
+                ) from exc
+            path = candidate
+
+        if read_only:
+            raise FileTransferError(f"drive {drive_slot} is read-only")
+        if not path.exists() or not path.is_file():
+            raise FileTransferError(
+                f"file '{filename}' not found on drive {drive_slot}"
+            )
+        try:
+            return path.read_bytes()
+        except OSError as exc:  # pragma: no cover - defensive guard
+            raise FileTransferError(
+                f"failed to read '{filename}' from drive {drive_slot}"
+            ) from exc
+
+    # Why: parse filenames embedded in transfer commands without disturbing legacy command tokens.
+    def _extract_upload_filename(
+        self, selection: str, command: str
+    ) -> str | None:
+        text = selection.strip()
+        if not text:
+            return None
+        command_token = command.upper()
+        if not text.upper().startswith(command_token):
+            return None
+        trailing_index = len(command)
+        if len(text) > trailing_index:
+            next_char = text[trailing_index]
+            if next_char not in {" ", "\t", ":"}:
+                return None
+        remainder = text[trailing_index:]
+        remainder = remainder.lstrip()
+        if remainder.startswith(":"):
+            remainder = remainder[1:].lstrip()
+        if remainder.startswith("\"") and remainder.endswith("\"") and len(remainder) >= 2:
+            remainder = remainder[1:-1]
+        return remainder or None
 
     # Why: track progress for console feedback and unit tests.
     def _report_progress(
