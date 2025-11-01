@@ -566,6 +566,18 @@ class TelnetModemTransport(_IndicatorAwareTransportMixin, ModemTransport):
         if not active:
             self._flush_pause_buffer()
 
+    def _request_transfer_abort(self) -> None:
+        # Why: forward abort keystrokes to the transfer module using the shared service registry.
+        runner = getattr(self, "runner", None)
+        kernel = getattr(runner, "kernel", None)
+        context = getattr(kernel, "context", None)
+        registry = getattr(context, "service_registry", None)
+        getter = getattr(registry, "get", None)
+        service = getter("file_transfer_abort") if callable(getter) else None
+        request = getattr(service, "request_abort", None)
+        if callable(request):
+            request(True)
+
     def _flush_pause_buffer(self) -> None:
         if not self._pause_buffer:
             return
@@ -593,6 +605,9 @@ class TelnetModemTransport(_IndicatorAwareTransportMixin, ModemTransport):
         for byte in payload:
             if byte in tokens:
                 self._handle_pause_token(tokens[byte])
+                continue
+            if byte == 0x18:
+                self._request_transfer_abort()
                 continue
             filtered.append(byte)
         return bytes(filtered)

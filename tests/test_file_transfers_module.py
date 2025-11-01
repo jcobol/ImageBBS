@@ -337,6 +337,23 @@ def test_file_transfers_toggles_binary_mode_for_stream_commands() -> None:
     assert state is SessionState.MAIN_MENU
     assert transport.binary_modes[-1] is False
 
+
+# Why: expose abort toggles through the service registry for front-end loops.
+def test_file_transfers_registers_abort_service() -> None:
+    kernel, module = _bootstrap_kernel()
+
+    service = kernel.context.get_service("file_transfer_abort")
+    request = getattr(service, "request_abort", None)
+
+    assert callable(request)
+
+    request(True)
+    assert module.transfer_state.abort_requested is True
+
+    module.request_abort(False)
+    assert module.transfer_state.abort_requested is False
+
+
 # Why: confirm uploads use the selected protocol and update transfer bookkeeping.
 def test_file_transfers_upload_streams_payload_and_updates_state() -> None:
     module = FileTransfersModule(default_protocol="Xmodem CRC")
@@ -421,7 +438,11 @@ def test_file_transfers_respects_abort_flag() -> None:
     kernel.step(FileTransferEvent.ENTER)
     state = module.transfer_state
     state.upload_payloads["UL"] = b"AB"
-    state.abort_requested = True
+    service = kernel.context.get_service("file_transfer_abort")
+    request = getattr(service, "request_abort", None)
+    assert callable(request)
+    request(True)
+    assert state.abort_requested is True
     transport.feed("C")
     modem.collect_transmit()
     console_service.device.output.clear()
@@ -433,6 +454,7 @@ def test_file_transfers_respects_abort_flag() -> None:
     assert "Upload complete." not in "".join(console_service.device.output)
     assert "UL" not in state.completed_uploads
     assert kernel.defaults.last_file_transfer_protocol == "Xmodem CRC"
+    assert state.abort_requested is False
 
 class RecordingIndicatorController(IndicatorController):
     def __init__(self, console: ConsoleService, **kwargs) -> None:

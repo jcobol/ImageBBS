@@ -127,6 +127,84 @@ def test_drive_session_flushes_pause_buffer_on_exit(monkeypatch: pytest.MonkeyPa
     assert output_stream.getvalue() == "buffered message"
 
 
+# Why: ensure CLI loops translate abort control bytes into transfer abort requests.
+def test_drive_session_routes_abort_control_sequence(monkeypatch: pytest.MonkeyPatch) -> None:
+    class StubInstrumentation:
+        def __init__(self, runner: object, **_: object) -> None:
+            self.runner = runner
+
+        # Why: bypass indicator allocation while matching the runtime signature.
+        def ensure_indicator_controller(self) -> None:
+            return None
+
+        # Why: prevent idle timer setup during the unit test loop.
+        def reset_idle_timer(self) -> None:
+            return None
+
+        # Why: emulate idle-cycle hooks without performing work.
+        def on_idle_cycle(self) -> None:
+            return None
+
+    class RecordingAbortService:
+        def __init__(self) -> None:
+            self.requests: list[bool] = []
+
+        # Why: capture abort toggles issued by the CLI for assertions.
+        def request_abort(self, abort: bool = True) -> None:
+            self.requests.append(bool(abort))
+
+    abort_service = RecordingAbortService()
+
+    class StubRunner:
+        def __init__(self) -> None:
+            self.state = SessionState.MAIN_MENU
+            self.pause_states: list[bool] = []
+            self.commands: list[str] = []
+            context = types.SimpleNamespace(
+                service_registry={"file_transfer_abort": abort_service}
+            )
+            self.kernel = types.SimpleNamespace(context=context)
+
+        # Why: surface no console output so the loop relies on commands to exit.
+        def read_output(self) -> str:
+            return ""
+
+        # Why: record indicator wiring performed by instrumentation.
+        def set_indicator_controller(self, controller: object) -> None:
+            self.controller = controller
+            self._indicator_controller = controller
+
+        # Why: record pause toggles triggered by control tokens for verification.
+        def set_pause_indicator_state(self, active: bool) -> None:
+            self.pause_states.append(active)
+
+        # Why: avoid editor submission prompts during the loop.
+        def requires_editor_submission(self) -> bool:
+            return False
+
+        # Why: record commands and request exit so the loop terminates.
+        def send_command(self, command: str) -> SessionState:
+            self.commands.append(command)
+            self.state = SessionState.EXIT
+            return self.state
+
+    monkeypatch.setattr(
+        "imagebbs.runtime.cli.SessionInstrumentation", StubInstrumentation
+    )
+
+    runner = StubRunner()
+    input_stream = io.StringIO("\x18HELLO\n")
+    output_stream = io.StringIO()
+
+    final_state = drive_session(
+        runner, input_stream=input_stream, output_stream=output_stream
+    )
+
+    assert final_state is SessionState.EXIT
+    assert runner.commands == ["HELLO"]
+    assert abort_service.requests == [True]
+
+
 def test_run_session_acquires_lock_and_persists(tmp_path: Path) -> None:
     messages_path = tmp_path / "messages.json"
     args = parse_args(["--messages-path", str(messages_path)])

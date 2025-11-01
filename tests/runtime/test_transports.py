@@ -612,6 +612,41 @@ def test_telnet_transport_filters_pause_tokens_and_updates_indicator() -> None:
     assert controller.carrier_states == [True, False]
 
 
+# Why: confirm Telnet transports raise abort requests when control bytes arrive.
+def test_telnet_transport_requests_abort_service_on_control_token() -> None:
+    class RecordingAbortService:
+        def __init__(self) -> None:
+            self.requests: list[bool] = []
+
+        # Why: capture abort toggles triggered by the transport for assertions.
+        def request_abort(self, abort: bool = True) -> None:
+            self.requests.append(bool(abort))
+
+    abort_service = RecordingAbortService()
+    context = SimpleNamespace(service_registry={"file_transfer_abort": abort_service})
+
+    class AbortAwareRunner:
+        def __init__(self) -> None:
+            self.console = object()
+            self.state = SessionState.MAIN_MENU
+            self.kernel = SimpleNamespace(context=context)
+
+    runner = AbortAwareRunner()
+    reader = SimpleNamespace()
+    writer = SimpleNamespace(write=lambda payload: None)
+    transport = TelnetModemTransport(
+        runner,
+        reader,  # type: ignore[arg-type]
+        writer,  # type: ignore[arg-type]
+        poll_interval=0.0,
+    )
+
+    filtered = transport._strip_pause_tokens(b"\x18HELLO")
+
+    assert filtered == b"HELLO"
+    assert abort_service.requests == [True]
+
+
 def test_telnet_transport_pauses_outbound_until_resume() -> None:
     class QueueReader:
         def __init__(self) -> None:
