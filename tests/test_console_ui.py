@@ -5,7 +5,13 @@ from typing import Sequence
 
 import pytest
 
-from imagebbs.device_context import Console, ConsoleFramePayload, ConsoleService
+from imagebbs.device_context import (
+    Console,
+    ConsoleFramePayload,
+    ConsoleService,
+    IndicatorCellSnapshot,
+    IndicatorSnapshot,
+)
 from imagebbs.message_editor import EditorState
 from imagebbs.runtime.cli import drive_session
 from imagebbs.runtime.console_ui import IdleTimerScheduler, SysopConsoleApp, translate_petscii
@@ -126,6 +132,12 @@ class FakeConsoleService:
                 return int(default) & 0xFF
             return screen_payload[clamp_offset(address)]
 
+        def read_colour(address: int, default: int) -> int:
+            # Why: Mirror console exports so fake snapshots expose the same colour metadata as the real service.
+            if total_cells <= 0 or not colour_payload:
+                return int(default) & 0xFF
+            return colour_payload[clamp_offset(address)]
+
         def indicator_active(code: int) -> bool:
             value = int(code) & 0xFF
             return value not in (0x00, 0x20)
@@ -136,6 +148,12 @@ class FakeConsoleService:
             ConsoleService._CARRIER_INDICATOR_SCREEN_ADDRESS, 0x20
         )
         spinner_char = read_screen(ConsoleService._SPINNER_SCREEN_ADDRESS, 0x20)
+        pause_colour = read_colour(ConsoleService._PAUSE_SCREEN_ADDRESS, 0x00)
+        abort_colour = read_colour(ConsoleService._ABORT_SCREEN_ADDRESS, 0x00)
+        carrier_colour = read_colour(
+            ConsoleService._CARRIER_INDICATOR_SCREEN_ADDRESS, 0x00
+        )
+        spinner_colour = read_colour(ConsoleService._SPINNER_SCREEN_ADDRESS, 0x00)
 
         idle_timer_digits = tuple(
             read_screen(address, 0x30)
@@ -173,10 +191,45 @@ class FakeConsoleService:
             abort_char=abort_char,
             carrier_char=carrier_char,
             spinner_char=spinner_char,
+            pause_colour=pause_colour,
+            abort_colour=abort_colour,
+            carrier_colour=carrier_colour,
+            spinner_colour=spinner_colour,
             pause_active=indicator_active(pause_char),
             abort_active=indicator_active(abort_char),
             carrier_active=indicator_active(carrier_char),
             idle_timer_digits=tuple(int(digit) & 0xFF for digit in idle_timer_digits),
+        )
+
+    def indicator_snapshot(self) -> IndicatorSnapshot:
+        # Why: Tests rely on the snapshot API to emulate console indicator queries without a full device context.
+
+        def read_cell(address: int) -> IndicatorCellSnapshot:
+            colour_address = ConsoleService._COLOUR_BASE + (
+                address - ConsoleService._SCREEN_BASE
+            )
+            screen_bytes, colour_bytes = self.peek_block(
+                screen_address=address,
+                screen_length=1,
+                colour_address=colour_address,
+                colour_length=1,
+            )
+            glyph = 0x20
+            colour = 0x00
+            if screen_bytes:
+                glyph = int(screen_bytes[0]) & 0xFF
+            if colour_bytes:
+                colour = int(colour_bytes[0]) & 0xFF
+            return IndicatorCellSnapshot(glyph=glyph, colour=colour)
+
+        return IndicatorSnapshot(
+            pause=read_cell(ConsoleService._PAUSE_SCREEN_ADDRESS),
+            abort=read_cell(ConsoleService._ABORT_SCREEN_ADDRESS),
+            spinner=read_cell(ConsoleService._SPINNER_SCREEN_ADDRESS),
+            carrier_leading=read_cell(ConsoleService._CARRIER_LEADING_SCREEN_ADDRESS),
+            carrier_indicator=read_cell(
+                ConsoleService._CARRIER_INDICATOR_SCREEN_ADDRESS
+            ),
         )
 
     def _slice_screen(self, address: int, length: int) -> bytes:
@@ -227,10 +280,19 @@ def build_console(
         offset = address - ConsoleService._SCREEN_BASE
         screen_payload[offset] = value
 
+    def set_colour(address: int, value: int) -> None:
+        # Why: Tests need deterministic colour metadata to validate indicator payload exports.
+        offset = address - ConsoleService._SCREEN_BASE
+        colour_payload[offset] = value
+
     set_cell(ConsoleService._PAUSE_SCREEN_ADDRESS, pause)
+    set_colour(ConsoleService._PAUSE_SCREEN_ADDRESS, 0x04)
     set_cell(ConsoleService._ABORT_SCREEN_ADDRESS, abort)
+    set_colour(ConsoleService._ABORT_SCREEN_ADDRESS, 0x06)
     set_cell(ConsoleService._SPINNER_SCREEN_ADDRESS, spinner)
+    set_colour(ConsoleService._SPINNER_SCREEN_ADDRESS, 0x08)
     set_cell(ConsoleService._CARRIER_INDICATOR_SCREEN_ADDRESS, carrier)
+    set_colour(ConsoleService._CARRIER_INDICATOR_SCREEN_ADDRESS, 0x0A)
 
     for digit, address in zip(idle_timer, ConsoleService._IDLE_TIMER_SCREEN_ADDRESSES):
         set_cell(address, digit)
@@ -271,6 +333,10 @@ def test_capture_frame_reports_indicator_states_and_layout():
     assert frame.abort_active is True
     assert frame.carrier_active is True
     assert frame.spinner_char == spinner_value
+    assert frame.pause_colour == 0x04
+    assert frame.abort_colour == 0x06
+    assert frame.spinner_colour == 0x08
+    assert frame.carrier_colour == 0x0A
 
     pause_offset = ConsoleService._PAUSE_SCREEN_ADDRESS - ConsoleService._SCREEN_BASE
     expected_pause_position = (pause_offset // console.screen.width, pause_offset % console.screen.width)
@@ -301,6 +367,10 @@ def test_capture_frame_disables_indicators_when_blank():
     assert frame.abort_active is False
     assert frame.carrier_active is False
     assert frame.spinner_char == 0x20
+    assert frame.pause_colour == 0x04
+    assert frame.abort_colour == 0x06
+    assert frame.spinner_colour == 0x08
+    assert frame.carrier_colour == 0x0A
 
     for digit in frame.idle_timer_digits:
         assert digit == 0x30
@@ -344,6 +414,10 @@ def test_console_service_export_matches_console_frame() -> None:
     assert payload.abort_active is frame.abort_active
     assert payload.carrier_active is frame.carrier_active
     assert payload.spinner_char == frame.spinner_char
+    assert payload.pause_colour == frame.pause_colour
+    assert payload.abort_colour == frame.abort_colour
+    assert payload.spinner_colour == frame.spinner_colour
+    assert payload.carrier_colour == frame.carrier_colour
 
     pause_row, pause_col = frame.pause_position
     assert payload.pause_char == frame.screen_chars[pause_row][pause_col]
