@@ -17,21 +17,30 @@ _DEFAULT_INDENT = 2
 PRETTY_PRINT_THRESHOLD_BYTES = 131_072
 
 
+# Why: Provide consistent JSON encoding for metadata snapshots across CLI surfaces.
 def _encode_snapshot(
     payload: Any,
     *,
     indent: int | None = _DEFAULT_INDENT,
     pretty_threshold_bytes: int | None = PRETTY_PRINT_THRESHOLD_BYTES,
+    sort_keys: bool = False,
 ) -> str:
     """Return a canonical JSON encoding for ``payload`` suitable for disk writes."""
 
     # Centralises snapshot encoding so every caller emits consistent JSON on disk.
+    dumps_kwargs: dict[str, Any] = {"indent": indent}
+    if sort_keys:
+        dumps_kwargs["sort_keys"] = True
+
     if indent is not None and pretty_threshold_bytes is not None:
-        encoded = json.dumps(payload, indent=indent)
+        encoded = json.dumps(payload, **dumps_kwargs)
         if len(encoded.encode(_ENCODING)) > pretty_threshold_bytes:
-            encoded = json.dumps(payload, indent=None)
+            compact_kwargs = {"indent": None}
+            if sort_keys:
+                compact_kwargs["sort_keys"] = True
+            encoded = json.dumps(payload, **compact_kwargs)
     else:
-        encoded = json.dumps(payload, indent=indent)
+        encoded = json.dumps(payload, **dumps_kwargs)
 
     # Ensure a POSIX-friendly trailing newline regardless of the payload.
     if not encoded.endswith("\n"):
@@ -39,12 +48,14 @@ def _encode_snapshot(
     return encoded
 
 
+# Why: Centralise snapshot decoding to keep CLI surfaces aligned.
 def read_metadata_snapshot(path: Path) -> dict[str, Any]:
     """Return the decoded JSON snapshot stored at ``path``."""
 
     return json.loads(path.read_text(encoding=_ENCODING))
 
 
+# Why: Provide canonical disk writes for overlay metadata snapshots.
 def write_metadata_snapshot(
     path: Path,
     payload: Any,
@@ -52,6 +63,7 @@ def write_metadata_snapshot(
     only_if_changed: bool = False,
     indent: int | None = _DEFAULT_INDENT,
     pretty_threshold_bytes: int | None = PRETTY_PRINT_THRESHOLD_BYTES,
+    sort_keys: bool = False,
 ) -> bool:
     """Persist ``payload`` to ``path`` if necessary.
 
@@ -69,6 +81,7 @@ def write_metadata_snapshot(
         payload,
         indent=indent,
         pretty_threshold_bytes=pretty_threshold_bytes,
+        sort_keys=sort_keys,
     )
 
     if only_if_changed and path.exists():
