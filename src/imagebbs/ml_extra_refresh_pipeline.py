@@ -6,8 +6,8 @@ import argparse
 from pathlib import Path
 from typing import List
 
-from . import ml_extra_metadata_io, ml_extra_snapshot_guard
-from .ml_extra.sanity import core as sanity_core
+from . import ml_extra_snapshot_guard
+from .ml_extra.baseline import run_baseline_workflow
 from .ml_extra.sanity import reporting as sanity_reporting
 
 # Why: Expose defaults and entry points so automation can discover the refresh pipeline helpers programmatically.
@@ -58,31 +58,32 @@ def main(argv: List[str] | None = None) -> int:
     """Entry point for the ``ml_extra_refresh_pipeline`` CLI."""
 
     args = parse_args(argv)
-    report = sanity_core.run_checks(args.overlay)
-    metadata_snapshot = report.metadata_snapshot
-    if not metadata_snapshot:
-        raise SystemExit("metadata snapshot unavailable from ml_extra_sanity.run_checks")
+    try:
+        result = run_baseline_workflow(
+            overlay_path=args.overlay,
+            baseline_path=args.baseline,
+            metadata_path=args.metadata_json,
+            metadata_only_if_changed=args.if_changed,
+        )
+    except (FileNotFoundError, RuntimeError, ValueError) as error:
+        raise SystemExit(str(error)) from error
 
-    baseline_path: Path = args.baseline
-    if not baseline_path.exists():
-        raise SystemExit(f"baseline metadata not found: {baseline_path}")
-
-    baseline_snapshot = ml_extra_metadata_io.read_metadata_snapshot(baseline_path)
-
-    metadata_path: Path = args.metadata_json
-    snapshot_updated = ml_extra_metadata_io.write_metadata_snapshot(
-        metadata_path, metadata_snapshot, only_if_changed=args.if_changed
-    )
-
+    metadata_path = result.metadata_path or args.metadata_json
     if args.if_changed:
-        if snapshot_updated:
+        if result.metadata_updated:
             print(f"Metadata snapshot updated: {metadata_path}")
         else:
             print(f"Metadata snapshot already up to date: {metadata_path}")
     else:
         print(f"Metadata snapshot written to: {metadata_path}")
 
-    diff = sanity_core.diff_metadata_snapshots(baseline_snapshot, metadata_snapshot)
+    diff = result.diff
+    baseline_path = result.baseline_path or args.baseline
+    if diff is None:
+        raise SystemExit(
+            "baseline comparison requested but metadata snapshot is unavailable"
+        )
+
     print(sanity_reporting.render_diff_summary(baseline_path, diff))
     matches = diff.matches
     return 0 if matches else 1
