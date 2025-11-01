@@ -7,6 +7,7 @@ from imagebbs.runtime.file_transfers import (
     FileTransferMenuState,
     FileTransfersModule,
 )
+from imagebbs.runtime.indicator_controller import IndicatorController
 
 
 def _bootstrap_kernel(
@@ -432,4 +433,89 @@ def test_file_transfers_respects_abort_flag() -> None:
     assert "Upload complete." not in "".join(console_service.device.output)
     assert "UL" not in state.completed_uploads
     assert kernel.defaults.last_file_transfer_protocol == "Xmodem CRC"
+
+class RecordingIndicatorController(IndicatorController):
+    def __init__(self, console: ConsoleService) -> None:
+        # Why: capture controller toggles while preserving the console wiring.
+        super().__init__(console)
+        self.pause_states: list[bool] = []
+        self.abort_states: list[bool] = []
+        self.pause_colours: list[int | None] = []
+        self.abort_colours: list[int | None] = []
+
+    # Why: retain pause transitions so tests can assert controller usage over console fallbacks.
+    def set_pause(self, active: bool) -> None:  # type: ignore[override]
+        self.pause_states.append(active)
+        self.pause_colours.append(self.pause_colour)
+        super().set_pause(active)
+
+    # Why: record abort transitions to ensure colour overrides propagate through the controller path.
+    def set_abort(self, active: bool) -> None:  # type: ignore[override]
+        self.abort_states.append(active)
+        self.abort_colours.append(self.abort_colour)
+        super().set_abort(active)
+
+
+# Why: ensure indicator controllers receive transfer toggles and colour overrides.
+def test_file_transfers_prefers_indicator_controller_when_available() -> None:
+    kernel, module = _bootstrap_kernel()
+    console_service = kernel.services["console"]
+    assert isinstance(console_service, ConsoleService)
+
+    controller = RecordingIndicatorController(console_service)
+    kernel.context.register_service("indicator_controller", controller)
+
+    module.start(kernel)
+
+    controller.pause_states.clear()
+    controller.abort_states.clear()
+    controller.pause_colours.clear()
+    controller.abort_colours.clear()
+
+    module._set_transfer_indicators(True)
+    module._set_transfer_indicators(False)
+
+    assert controller.pause_states == [True, False]
+    assert controller.abort_states == [True, False]
+    assert controller.pause_colours == [2, None]
+    assert controller.abort_colours == [2, None]
+
+
+# Why: confirm console writes remain the fallback when no controller is registered.
+def test_file_transfers_falls_back_to_console_when_controller_absent() -> None:
+    kernel, module = _bootstrap_kernel()
+    console_service = kernel.services["console"]
+    assert isinstance(console_service, ConsoleService)
+
+    module._set_transfer_indicators(True)
+
+    pause_value = console_service.device.screen.peek_screen_address(
+        ConsoleService._PAUSE_SCREEN_ADDRESS
+    )
+    abort_value = console_service.device.screen.peek_screen_address(
+        ConsoleService._ABORT_SCREEN_ADDRESS
+    )
+    pause_colour = console_service.device.screen.peek_colour_address(
+        ConsoleService._colour_address_for(ConsoleService._PAUSE_SCREEN_ADDRESS)
+    )
+    abort_colour = console_service.device.screen.peek_colour_address(
+        ConsoleService._colour_address_for(ConsoleService._ABORT_SCREEN_ADDRESS)
+    )
+
+    assert pause_value == ord("P")
+    assert abort_value == ord("A")
+    assert pause_colour == 0x02
+    assert abort_colour == 0x02
+
+    module._set_transfer_indicators(False)
+
+    cleared_pause = console_service.device.screen.peek_screen_address(
+        ConsoleService._PAUSE_SCREEN_ADDRESS
+    )
+    cleared_abort = console_service.device.screen.peek_screen_address(
+        ConsoleService._ABORT_SCREEN_ADDRESS
+    )
+
+    assert cleared_pause == 0x20
+    assert cleared_abort == 0x20
 
