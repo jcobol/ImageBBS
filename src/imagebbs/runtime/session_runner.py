@@ -12,6 +12,7 @@ from ..message_editor import MessageEditor, SessionContext
 from ..session_kernel import SessionKernel, SessionState
 from ..setup_defaults import SetupDefaults
 from .configuration_editor import ConfigurationEditorEvent
+from .file_library import FileLibraryEvent
 from .file_transfers import FileTransferEvent
 from .main_menu import MainMenuEvent, MainMenuModule
 from .message_store import MessageStore
@@ -49,6 +50,7 @@ class SessionRunner:
         default_factory=lambda: {
             SessionState.MAIN_MENU: MainMenuEvent.ENTER,
             SessionState.FILE_TRANSFERS: FileTransferEvent.ENTER,
+            SessionState.FILE_LIBRARY: FileLibraryEvent.ENTER,
             SessionState.SYSOP_OPTIONS: SysopOptionsEvent.ENTER,
             SessionState.MESSAGE_EDITOR: MessageEditorEvent.ENTER,
             SessionState.CONFIGURATION_EDITOR: ConfigurationEditorEvent.ENTER,
@@ -59,6 +61,7 @@ class SessionRunner:
         default_factory=lambda: {
             SessionState.MAIN_MENU: MainMenuEvent.SELECTION,
             SessionState.FILE_TRANSFERS: FileTransferEvent.COMMAND,
+            SessionState.FILE_LIBRARY: FileLibraryEvent.COMMAND,
             SessionState.SYSOP_OPTIONS: SysopOptionsEvent.COMMAND,
             SessionState.MESSAGE_EDITOR: MessageEditorEvent.COMMAND_SELECTED,
             SessionState.CONFIGURATION_EDITOR: ConfigurationEditorEvent.COMMAND,
