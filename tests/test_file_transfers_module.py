@@ -1,13 +1,17 @@
 from pathlib import Path
 
+import pytest
+
 from imagebbs.device_context import ConsoleService, DiskDrive, LoopbackModemTransport
 from imagebbs.session_kernel import SessionKernel, SessionState
 from imagebbs.runtime.file_transfers import (
     FileTransferEvent,
     FileTransferMenuState,
     FileTransfersModule,
+    FileTransferError,
 )
 from imagebbs.runtime.indicator_controller import IndicatorController
+from imagebbs.storage_config import DriveMapping, StorageConfig
 
 
 def _bootstrap_kernel(
@@ -392,6 +396,87 @@ def test_file_transfers_upload_streams_payload_and_updates_state() -> None:
     )
     assert transmissions == expected_frame
     assert kernel.defaults.last_file_transfer_protocol == "Xmodem CRC"
+
+
+# Why: ensure upload commands read host-backed files when filenames are provided.
+def test_file_transfers_upload_reads_host_file_when_available(tmp_path: Path) -> None:
+    module = FileTransfersModule(default_protocol="Xmodem CRC")
+    kernel, module = _bootstrap_kernel(module)
+    transport = RecordingLoopbackTransport()
+    modem = kernel.context.register_modem_device(transport=transport)
+    console_service = kernel.services["console"]
+    assert isinstance(console_service, ConsoleService)
+
+    drive_root = tmp_path / "drive8"
+    _register_drive_slot(kernel.context, 8, drive_root)
+    module.active_drive_slot = 8
+    payload = b"HOSTPAYLOAD"
+    target = drive_root / "PAYLOAD.SEQ"
+    target.write_bytes(payload)
+
+    kernel.step(FileTransferEvent.ENTER)
+    state = module.transfer_state
+    state.progress_events.clear()
+    transport.feed("C" + chr(0x06) + chr(0x06))
+    modem.collect_transmit()
+    console_service.device.output.clear()
+
+    result = kernel.step(FileTransferEvent.COMMAND, "UL PAYLOAD.SEQ")
+
+    assert result is SessionState.FILE_TRANSFERS
+    assert state.completed_uploads["UL"] == payload
+    assert state.credits == 1
+    assert state.progress_events[-1] == ("UL", len(payload), len(payload))
+    transmissions = modem.collect_transmit().encode("latin-1")
+    padded = payload + bytes((0x1A,)) * (128 - len(payload))
+    crc = _crc16(padded)
+    expected_frame = (
+        bytes((0x01, 0x01, 0xFE))
+        + padded
+        + bytes(((crc >> 8) & 0xFF, crc & 0xFF))
+        + b"\x04"
+    )
+    assert transmissions == expected_frame
+
+
+# Why: raise FileTransferError when the requested upload target does not exist.
+def test_file_transfers_upload_missing_host_file_raises(tmp_path: Path) -> None:
+    kernel, module = _bootstrap_kernel()
+    drive_root = tmp_path / "drive8"
+    _register_drive_slot(kernel.context, 8, drive_root)
+    module.active_drive_slot = 8
+    kernel.step(FileTransferEvent.ENTER)
+
+    with pytest.raises(FileTransferError, match="not found"):
+        module._upload_payload_for(
+            kernel,
+            module.transfer_state,
+            "UL",
+            "UL MISSING.SEQ",
+        )
+
+
+# Why: block uploads sourced from read-only drive mappings.
+def test_file_transfers_upload_read_only_drive_raises(tmp_path: Path) -> None:
+    kernel, module = _bootstrap_kernel()
+    drive_root = tmp_path / "drive8"
+    _register_drive_slot(kernel.context, 8, drive_root)
+    module.active_drive_slot = 8
+    storage = StorageConfig(
+        drives={8: DriveMapping(drive=8, root=drive_root, read_only=True)},
+        default_drive=8,
+    )
+    object.__setattr__(kernel.defaults, "storage_config", storage)
+    (drive_root / "PAYLOAD.SEQ").write_bytes(b"data")
+    kernel.step(FileTransferEvent.ENTER)
+
+    with pytest.raises(FileTransferError, match="read-only"):
+        module._upload_payload_for(
+            kernel,
+            module.transfer_state,
+            "UL",
+            "UL PAYLOAD.SEQ",
+        )
 
 # Why: confirm downloads adjust credits and persist the chosen protocol.
 def test_file_transfers_download_streams_payload_and_persists_protocol() -> None:
