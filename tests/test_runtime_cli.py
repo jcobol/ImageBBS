@@ -37,6 +37,7 @@ from imagebbs.runtime.console_ui import IdleTimerScheduler
 from imagebbs.runtime.indicator_controller import IndicatorController
 from imagebbs.runtime.message_store import MessageStore
 from imagebbs.runtime.session_factory import DEFAULT_RUNTIME_SESSION_FACTORY
+from imagebbs.runtime.session_instrumentation import SessionInstrumentation
 from imagebbs.runtime.session_runner import SessionRunner
 
 # Why: verifies the CLI session loop exits cleanly and surfaces the board banner on startup.
@@ -201,6 +202,93 @@ def test_parse_args_telnet_poll_interval_default_and_override() -> None:
     custom = parse_args(["--telnet-poll-interval", "0.1"])
 
     assert custom.telnet_poll_interval == pytest.approx(0.1)
+
+
+# Why: expose indicator overrides so operators can align console palettes with host expectations.
+def test_parse_args_indicator_colour_and_frames_overrides() -> None:
+    args = parse_args(
+        [
+            "--indicator-pause-colour",
+            "0x0e",
+            "--indicator-abort-colour",
+            "7",
+            "--indicator-spinner-colour",
+            "15",
+            "--indicator-carrier-leading-colour",
+            "0x92",
+            "--indicator-carrier-indicator-colour",
+            "145",
+            "--indicator-spinner-frames",
+            "0xb0,0xb1,178",
+        ]
+    )
+
+    assert args.indicator_pause_colour == 0x0E
+    assert args.indicator_abort_colour == 7
+    assert args.indicator_spinner_colour == 15
+    assert args.indicator_carrier_leading_colour == 0x92
+    assert args.indicator_carrier_indicator_colour == 145
+    assert args.indicator_spinner_frames == (0xB0, 0xB1, 178)
+
+
+# Why: reject out-of-range indicator overrides so invalid palettes fail fast.
+def test_parse_args_indicator_colour_rejects_out_of_range() -> None:
+    with pytest.raises(SystemExit):
+        parse_args(["--indicator-pause-colour", "256"])
+
+
+# Why: guard spinner parsing against malformed entries so runtime controllers see valid sequences.
+def test_parse_args_indicator_spinner_frames_rejects_gaps() -> None:
+    with pytest.raises(SystemExit):
+        parse_args(["--indicator-spinner-frames", "0xb0,,0xb1"])
+
+
+# Why: ensure CLI indicator overrides propagate into instrumentation controller wiring.
+def test_cli_indicator_overrides_reach_indicator_controller() -> None:
+    args = parse_args(
+        [
+            "--indicator-pause-colour",
+            "1",
+            "--indicator-abort-colour",
+            "2",
+            "--indicator-spinner-colour",
+            "3",
+            "--indicator-carrier-leading-colour",
+            "4",
+            "--indicator-carrier-indicator-colour",
+            "5",
+            "--indicator-spinner-frames",
+            "6,7,8",
+        ]
+    )
+    runner = create_runner(args)
+
+    captured_kwargs: dict[str, object] = {}
+
+    class RecordingIndicator:
+        def __init__(self, console: object, **kwargs: object) -> None:
+            self.console = console
+            self.kwargs = dict(kwargs)
+            captured_kwargs.update(kwargs)
+
+        def sync_from_console(self) -> None:
+            return None
+
+    instrumentation = SessionInstrumentation(
+        runner, indicator_controller_cls=RecordingIndicator
+    )
+
+    controller = instrumentation.ensure_indicator_controller()
+
+    assert isinstance(controller, RecordingIndicator)
+    assert captured_kwargs == {
+        "pause_colour": 1,
+        "abort_colour": 2,
+        "spinner_colour": 3,
+        "carrier_leading_colour": 4,
+        "carrier_indicator_colour": 5,
+        "spinner_frames": (6, 7, 8),
+    }
 
 
 def test_run_stream_session_honours_telnet_newline_setting() -> None:

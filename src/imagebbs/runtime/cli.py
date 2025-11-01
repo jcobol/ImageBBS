@@ -54,9 +54,36 @@ def _parse_host_port(value: str) -> Tuple[str, int]:
     return host, port
 
 
+def _parse_indicator_byte(value: str) -> int:
+    # Why: interpret CLI-provided indicator colours so runtime wiring can honour operator preferences.
+    try:
+        number = int(value, 0)
+    except ValueError as exc:  # pragma: no cover - invalid CLI input
+        raise argparse.ArgumentTypeError(
+            "expected 0-255 or 0x00-0xFF"
+        ) from exc
+    if not 0 <= number <= 0xFF:
+        raise argparse.ArgumentTypeError("expected 0-255 or 0x00-0xFF")
+    return number
+
+
+def _parse_spinner_frames(value: str) -> Tuple[int, ...]:
+    # Why: coerce CLI spinner frame sequences into byte tuples compatible with indicator controllers.
+    tokens = [segment.strip() for segment in value.split(",")]
+    if not all(tokens):
+        raise argparse.ArgumentTypeError(
+            "spinner frames must be comma-separated numeric values"
+        )
+    frames = tuple(_parse_indicator_byte(token) for token in tokens)
+    if not frames:
+        raise argparse.ArgumentTypeError("spinner frames cannot be empty")
+    return frames
+
+
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     """Return parsed arguments for the runtime CLI."""
 
+    # Why: decode CLI overrides so runtime session wiring can adapt to operator input.
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--drive-config",
@@ -153,6 +180,43 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=float,
         default=1.0,
         help="Seconds between idle timer updates for sysop displays",
+    )
+    indicator_group = parser.add_argument_group("indicator overrides")
+    indicator_group.add_argument(
+        "--indicator-pause-colour",
+        type=_parse_indicator_byte,
+        default=None,
+        help="PETSCII colour applied to the pause indicator (decimal or 0x-prefixed)",
+    )
+    indicator_group.add_argument(
+        "--indicator-abort-colour",
+        type=_parse_indicator_byte,
+        default=None,
+        help="PETSCII colour applied to the abort indicator (decimal or 0x-prefixed)",
+    )
+    indicator_group.add_argument(
+        "--indicator-spinner-colour",
+        type=_parse_indicator_byte,
+        default=None,
+        help="PETSCII colour applied to the spinner animation (decimal or 0x-prefixed)",
+    )
+    indicator_group.add_argument(
+        "--indicator-carrier-leading-colour",
+        type=_parse_indicator_byte,
+        default=None,
+        help="PETSCII colour applied to the carrier leading cell (decimal or 0x-prefixed)",
+    )
+    indicator_group.add_argument(
+        "--indicator-carrier-indicator-colour",
+        type=_parse_indicator_byte,
+        default=None,
+        help="PETSCII colour applied to the carrier indicator cell (decimal or 0x-prefixed)",
+    )
+    indicator_group.add_argument(
+        "--indicator-spinner-frames",
+        type=_parse_spinner_frames,
+        default=None,
+        help="Comma-separated PETSCII codes to use for spinner frames",
     )
     return parser.parse_args(argv)
 

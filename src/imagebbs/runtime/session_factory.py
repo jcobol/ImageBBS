@@ -12,6 +12,7 @@ from ..setup_config import load_drive_config
 from ..setup_defaults import (
     DriveAssignment,
     FilesystemDriveLocator,
+    IndicatorDefaults,
     ModemDefaults,
     SetupDefaults,
 )
@@ -97,8 +98,49 @@ class RuntimeSessionFactory:
         )
 
 
+def _indicator_override_kwargs(args: argparse.Namespace) -> Dict[str, object]:
+    # Why: normalise CLI indicator arguments into dataclass-compatible override payloads.
+    mapping = {
+        "indicator_pause_colour": "pause_colour",
+        "indicator_abort_colour": "abort_colour",
+        "indicator_spinner_colour": "spinner_colour",
+        "indicator_carrier_leading_colour": "carrier_leading_colour",
+        "indicator_carrier_indicator_colour": "carrier_indicator_colour",
+    }
+    overrides: Dict[str, object] = {}
+    for arg_name, field_name in mapping.items():
+        value = getattr(args, arg_name, None)
+        if value is not None:
+            overrides[field_name] = value
+    spinner_frames = getattr(args, "indicator_spinner_frames", None)
+    if spinner_frames is not None:
+        overrides["spinner_frames"] = tuple(spinner_frames)
+    return overrides
+
+
+def _merge_indicator_defaults(
+    base: IndicatorDefaults, overrides: Dict[str, object]
+) -> IndicatorDefaults:
+    # Why: reuse dataclass replacement so CLI overrides respect config- or stub-sourced defaults.
+    if not overrides:
+        return base
+    return replace(base, **overrides)
+
+
+def _apply_indicator_overrides(
+    defaults: SetupDefaults, overrides: Dict[str, object]
+) -> SetupDefaults:
+    # Why: weave indicator overrides into the defaults object while preserving other configuration mutations.
+    if not overrides:
+        return defaults
+    merged_indicator = _merge_indicator_defaults(defaults.indicator, overrides)
+    return replace(defaults, indicator=merged_indicator)
+
+
 def _build_defaults_from_args(args: argparse.Namespace) -> SetupDefaults:
+    # Why: merge CLI-supplied configuration into stub defaults before sessions spin up.
     defaults = SetupDefaults.stub()
+    indicator_overrides = _indicator_override_kwargs(args)
 
     storage_config_path: Path | None = getattr(args, "storage_config", None)
     if storage_config_path is not None:
@@ -109,6 +151,7 @@ def _build_defaults_from_args(args: argparse.Namespace) -> SetupDefaults:
         baud_override = getattr(args, "baud_limit", None)
         if baud_override is not None:
             defaults = replace(defaults, modem=ModemDefaults(baud_limit=baud_override))
+        defaults = _apply_indicator_overrides(defaults, indicator_overrides)
         return defaults
 
     config_path: Path | None = getattr(args, "drive_config", None)
@@ -116,6 +159,7 @@ def _build_defaults_from_args(args: argparse.Namespace) -> SetupDefaults:
         baud_override = getattr(args, "baud_limit", None)
         if baud_override is not None:
             defaults = replace(defaults, modem=ModemDefaults(baud_limit=baud_override))
+        defaults = _apply_indicator_overrides(defaults, indicator_overrides)
         return defaults
 
     if not config_path.exists():
@@ -130,6 +174,7 @@ def _build_defaults_from_args(args: argparse.Namespace) -> SetupDefaults:
         modem_override = baud_override
     if modem_override is not None:
         defaults = replace(defaults, modem=ModemDefaults(baud_limit=modem_override))
+    defaults = _apply_indicator_overrides(defaults, indicator_overrides)
     object.__setattr__(defaults, "ampersand_overrides", ampersand_overrides)
     return defaults
 
