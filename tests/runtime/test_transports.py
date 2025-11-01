@@ -647,6 +647,69 @@ def test_telnet_transport_requests_abort_service_on_control_token() -> None:
     assert abort_service.requests == [True]
 
 
+# Why: ensure Telnet transports fall back to the console pause cell when no controller is available.
+def test_telnet_pause_handling_without_controller() -> None:
+    class RecordingConsole(ConsoleService):
+        def __init__(self) -> None:
+            # Why: preload the console and seed the pause colour for preservation checks.
+            super().__init__(Console())
+            self.glyphs: list[int] = []
+            self.colours: list[int | None] = []
+            colour_address = self._COLOUR_BASE + (
+                self._PAUSE_SCREEN_ADDRESS - self._SCREEN_BASE
+            )
+            self.device.screen.poke_colour_address(colour_address, 0x05)
+
+        def set_pause_indicator(self, glyph: int, *, colour=None) -> None:
+            # Why: record glyph writes so the test can confirm fallback signalling.
+            super().set_pause_indicator(glyph, colour=colour)
+            self.glyphs.append(glyph & 0xFF)
+            self.colours.append(colour)
+
+    class FallbackRunner:
+        def __init__(self, console: RecordingConsole) -> None:
+            # Why: expose the console expected by the transport while tracking pause states.
+            self.console = console
+            self.state = SessionState.MAIN_MENU
+            self.pause_states: list[bool] = []
+
+        def read_output(self) -> str:
+            # Why: keep the transport idle so pause tokens are the only inputs under test.
+            return ""
+
+        def set_pause_indicator_state(self, active: bool) -> None:
+            # Why: mirror runner pause tracking without installing an indicator controller.
+            self.pause_states.append(active)
+
+    console = RecordingConsole()
+    runner = FallbackRunner(console)
+    reader = SimpleNamespace()
+    writer = SimpleNamespace(write=lambda payload: None)
+    transport = TelnetModemTransport(
+        runner,
+        reader,  # type: ignore[arg-type]
+        writer,  # type: ignore[arg-type]
+        poll_interval=0.0,
+    )
+
+    colour_address = console._COLOUR_BASE + (
+        console._PAUSE_SCREEN_ADDRESS - console._SCREEN_BASE
+    )
+    initial_colour = console.device.screen.peek_colour_address(colour_address)
+
+    filtered_pause = transport._strip_pause_tokens(b"\x13READY")
+    filtered_resume = transport._strip_pause_tokens(b"\x11SET")
+
+    assert filtered_pause == b"READY"
+    assert filtered_resume == b"SET"
+    assert runner.pause_states == [True, False]
+    assert console.glyphs == [0xD0, 0x20]
+    assert console.colours == [initial_colour, initial_colour]
+    assert (
+        console.device.screen.peek_colour_address(colour_address) == initial_colour
+    )
+
+
 def test_telnet_transport_pauses_outbound_until_resume() -> None:
     class QueueReader:
         def __init__(self) -> None:

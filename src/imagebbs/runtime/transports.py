@@ -547,6 +547,7 @@ class TelnetModemTransport(_IndicatorAwareTransportMixin, ModemTransport):
         self._indicator_on_idle_cycle()
 
     def _update_pause_indicator(self, active: bool) -> None:
+        # Why: route pause toggles through any available controller while ensuring the console glyph mirrors the state when no controller exists.
         runner = getattr(self, "runner", None)
         if runner is not None:
             setter = getattr(runner, "set_pause_indicator_state", None)
@@ -557,6 +558,36 @@ class TelnetModemTransport(_IndicatorAwareTransportMixin, ModemTransport):
             toggle = getattr(controller, "set_pause", None)
             if callable(toggle):
                 toggle(active)
+            return
+        console = getattr(runner, "console", None)
+        if console is None:
+            return
+        console_setter = getattr(console, "set_pause_indicator", None)
+        if not callable(console_setter):
+            return
+        glyph = 0xD0 if active else 0x20
+        colour_value: int | None = None
+        pause_address = getattr(console, "_PAUSE_SCREEN_ADDRESS", None)
+        screen_base = getattr(console, "_SCREEN_BASE", None)
+        colour_base = getattr(console, "_COLOUR_BASE", None)
+        device = getattr(console, "device", None)
+        screen = getattr(device, "screen", None)
+        peek_colour = getattr(screen, "peek_colour_address", None)
+        if (
+            isinstance(pause_address, int)
+            and isinstance(screen_base, int)
+            and isinstance(colour_base, int)
+            and callable(peek_colour)
+        ):
+            colour_address = colour_base + (pause_address - screen_base)
+            try:
+                colour_value = int(peek_colour(colour_address)) & 0xFF
+            except Exception:  # pragma: no cover - defensive guard around foreign consoles
+                colour_value = None
+        if colour_value is not None:
+            console_setter(glyph, colour=colour_value)
+        else:
+            console_setter(glyph)
 
     def _handle_pause_token(self, active: bool) -> None:
         self._update_pause_indicator(active)
