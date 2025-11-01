@@ -1,9 +1,10 @@
 {number:3000}
 {step:2}
-' TODO: ask for confirmation like 1.2's +.kill does
-' check for carrier before hanging up
-	if peek(2033) and 128=128 then print# 131,"ath"
+' Require sysop confirmation so accidental kills do not disconnect callers without intent.
+        &"{f6}Confirm Hang-Up (Y/N)? ":GOSUB 1902:IF a=0 THEN RETURN
+' check for carrier before hanging up so we only drop when a connection is live.
+        if peek(2033) and 128=128 then print# 131,"ath"
 ' 226+(252*256)=64738, reset
 ' JMP $FCE2
-	POKE 49152,32:POKE 49153,226:POKE 49154,252:&,16
-	rem +.kill
+        POKE 49152,32:POKE 49153,226:POKE 49154,252:&,16
+        rem +.kill
