@@ -45,6 +45,73 @@ class FakeConsole:
             self.screen[address] = value
 
 
+def test_telnet_transport_applies_custom_idle_interval() -> None:
+    # Why: ensure the asynchronous Telnet entry point propagates idle cadence overrides.
+
+    class RecordingScheduler(IdleTimerScheduler):
+        def __init__(
+            self,
+            console: ConsoleService,
+            *,
+            idle_tick_interval: float = 1.0,
+            time_source=None,
+        ) -> None:
+            # Why: capture the interval so the test can confirm transport configuration.
+            self.recorded_interval = idle_tick_interval
+            super().__init__(
+                console,
+                idle_tick_interval=idle_tick_interval,
+                time_source=time_source,
+            )
+
+    class RecordingRunner:
+        def __init__(self) -> None:
+            # Why: expose the console expected by the transport without running full sessions.
+            self.console = FakeConsole()
+            self.state = SessionState.MAIN_MENU
+
+        def read_output(self) -> str:
+            # Why: keep the transport idle during the check.
+            return ""
+
+        def set_indicator_controller(self, controller) -> None:
+            # Why: accept controller wiring performed during transport start-up.
+            self.indicator_controller = controller
+
+        def set_pause_indicator_state(self, active: bool) -> None:
+            # Why: provide the hook consumed by Telnet pause tokens.
+            self.pause_state = active
+
+        def send_command(self, command: str) -> SessionState:
+            # Why: echo state transitions without progressing a real runner.
+            return self.state
+
+    async def _exercise() -> float:
+        runner = RecordingRunner()
+        reader = asyncio.StreamReader()
+        writer = FakeWriter()
+        transport = TelnetModemTransport(
+            runner,
+            reader,
+            writer,  # type: ignore[arg-type]
+            poll_interval=0.0,
+            idle_timer_scheduler_cls=RecordingScheduler,
+            idle_tick_interval=0.3,
+        )
+        transport.open()
+        await asyncio.sleep(0)
+        scheduler = transport._idle_timer_scheduler
+        assert scheduler is not None
+        interval = getattr(scheduler, "recorded_interval", None)
+        transport.close()
+        await transport.wait_closed()
+        assert interval is not None
+        return float(interval)
+
+    recorded_interval = asyncio.run(_exercise())
+    assert recorded_interval == 0.3
+
+
 class StubIndicatorController:
     def __init__(self, console: object) -> None:
         self.console = console
@@ -267,8 +334,18 @@ def test_telnet_transport_updates_idle_timer_via_instrumentation() -> None:
         fake_clock = FakeClock([0.0, 1.0, 2.0, 3.0, 4.0])
 
         class RecordingIdleTimerScheduler(IdleTimerScheduler):
-            def __init__(self, console_service):
-                super().__init__(console_service, time_source=fake_clock)
+            def __init__(
+                self,
+                console_service,
+                *,
+                idle_tick_interval: float = 1.0,
+            ):
+                # Why: adapt the legacy test harness to the extended scheduler signature.
+                super().__init__(
+                    console_service,
+                    idle_tick_interval=idle_tick_interval,
+                    time_source=fake_clock,
+                )
 
         runner = FakeRunner(console, iterations=len(fake_clock.values))
         reader = asyncio.StreamReader()

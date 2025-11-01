@@ -45,12 +45,18 @@ class IdleTimerScheduler:
         self,
         console: ConsoleService,
         *,
+        idle_tick_interval: float = 1.0,
         time_source: Callable[[], float] | None = None,
     ) -> None:
+        # Why: align the prototype helper with the runtime CLI's idle timer configuration.
         self.console = console
         self._time_source = time_source or time.monotonic
         self._epoch: float | None = None
         self._last_second: int | None = None
+        interval = float(idle_tick_interval)
+        if interval <= 0.0:
+            interval = 1.0
+        self._tick_interval = interval
 
     def reset(self) -> None:
         """Clear cached timing state so a new session can start at ``0:00``."""
@@ -61,15 +67,17 @@ class IdleTimerScheduler:
     def tick(self) -> None:
         """Advance the idle timer when the elapsed second changes."""
 
+        # Why: keep prototype behaviour consistent when callers provide custom tick cadences.
         now = self._time_source()
         if self._epoch is None:
             self._epoch = now
-        elapsed_seconds = int(max(0.0, now - self._epoch))
-        if self._last_second == elapsed_seconds:
+        elapsed_ticks = int(max(0.0, (now - self._epoch) / self._tick_interval))
+        if self._last_second == elapsed_ticks:
             return
+        elapsed_seconds = int(max(0.0, now - self._epoch))
         digits = self._format_digits(elapsed_seconds)
         self.console.update_idle_timer_digits(digits)
-        self._last_second = elapsed_seconds
+        self._last_second = elapsed_ticks
 
     def _format_digits(self, elapsed_seconds: int) -> Tuple[int, int, int]:
         minutes, seconds = divmod(max(0, elapsed_seconds), 60)
