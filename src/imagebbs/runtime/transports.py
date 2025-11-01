@@ -83,6 +83,8 @@ class _IndicatorAwareTransportMixin:
         self._idle_tick_interval = float(idle_tick_interval)
 
     def _indicator_on_open(self, runner) -> None:
+        # Why: synchronise carrier state with an up-to-date controller before transports start idle polling.
+        controller = self._indicator_ensure_controller()
         instrumentation = self._instrumentation
         if instrumentation is not None:
             instrumentation.set_carrier(True)
@@ -90,7 +92,6 @@ class _IndicatorAwareTransportMixin:
             self._idle_timer_scheduler = instrumentation.ensure_idle_timer_scheduler()
             return
 
-        controller = self.indicator_controller
         if controller is not None:
             controller.set_carrier(True)
 
@@ -108,14 +109,17 @@ class _IndicatorAwareTransportMixin:
             scheduler.reset()
 
     def _indicator_on_close(self) -> None:
+        # Why: release carrier bindings so reconnects can rebuild indicator state from the console.
         instrumentation = self._instrumentation
         if instrumentation is not None:
             instrumentation.set_carrier(False)
+            self.indicator_controller = None
             return
 
         controller = self.indicator_controller
         if controller is not None:
             controller.set_carrier(False)
+        self.indicator_controller = None
 
     def _indicator_on_idle_cycle(self) -> None:
         instrumentation = self._instrumentation
