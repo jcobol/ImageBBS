@@ -245,7 +245,7 @@ class FileLibraryModule:
                 f"#{entry.number:02d} {entry.blocks:>3} blocks {entry.downloads:>3} downloads {entry.filename} - {entry.description} ({status})"
             )
 
-    # Why: allow tests to simulate uploads by injecting new directory records.
+    # Why: allow tests to simulate uploads while keeping host directories in sync with filesystem state.
     def _add_entry(self, command: str) -> None:
         parts = command.split(maxsplit=3)
         if len(parts) < 3:
@@ -274,6 +274,15 @@ class FileLibraryModule:
             uploader=uploader,
             validated=False,
         )
+        host_directory = self._host_directories.get(self._active_identifier)
+        if host_directory and not host_directory.read_only:
+            target_path = host_directory.path / record.filename
+            try:
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                target_path.touch(exist_ok=True)
+            except OSError:
+                self._write_line("?FAILED TO CREATE HOST FILE")
+                return
         entries.append(record)
         stats = self._stats_by_id.setdefault(self._active_identifier, {})
         stats["total_files"] = stats.get("total_files", len(entries) - 1) + 1
@@ -281,9 +290,11 @@ class FileLibraryModule:
         if host_directory is not None:
             host_directory.entries = entries
             host_directory.stats = stats
+            if not host_directory.read_only:
+                self._refresh_host_directory(self._active_identifier)
         self._write_line(f"Added {filename} as entry #{next_number}.")
 
-    # Why: emulate the BASIC delete command for integration testing.
+    # Why: emulate the BASIC delete command while propagating removals to host directories.
     def _delete_entry(self, command: str) -> None:
         parts = command.split(maxsplit=1)
         if len(parts) < 2:
@@ -297,7 +308,7 @@ class FileLibraryModule:
         entries = self._entries_for_library(self._active_identifier)
         for index, entry in enumerate(list(entries)):
             if entry.number == target:
-                entries.pop(index)
+                removed = entries.pop(index)
                 stats = self._stats_by_id.setdefault(self._active_identifier, {})
                 stats["total_files"] = max(stats.get("total_files", len(entries) + 1) - 1, 0)
                 host_directory = self._host_directories.get(
@@ -306,9 +317,38 @@ class FileLibraryModule:
                 if host_directory is not None:
                     host_directory.entries = entries
                     host_directory.stats = stats
+                    if not host_directory.read_only:
+                        target_path = host_directory.path / removed.filename
+                        try:
+                            target_path.unlink(missing_ok=True)
+                        except TypeError:
+                            # Python versions without missing_ok support.
+                            try:
+                                if target_path.exists():
+                                    target_path.unlink()
+                            except OSError:
+                                pass
+                        except OSError:
+                            pass
+                    self._refresh_host_directory(self._active_identifier)
                 self._write_line(f"Removed entry #{target}.")
                 return
         self._write_line("?NO SUCH ENTRY")
+
+    # Why: rescan host-backed libraries so cached metadata mirrors the filesystem immediately after mutations.
+    def _refresh_host_directory(self, identifier: str) -> None:
+        host_directory = self._host_directories.get(identifier)
+        if host_directory is None:
+            return
+        stub_entries = list(self._entries_by_id.get(identifier, []))
+        entries = self._enumerate_host_entries(host_directory.path, stub_entries)
+        stats = dict(self._stats_by_id.get(identifier, {}))
+        stats["total_files"] = len(entries)
+        stats.setdefault("new_files", 0)
+        host_directory.entries = entries
+        host_directory.stats = stats
+        self._entries_by_id[identifier] = entries
+        self._stats_by_id[identifier] = stats
 
     # Why: resolve the active library descriptor for downstream helpers.
     def _current_library(self) -> FileLibraryDescriptor:
