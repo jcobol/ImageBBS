@@ -936,6 +936,16 @@ class ConsoleService:
     _MASKED_PANE_SCREEN_BASE = 0x0518
     _MASKED_PANE_COLOUR_BASE = 0xD918
     _MASKED_PANE_WIDTH = 40
+    _MASKED_PANE_COLOUR_STRIP_BASE = 0xDBCC
+    _MASKED_PANE_COLOUR_STRIP_LENGTH = 16
+    _MASKED_PANE_COLOUR_STRIP_SEQUENCE = (
+        0x0E,
+        0x03,
+        0x01,
+        0x03,
+        0x0E,
+        0x06,
+    )
     _MASKED_OVERLAY_SCREEN_BASE = 0x0770
     _MASKED_OVERLAY_COLOUR_BASE = 0xDB70
     _MASKED_OVERLAY_WIDTH = 40
@@ -951,6 +961,7 @@ class ConsoleService:
         self._masked_pane_blink = MaskedPaneBlinkScheduler()
         self._masked_pane_buffers: MaskedPaneBuffers | None = None
         self._masked_pane_staging_map: "MaskedPaneStagingMap" | None = None
+        self._colour_strip_sequence: tuple[int, ...] | None = None
 
     @staticmethod
     def _normalise_linear_payload(
@@ -1125,6 +1136,39 @@ class ConsoleService:
 
         # Why: Runtime input mirrors need the overlay width to align keystroke offsets.
         return self._MASKED_PANE_WIDTH
+
+    def masked_pane_colour_strip_sequence(self) -> tuple[int, ...]:
+        """Return the ml.extra palette used for the masked colour strip."""
+
+        # Why: Idle-loop animators need the canonical overlay palette when repainting the sysop strip.
+        sequence = self._colour_strip_sequence
+        if sequence is None:
+            palette = tuple(int(value) & 0x0F for value in self._MASKED_PANE_COLOUR_STRIP_SEQUENCE)
+            self._colour_strip_sequence = palette
+            sequence = palette
+        return sequence
+
+    def fill_masked_pane_colour_strip(self, palette_index: int) -> int:
+        """Fill the 16-cell colour strip using the requested palette entry."""
+
+        # Why: The host runtime mirrors ``loopad37`` by fanning a single palette byte across ``$dbcc-$dbdb`` on idle ticks.
+        sequence = self.masked_pane_colour_strip_sequence()
+        if not sequence:
+            raise ValueError("masked pane colour strip sequence is empty")
+        index = int(palette_index) % len(sequence)
+        colour = sequence[index] & 0xFF
+        self.fill_colour(
+            self._MASKED_PANE_COLOUR_STRIP_BASE,
+            colour,
+            self._MASKED_PANE_COLOUR_STRIP_LENGTH,
+        )
+        return colour
+
+    def should_animate_masked_pane_colour_strip(self) -> bool:
+        """Return ``True`` when split-screen buffers are active and animation is permitted."""
+
+        # Why: Skip colour-strip refreshes until the masked pane buffers are staged, matching ``scnmode`` guards.
+        return self._masked_pane_buffers is not None
 
     @property
     def cursor_position(self) -> tuple[int, int]:

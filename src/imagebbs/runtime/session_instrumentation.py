@@ -1,14 +1,54 @@
 """Helpers for wiring session instrumentation across interfaces."""
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Dict
 
+from ..device_context import ConsoleService
 from .console_ui import IdleTimerScheduler
 from .indicator_controller import IndicatorController
 
 if TYPE_CHECKING:  # pragma: no cover - only imported for type checking
     from .session_runner import SessionRunner
 
+
+@dataclass(slots=True)
+class MaskedPaneColourStripAnimator:
+    """Advance the masked colour strip palette each idle cycle."""
+
+    console: ConsoleService
+    _index: int = field(init=False, default=0, repr=False)
+    _override_index: int | None = field(init=False, default=None, repr=False)
+
+    def tick(self) -> None:
+        """Advance the colour strip if the masked pane is active."""
+
+        # Why: Host idle loops need to refresh `$dbcc-$dbdb` just like `loopad37` while honouring split-screen guards.
+        if not self.console.should_animate_masked_pane_colour_strip():
+            return
+        sequence = self.console.masked_pane_colour_strip_sequence()
+        if not sequence:
+            return
+        index = self._override_index
+        if index is None:
+            index = self._index
+            self._index = (self._index + 1) % len(sequence)
+        self.console.fill_masked_pane_colour_strip(index)
+
+    def reset(self) -> None:
+        """Reset the palette cursor back to the first entry."""
+
+        # Why: Split-screen transitions mirror the overlay by restarting the colour cycle after swaps.
+        self._index = 0
+
+    def set_override_index(self, index: int | None) -> None:
+        """Force a specific palette entry or release the override."""
+
+        # Why: Chat buffer zero pins the strip to entry zero, so the animator needs an explicit override hook.
+        if index is None:
+            self._override_index = None
+            return
+        self._override_index = int(index)
 
 class SessionInstrumentation:
     """Coordinate indicator controllers and idle timers for a session runner."""
@@ -28,6 +68,7 @@ class SessionInstrumentation:
         self._indicator_controller: IndicatorController | None = None
         self._idle_timer_scheduler: IdleTimerScheduler | None = None
         self._idle_tick_interval = float(idle_tick_interval)
+        self._colour_strip_animator: MaskedPaneColourStripAnimator | None = None
 
     @property
     def indicator_controller(self) -> IndicatorController | None:
@@ -40,6 +81,12 @@ class SessionInstrumentation:
         """Return the idle timer scheduler associated with the runner, if any."""
 
         return self._idle_timer_scheduler
+
+    @property
+    def colour_strip_animator(self) -> MaskedPaneColourStripAnimator | None:
+        """Return the cached colour strip animator, if any."""
+
+        return self._colour_strip_animator
 
     def ensure_indicator_controller(self) -> IndicatorController | None:
         """Instantiate and bind the indicator controller if required."""
@@ -112,6 +159,20 @@ class SessionInstrumentation:
         if scheduler is not None:
             scheduler.reset()
 
+    def ensure_colour_strip_animator(self) -> MaskedPaneColourStripAnimator | None:
+        """Instantiate the colour strip animator once a console is available."""
+
+        # Why: Keep the idle-loop palette updates wired even when transports bypass indicator controllers.
+        animator = self._colour_strip_animator
+        if animator is not None:
+            return animator
+        console = getattr(self.runner, "console", None)
+        if not isinstance(console, ConsoleService):
+            return None
+        animator = MaskedPaneColourStripAnimator(console)
+        self._colour_strip_animator = animator
+        return animator
+
     def on_idle_cycle(self) -> None:
         """Advance indicator and idle timer state for an idle loop iteration."""
 
@@ -121,6 +182,10 @@ class SessionInstrumentation:
         scheduler = self.ensure_idle_timer_scheduler()
         if scheduler is not None:
             scheduler.tick()
+        animator = self.ensure_colour_strip_animator()
+        if animator is not None:
+            # Why: Refresh the masked colour strip on every idle pass so the sysop overlay mirrors ImageBBS cadence.
+            animator.tick()
 
     def set_carrier(self, active: bool) -> None:
         """Notify the indicator controller about carrier state changes."""
