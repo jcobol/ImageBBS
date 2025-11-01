@@ -29,13 +29,15 @@ def _encode_snapshot(
 
     # Centralises snapshot encoding so every caller emits consistent JSON on disk.
     dumps_kwargs: dict[str, Any] = {"indent": indent}
+    if indent is None:
+        dumps_kwargs["separators"] = (",", ":")
     if sort_keys:
         dumps_kwargs["sort_keys"] = True
 
     if indent is not None and pretty_threshold_bytes is not None:
         encoded = json.dumps(payload, **dumps_kwargs)
         if len(encoded.encode(_ENCODING)) > pretty_threshold_bytes:
-            compact_kwargs = {"indent": None}
+            compact_kwargs = {"indent": None, "separators": (",", ":")}
             if sort_keys:
                 compact_kwargs["sort_keys"] = True
             encoded = json.dumps(payload, **compact_kwargs)
