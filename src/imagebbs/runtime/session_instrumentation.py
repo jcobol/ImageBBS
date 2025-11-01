@@ -44,11 +44,19 @@ class SessionInstrumentation:
     def ensure_indicator_controller(self) -> IndicatorController | None:
         """Instantiate and bind the indicator controller if required."""
 
+        # Why: rehydrate instrumentation so reused controllers stay aligned with console state.
         if self._indicator_controller is not None:
-            return self._indicator_controller
+            controller = self._indicator_controller
+            sync_from_console = getattr(controller, "sync_from_console", None)
+            if callable(sync_from_console):
+                sync_from_console()
+            return controller
         existing_controller = getattr(self.runner, "_indicator_controller", None)
         if isinstance(existing_controller, IndicatorController):
             self._indicator_controller = existing_controller
+            sync_from_console = getattr(existing_controller, "sync_from_console", None)
+            if callable(sync_from_console):
+                sync_from_console()
             return existing_controller
         controller_cls = self._indicator_controller_cls
         if controller_cls is None:
