@@ -6,6 +6,7 @@ from typing import Any
 from . import ampersand_overrides as _ampersand_overrides
 from . import cli as _cli
 from . import console_ui as _console_ui
+from . import file_transfer_protocols as _file_transfer_protocols
 from . import file_transfers as _file_transfers
 from . import indicator_controller as _indicator_controller
 from . import macro_rendering as _macro_rendering
@@ -23,6 +24,7 @@ _modules = [
     _ampersand_overrides,
     _cli,
     _console_ui,
+    _file_transfer_protocols,
     _file_transfers,
     _indicator_controller,
     _macro_rendering,

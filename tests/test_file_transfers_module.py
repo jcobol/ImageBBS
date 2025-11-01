@@ -1,11 +1,6 @@
 from pathlib import Path
 
 from imagebbs.device_context import ConsoleService, DiskDrive, LoopbackModemTransport
-from imagebbs.runtime.file_library import (
-    FileLibraryEvent,
-    FileLibraryModule,
-    FileLibraryState,
-)
 from imagebbs.session_kernel import SessionKernel, SessionState
 from imagebbs.runtime.file_transfers import (
     FileTransferEvent,
@@ -14,8 +9,10 @@ from imagebbs.runtime.file_transfers import (
 )
 
 
-def _bootstrap_kernel() -> tuple[SessionKernel, FileTransfersModule]:
-    module = FileTransfersModule()
+def _bootstrap_kernel(
+    module: FileTransfersModule | None = None,
+) -> tuple[SessionKernel, FileTransfersModule]:
+    module = module or FileTransfersModule()
     kernel = SessionKernel(module=module)
     return kernel, module
 
@@ -64,6 +61,19 @@ def _masked_overlay(
     screen = tuple(screen_bytes)
     colours = tuple(colour_bytes)
     return screen, colours
+
+
+# Why: compute CRC16 signatures so tests can verify Xmodem framing logic.
+def _crc16(payload: bytes) -> int:
+    crc = 0
+    for byte in payload:
+        crc ^= byte << 8
+        for _ in range(8):
+            if crc & 0x8000:
+                crc = ((crc << 1) ^ 0x1021) & 0xFFFF
+            else:
+                crc = (crc << 1) & 0xFFFF
+    return crc & 0xFFFF
 
 
 def test_file_transfers_renders_macros_on_start_and_enter() -> None:
@@ -138,16 +148,11 @@ def test_file_transfers_macros_stage_masked_pane_buffers() -> None:
 def test_file_transfers_accepts_known_command() -> None:
     kernel, module = _bootstrap_kernel()
     kernel.step(FileTransferEvent.ENTER)
-    console_service = kernel.services["console"]
-    assert isinstance(console_service, ConsoleService)
 
-    state = kernel.step(FileTransferEvent.COMMAND, " ud ")
+    state = kernel.step(FileTransferEvent.COMMAND, " ed ")
 
-    assert state is SessionState.FILE_LIBRARY
-    assert module.last_command == "UD"
-    library_module = kernel.module
-    assert isinstance(library_module, FileLibraryModule)
-    assert library_module.state in {FileLibraryState.INTRO, FileLibraryState.READY}
+    assert state is SessionState.FILE_TRANSFERS
+    assert module.last_command == "ED"
 
 
 def test_file_transfers_rejects_unknown_command() -> None:
@@ -305,23 +310,23 @@ class RecordingLoopbackTransport(LoopbackModemTransport):
     def set_binary_mode(self, enabled: bool) -> None:  # type: ignore[override]
         self.binary_modes.append(bool(enabled))
 
-
+# Why: ensure streaming commands enable binary mode during protocol execution.
 def test_file_transfers_toggles_binary_mode_for_stream_commands() -> None:
-    kernel, module = _bootstrap_kernel()
+    module = FileTransfersModule(default_protocol="Xmodem CRC")
+    kernel, module = _bootstrap_kernel(module)
     transport = RecordingLoopbackTransport()
-    kernel.context.register_modem_device(transport=transport)
+    modem = kernel.context.register_modem_device(transport=transport)
 
     kernel.step(FileTransferEvent.ENTER)
     transport.binary_modes.clear()
+    module.transfer_state.upload_payloads["UL"] = b"!"
+    transport.feed("C" + chr(0x06) + chr(0x06))
+    modem.collect_transmit()
 
     state = kernel.step(FileTransferEvent.COMMAND, "UL")
-    assert state is SessionState.FILE_LIBRARY
-    assert transport.binary_modes == [False]
-    library_module = kernel.module
-    assert isinstance(library_module, FileLibraryModule)
-    kernel.step(FileLibraryEvent.ENTER)
-    kernel.step(FileLibraryEvent.COMMAND, "Q")
-    assert kernel.state is SessionState.FILE_TRANSFERS
+    assert state is SessionState.FILE_TRANSFERS
+    assert transport.binary_modes == [True, False]
+    modem.collect_transmit()
 
     state = kernel.step(FileTransferEvent.COMMAND, "ED")
     assert state is SessionState.FILE_TRANSFERS
@@ -330,4 +335,101 @@ def test_file_transfers_toggles_binary_mode_for_stream_commands() -> None:
     state = kernel.step(FileTransferEvent.COMMAND, "Q")
     assert state is SessionState.MAIN_MENU
     assert transport.binary_modes[-1] is False
+
+# Why: confirm uploads use the selected protocol and update transfer bookkeeping.
+def test_file_transfers_upload_streams_payload_and_updates_state() -> None:
+    module = FileTransfersModule(default_protocol="Xmodem CRC")
+    kernel, module = _bootstrap_kernel(module)
+    transport = RecordingLoopbackTransport()
+    modem = kernel.context.register_modem_device(transport=transport)
+    console_service = kernel.services["console"]
+    assert isinstance(console_service, ConsoleService)
+
+    kernel.step(FileTransferEvent.ENTER)
+    payload = b"DATA"
+    state = module.transfer_state
+    state.upload_payloads["UL"] = payload
+    state.progress_events.clear()
+    transport.feed("C" + chr(0x06) + chr(0x06))
+    modem.collect_transmit()
+    console_service.device.output.clear()
+
+    result_state = kernel.step(FileTransferEvent.COMMAND, "UL")
+
+    assert result_state is SessionState.FILE_TRANSFERS
+    assert state.completed_uploads["UL"] == payload
+    assert state.credits == 1
+    assert state.progress_events[-1] == ("UL", len(payload), len(payload))
+    output = "".join(console_service.device.output)
+    assert "Upload complete." in output
+    assert "UL via Xmodem CRC" in output
+    transmissions = modem.collect_transmit().encode("latin-1")
+    padded = payload + bytes((0x1A,)) * (128 - len(payload))
+    crc = _crc16(padded)
+    expected_frame = (
+        bytes((0x01, 0x01, 0xFE))
+        + padded
+        + bytes(((crc >> 8) & 0xFF, crc & 0xFF))
+        + b"\x04"
+    )
+    assert transmissions == expected_frame
+    assert kernel.defaults.last_file_transfer_protocol == "Xmodem CRC"
+
+# Why: confirm downloads adjust credits and persist the chosen protocol.
+def test_file_transfers_download_streams_payload_and_persists_protocol() -> None:
+    module = FileTransfersModule()
+    kernel, module = _bootstrap_kernel(module)
+    transport = RecordingLoopbackTransport()
+    modem = kernel.context.register_modem_device(transport=transport)
+    console_service = kernel.services["console"]
+    assert isinstance(console_service, ConsoleService)
+
+    kernel.step(FileTransferEvent.ENTER)
+    state = module.transfer_state
+    state.credits = 2
+    payload = b"ABC"
+    checksum = sum(payload) & 0xFF
+    frame = b"!" + bytes((0x00, len(payload))) + payload + bytes((checksum,))
+    transport.feed((frame + b"E").decode("latin-1"))
+    modem.collect_transmit()
+    console_service.device.output.clear()
+    state.progress_events.clear()
+
+    result_state = kernel.step(FileTransferEvent.COMMAND, "VB")
+
+    assert result_state is SessionState.FILE_TRANSFERS
+    assert state.completed_downloads["VB"] == payload
+    assert state.credits == 1
+    assert state.progress_events[-1] == ("VB", len(payload), len(payload))
+    output = "".join(console_service.device.output)
+    assert "Download complete." in output
+    assert "VB via Punter" in output
+    transmissions = modem.collect_transmit()
+    assert transmissions == "S" + "K"
+    assert kernel.defaults.last_file_transfer_protocol == "Punter"
+
+# Why: verify the abort flag cancels active transfers and leaves state unchanged.
+def test_file_transfers_respects_abort_flag() -> None:
+    module = FileTransfersModule(default_protocol="Xmodem CRC")
+    kernel, module = _bootstrap_kernel(module)
+    transport = RecordingLoopbackTransport()
+    modem = kernel.context.register_modem_device(transport=transport)
+    console_service = kernel.services["console"]
+    assert isinstance(console_service, ConsoleService)
+
+    kernel.step(FileTransferEvent.ENTER)
+    state = module.transfer_state
+    state.upload_payloads["UL"] = b"AB"
+    state.abort_requested = True
+    transport.feed("C")
+    modem.collect_transmit()
+    console_service.device.output.clear()
+
+    result_state = kernel.step(FileTransferEvent.COMMAND, "UL")
+
+    assert result_state is SessionState.FILE_TRANSFERS
+    assert "Transfer aborted." in "".join(console_service.device.output)
+    assert "Upload complete." not in "".join(console_service.device.output)
+    assert "UL" not in state.completed_uploads
+    assert kernel.defaults.last_file_transfer_protocol == "Xmodem CRC"
 
