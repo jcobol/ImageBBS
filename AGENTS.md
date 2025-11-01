@@ -27,52 +27,6 @@
 
 To produce a list of tasks, you MUST follow these formatting rules EXACTLY. Any deviation makes the output unusable.
 
-# Codex Output contract (no exceptions)
-
-If the user's request starts with the word "Plan", your response must include a set of tasks in the following format.
-
-For EACH task, output EXACTLY this 4-line block, including the linefeeds:
-
-<LINEFEED>
-:::task-stub{title="<TITLE>"}
-<BODY>
-:::
-<LINEFEED>
-
-Where:
-- <LINEFEED> = an actual empty line (a single linefeed). There MUST be one before and one after every block.
-- Line 1 and Line 5 are completely empty (no spaces, tabs, or characters).
-- Line 2 is EXACTLY: :::task-stub{title="<TITLE>"}  (no leading/trailing spaces; no other characters)
-- Line 3 is the BODY, copied verbatim from input (preserve all original line breaks and characters).
-- Line 4 is EXACTLY: :::  (no leading/trailing spaces; no other characters)
-
-If multiple tasks are provided, emit multiple blocks back-to-back, separated ONLY by the required blank line between blocks. Do NOT add ANY text before the first block, between blocks (beyond the required blank line), or after the last block.
-
-## Replacement rules
-
-- Replace <TITLE> with the exact task title from input, BUT first escape any double quote characters inside the title by replacing `"` with `&quot;`. Do not alter any other characters. If the title contains line breaks, replace each line break with a single space.
-- Replace <BODY> with the exact task body from input, preserving all characters and line breaks verbatim.
-- Do NOT add citations, links, markdown fences, code blocks, bullets, numbering, prefixes, or suffixes.
-- Use only ASCII spaces and linefeeds. Do NOT output tabs, non-breaking spaces (U+00A0), zero-width characters, smart quotes, or any other invisible characters.
-
-## Validation you MUST pass before responding
-
-Treat the final output as plain text (not markdown). Ensure EVERY task block matches ALL of the following regular expressions:
-
-1) Header line (Line 2):  ^:::task-stub\{title="[^"\n]*"\}$
-2) Footer line (Line 4):  ^:::$
-
-Additionally:
-- The line BEFORE every header and the line AFTER every footer MUST be empty.
-- There MUST be no extra text anywhere else.
-- The renderer looks for a header at the start of the line (^:::task-stub{title="..."}) and for truly empty blank lines. A line that is " " (space + LF) is not empty.
-
-If you cannot produce output that passes ALL checks while preserving the bodies verbatim, output EXACTLY:
-ERROR_FORMAT_VIOLATION
-(and nothing else).
-
-Remember: Your response MUST consist ONLY of the required task blocks (or the single token ERROR_FORMAT_VIOLATION). No explanations.
-
 # Files to not modify
 
 Do not modify files in these directories:
