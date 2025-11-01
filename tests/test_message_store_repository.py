@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,7 @@ from imagebbs.runtime.message_store import MessageStore
 from imagebbs.runtime.message_store_repository import (
     load_message_store,
     load_records,
+    message_store_lock,
     save_message_store,
 )
 
@@ -158,4 +160,24 @@ def test_save_message_store_persists_deletions(tmp_path: Path) -> None:
 
     final = load_message_store(path)
     assert final.list("main") == []
+
+
+def test_message_store_lock_times_out_under_contention(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Why: ensure environment-driven lock deadlines prevent hung sessions during persistence.
+    path = tmp_path / "messages.json"
+    monkeypatch.setenv("IMAGEBBS_MESSAGE_LOCK_TIMEOUT", "0.1")
+
+    holder = message_store_lock(path)
+    holder.acquire(owner_id=1)
+    try:
+        competitor = message_store_lock(path)
+        start_time = time.monotonic()
+        with pytest.raises(TimeoutError, match="Timed out acquiring message store lock"):
+            competitor.acquire(owner_id=2)
+        elapsed = time.monotonic() - start_time
+        assert elapsed >= 0.1
+    finally:
+        holder.release()
 

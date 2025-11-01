@@ -272,7 +272,15 @@ async def _async_runner_with_persistence(
 
     owner_id = _current_owner_id()
     lock = message_store_lock(messages_path)
-    await asyncio.to_thread(lock.acquire, owner_id=owner_id)
+    try:
+        await asyncio.to_thread(lock.acquire, owner_id=owner_id)
+    except TimeoutError:
+        # Why: inform callers that persistence is locked by another session before disconnecting.
+        print(
+            "Unable to acquire the message store lock because another session is persisting messages.",
+            file=sys.stderr,
+        )
+        raise
     runner: SessionRunner | None = None
     try:
         with message_store_lock_owner(owner_id):
