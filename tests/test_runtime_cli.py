@@ -93,7 +93,9 @@ def test_drive_session_flushes_pause_buffer_on_exit(monkeypatch: pytest.MonkeyPa
             return ""
 
         def set_indicator_controller(self, controller: object) -> None:
+            # Why: mirror CLI wiring so instrumentation cache detection respects stub state.
             self.controller = controller
+            self._indicator_controller = controller
 
         def set_pause_indicator_state(self, active: bool) -> None:
             self.pause_states.append(active)
@@ -201,7 +203,8 @@ def test_run_stream_session_honours_telnet_newline_setting() -> None:
             self.console = object()
 
         def set_indicator_controller(self, controller: object) -> None:
-            pass
+            # Why: emulate runner bookkeeping so instrumentation comparisons observe telnet wiring.
+            self._indicator_controller = controller
 
         def read_output(self) -> str:
             return ""
@@ -553,7 +556,9 @@ def test_run_session_pauses_and_flushes_output_on_flow_control() -> None:
             return self.state
 
         def set_indicator_controller(self, controller) -> None:
+            # Why: retain instrumentation controllers so pause propagation can be asserted.
             self.indicator_controller = controller
+            self._indicator_controller = controller
 
         def set_pause_indicator_state(self, active: bool) -> None:
             self.pause_states.append(active)

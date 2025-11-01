@@ -75,3 +75,31 @@ def test_session_instrumentation_reuses_controller_and_refreshes_cache() -> None
     if frames:
         assert reused_controller._spinner_enabled is True
         assert reused_controller._spinner_index == spinner_index
+
+
+def test_session_instrumentation_releases_cache_after_runner_reset() -> None:
+    # Why: ensure instrumentation discards stale controllers when the runner rewires indicator state.
+    runner = SessionRunner()
+    instrumentation = SessionInstrumentation(runner)
+
+    first_controller = instrumentation.ensure_indicator_controller()
+    assert first_controller is not None
+    assert runner.kernel.context.services.get("indicator_controller") is first_controller
+
+    runner.set_indicator_controller(None)
+    assert runner.kernel.context.services.get("indicator_controller") is None
+
+    second_controller = instrumentation.ensure_indicator_controller()
+    assert second_controller is not None
+    assert second_controller is not first_controller
+    assert runner.kernel.context.services.get("indicator_controller") is second_controller
+    assert instrumentation.indicator_controller is second_controller
+    assert runner._indicator_controller is second_controller
+
+    external_controller = IndicatorController(runner.console)
+    runner.set_indicator_controller(external_controller)
+    assert runner.kernel.context.services.get("indicator_controller") is external_controller
+
+    third_controller = instrumentation.ensure_indicator_controller()
+    assert third_controller is external_controller
+    assert instrumentation.indicator_controller is external_controller
