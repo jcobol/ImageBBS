@@ -12,6 +12,7 @@ import pytest
 from imagebbs import ml_extra_defaults
 from imagebbs import ml_extra_reporting
 from imagebbs import ml_extra_sanity
+from imagebbs.ml_extra.sanity import core as sanity_core
 
 
 @pytest.fixture(scope="module")
@@ -20,7 +21,7 @@ def defaults() -> ml_extra_defaults.MLExtraDefaults:
 
 
 @pytest.fixture(scope="module")
-def sanity_report() -> dict[str, object]:
+def sanity_report() -> sanity_core.SanityReport:
     return ml_extra_sanity.run_checks()
 
 
@@ -47,61 +48,67 @@ def _load_macro_directory_artifact() -> list[dict[str, object]]:
 
 
 def test_run_checks_reports_payload_hashes(
-    sanity_report: dict[str, object],
+    sanity_report: sanity_core.SanityReport,
     defaults: ml_extra_defaults.MLExtraDefaults,
 ) -> None:
-    hashes = sanity_report["payload_hashes"]
-    assert isinstance(hashes, list)
+    hashes = sanity_report.payload_hashes
     assert hashes, "expected at least one payload hash entry"
 
     first = hashes[0]
-    assert "slot" in first and "sha256" in first
-
     macro_entry = next(
-        item for item in sanity_report["macro_directory"] if item["slot"] == first["slot"]
+        item for item in sanity_report.macro_directory if item.slot == first.slot
     )
-    assert macro_entry["sha256"] == first["sha256"]
+    assert macro_entry.sha256 == first.sha256
 
 
 def test_format_report_includes_hashes(
-    sanity_report: dict[str, object],
+    sanity_report: sanity_core.SanityReport,
     defaults: ml_extra_defaults.MLExtraDefaults,
 ) -> None:
     text = ml_extra_sanity.format_report(sanity_report)
     assert "Macro payload hashes" in text
-    sample_slot = sanity_report["payload_hashes"][0]["slot"]
-    sample_hash = sanity_report["payload_hashes"][0]["sha256"]
+    sample_slot = sanity_report.payload_hashes[0].slot
+    sample_hash = sanity_report.payload_hashes[0].sha256
     assert f"slot {sample_slot:>2}" in text
     assert sample_hash in text
 
 
-def test_stub_macros_match_overlay(sanity_report: dict[str, object]) -> None:
-    comparisons = sanity_report["comparisons"]
-    mismatches = [row for row in comparisons if not row["matches"]]
+def test_stub_macros_match_overlay(
+    sanity_report: sanity_core.SanityReport,
+) -> None:
+    mismatches = [row for row in sanity_report.comparisons if not row.matches]
     expected_missing = {0x28, 0x29, 0x2A}
-    mismatch_slots = {row["slot"] for row in mismatches}
+    mismatch_slots = {row.slot for row in mismatches}
     assert mismatch_slots == expected_missing, mismatch_slots
     for row in mismatches:
-        assert row["stub_length"] in (None, 0)
-        assert row["stub_preview"] in (None, "")
+        assert row.stub_length in (None, 0)
+        assert row.stub_preview in (None, "")
 
 
-def test_stub_static_tables_match(sanity_report: dict[str, object]) -> None:
-    stub_static = sanity_report["stub_static"]
-    for key in ("lightbar", "underline", "palette", "flag_directory_block", "flag_directory_tail"):
-        assert stub_static[key]["matches"], f"stub field {key} did not match overlay"
+def test_stub_static_tables_match(
+    sanity_report: sanity_core.SanityReport,
+) -> None:
+    for diff in (
+        sanity_report.stub_static.lightbar,
+        sanity_report.stub_static.underline,
+        sanity_report.stub_static.palette,
+        sanity_report.stub_static.flag_directory_block,
+        sanity_report.stub_static.flag_directory_tail,
+    ):
+        assert diff.matches, "expected stub static data to match overlay"
 
 
-def test_stub_directory_counts(sanity_report: dict[str, object]) -> None:
-    assert sanity_report["stub_only_macros"] == []
+def test_stub_directory_counts(
+    sanity_report: sanity_core.SanityReport,
+) -> None:
+    assert sanity_report.stub_only_macros == ()
 
 
 def test_run_checks_metadata_snapshot_matches_helper(
-    sanity_report: dict[str, object],
+    sanity_report: sanity_core.SanityReport,
     metadata_snapshot: dict[str, object],
 ) -> None:
-    assert "metadata_snapshot" in sanity_report
-    assert sanity_report["metadata_snapshot"] == metadata_snapshot
+    assert sanity_report.metadata_snapshot == metadata_snapshot
 
 
 def test_collect_overlay_metadata_matches_artifact(

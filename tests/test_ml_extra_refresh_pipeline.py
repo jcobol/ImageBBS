@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 import time
+import types
 from pathlib import Path
 
 import pytest
 
 from imagebbs import ml_extra_refresh_pipeline
+from imagebbs.ml_extra.sanity import core as sanity_core
 
 
 @pytest.fixture()
@@ -27,27 +29,36 @@ def test_main_if_changed_skips_write(tmp_path: Path, monkeypatch, capsys, snapsh
 
     captured_mtime = metadata_path.stat().st_mtime
 
-    def fake_run_checks(overlay: Path | None) -> dict[str, object]:
-        return {"metadata_snapshot": snapshot_payload}
+    def fake_run_checks(overlay: Path | None):
+        return types.SimpleNamespace(metadata_snapshot=snapshot_payload)
 
-    def fake_diff(baseline: dict[str, object], current: dict[str, object]) -> dict[str, object]:
+    def fake_diff(baseline: dict[str, object], current: dict[str, object]):
         assert baseline == snapshot_payload
         assert current == snapshot_payload
-        return {"matches": True}
+        return sanity_core.MetadataDiff(
+            matches=True,
+            added=(),
+            removed=(),
+            changed=(),
+            baseline_snapshot=baseline,
+            current_snapshot=current,
+        )
 
-    def fake_render(path: Path, diff: dict[str, object]) -> str:
+    def fake_render(path: Path, diff: sanity_core.MetadataDiff) -> str:
         assert path == baseline_path
-        assert diff == {"matches": True}
+        assert diff.matches is True
         return "rendered diff"
 
-    monkeypatch.setattr(ml_extra_refresh_pipeline.ml_extra_sanity, "run_checks", fake_run_checks)
     monkeypatch.setattr(
-        ml_extra_refresh_pipeline.ml_extra_sanity,
+        ml_extra_refresh_pipeline.sanity_core, "run_checks", fake_run_checks
+    )
+    monkeypatch.setattr(
+        ml_extra_refresh_pipeline.sanity_core,
         "diff_metadata_snapshots",
         fake_diff,
     )
     monkeypatch.setattr(
-        ml_extra_refresh_pipeline.ml_extra_snapshot_guard,
+        ml_extra_refresh_pipeline.sanity_reporting,
         "render_diff_summary",
         fake_render,
     )
@@ -84,27 +95,36 @@ def test_main_if_changed_updates_file(tmp_path: Path, monkeypatch, capsys):
     # Ensure measurable mtime difference when running on fast filesystems.
     time.sleep(0.01)
 
-    def fake_run_checks(overlay: Path | None) -> dict[str, object]:
-        return {"metadata_snapshot": new_payload}
+    def fake_run_checks(overlay: Path | None):
+        return types.SimpleNamespace(metadata_snapshot=new_payload)
 
-    def fake_diff(baseline: dict[str, object], current: dict[str, object]) -> dict[str, object]:
+    def fake_diff(baseline: dict[str, object], current: dict[str, object]):
         assert baseline == baseline_payload
         assert current == new_payload
-        return {"matches": False}
+        return sanity_core.MetadataDiff(
+            matches=False,
+            added=(),
+            removed=(),
+            changed=(),
+            baseline_snapshot=baseline,
+            current_snapshot=current,
+        )
 
-    def fake_render(path: Path, diff: dict[str, object]) -> str:
+    def fake_render(path: Path, diff: sanity_core.MetadataDiff) -> str:
         assert path == baseline_path
-        assert diff == {"matches": False}
+        assert diff.matches is False
         return "rendered diff"
 
-    monkeypatch.setattr(ml_extra_refresh_pipeline.ml_extra_sanity, "run_checks", fake_run_checks)
     monkeypatch.setattr(
-        ml_extra_refresh_pipeline.ml_extra_sanity,
+        ml_extra_refresh_pipeline.sanity_core, "run_checks", fake_run_checks
+    )
+    monkeypatch.setattr(
+        ml_extra_refresh_pipeline.sanity_core,
         "diff_metadata_snapshots",
         fake_diff,
     )
     monkeypatch.setattr(
-        ml_extra_refresh_pipeline.ml_extra_snapshot_guard,
+        ml_extra_refresh_pipeline.sanity_reporting,
         "render_diff_summary",
         fake_render,
     )
