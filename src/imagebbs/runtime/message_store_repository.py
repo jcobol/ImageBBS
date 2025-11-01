@@ -41,12 +41,14 @@ class MessageStoreLock(contextlib.AbstractContextManager["MessageStoreLock"]):
     _state_lock = threading.Lock()
     _owners: dict[Path, tuple[int, IO[bytes], int]] = {}
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, *, default_timeout: float | None = None) -> None:
+        # Why: capture the target path and shared timeout so every acquisition respects configuration.
         self._target = Path(path).resolve()
         self._lock_path = self._target.parent / f"{self._target.name}.lock"
         self._handle: IO[bytes] | None = None
         self._owns_lock = False
         self._owner_id: int | None = None
+        self._default_timeout = default_timeout
 
     def __enter__(self) -> "MessageStoreLock":
         self.acquire()
@@ -61,13 +63,19 @@ class MessageStoreLock(contextlib.AbstractContextManager["MessageStoreLock"]):
         self.release()
         return False
 
-    def acquire(self, *, owner_id: int | None = None) -> None:
+    def acquire(
+        self, *, owner_id: int | None = None, timeout: float | None = None
+    ) -> None:
         """Acquire the lock for ``owner_id`` (defaulting to current thread)."""
 
+        # Why: reuse thread identities while enforcing optional deadlines from the runtime configuration.
         if owner_id is None:
             owner_id = _LOCK_OWNER.get()
             if owner_id is None:
                 owner_id = threading.get_ident()
+        if timeout is None:
+            timeout = self._default_timeout
+        start_time = time.monotonic() if timeout is not None else None
         while True:
             with self._state_lock:
                 record = self._owners.get(self._lock_path)
@@ -81,6 +89,13 @@ class MessageStoreLock(contextlib.AbstractContextManager["MessageStoreLock"]):
                     self._handle = handle
                     self._owner_id = owner_id
                     return
+            if start_time is not None and timeout is not None:
+                elapsed = time.monotonic() - start_time
+                if elapsed >= timeout:
+                    raise TimeoutError(
+                        f"Timed out acquiring message store lock at {self._lock_path} "
+                        f"after {elapsed:.2f}s"
+                    )
             time.sleep(_LOCK_RETRY_DELAY)
 
         try:
@@ -149,7 +164,19 @@ class MessageStoreLock(contextlib.AbstractContextManager["MessageStoreLock"]):
 def message_store_lock(path: Path) -> MessageStoreLock:
     """Return a context manager guarding access to ``path``."""
 
-    return MessageStoreLock(path)
+    # Why: apply environment-driven timeouts so runtime helpers share consistent lock behaviour.
+    timeout_text = os.getenv("IMAGEBBS_MESSAGE_LOCK_TIMEOUT")
+    timeout_value: float | None = None
+    if timeout_text not in (None, ""):
+        try:
+            timeout_value = float(timeout_text)
+        except ValueError as exc:  # pragma: no cover - misconfiguration is rare
+            raise ValueError(
+                "IMAGEBBS_MESSAGE_LOCK_TIMEOUT must be a numeric value"
+            ) from exc
+        if timeout_value <= 0:
+            raise ValueError("IMAGEBBS_MESSAGE_LOCK_TIMEOUT must be positive")
+    return MessageStoreLock(path, default_timeout=timeout_value)
 
 
 @contextlib.contextmanager
