@@ -6,6 +6,7 @@ from typing import Sequence
 import pytest
 
 from imagebbs.device_context import Console, ConsoleFramePayload, ConsoleService
+from imagebbs.message_editor import EditorState
 from imagebbs.runtime.cli import drive_session
 from imagebbs.runtime.console_ui import IdleTimerScheduler, SysopConsoleApp, translate_petscii
 from imagebbs.runtime.session_instrumentation import SessionInstrumentation
@@ -658,3 +659,199 @@ def test_sysop_console_app_shares_pause_indicator_with_instrumentation() -> None
     runner.set_pause_indicator_state(False)
     frame = app.capture_frame()
     assert frame.pause_active is False
+
+
+class FakeCursesWindow:
+    def __init__(self, inputs: Sequence[int], input_row: int) -> None:
+        # Why: retain scripted keystrokes and capture rendered prompts without relying on real curses.
+        self._inputs = list(inputs)
+        self._nodelay = True
+        self._timeout = 0
+        self._cursor = (0, 0)
+        self._input_row = input_row
+        self._current_input_render: list[str] = []
+        self.render_history: list[str] = []
+
+    def nodelay(self, flag: bool) -> None:
+        # Why: toggle blocking behaviour so editor reads can consume scripted keystrokes.
+        self._nodelay = bool(flag)
+
+    def timeout(self, value: int) -> None:
+        # Why: maintain compatibility with curses' timeout API even though tests ignore the value.
+        self._timeout = int(value)
+
+    def getch(self) -> int:
+        # Why: feed keystrokes to the adapter when blocking mode is enabled.
+        if self._nodelay:
+            return -1
+        if not self._inputs:
+            return -1
+        return self._inputs.pop(0)
+
+    def move(self, row: int, col: int) -> None:
+        # Why: track cursor positioning so ``clrtoeol`` affects the intended command row snapshot.
+        self._cursor = (row, col)
+
+    def clrtoeol(self) -> None:
+        # Why: clear the cached command-row string before new characters are painted.
+        row, _ = self._cursor
+        if row == self._input_row:
+            self._current_input_render = []
+
+    def addch(self, row: int, col: int, char, attrs: int = 0) -> None:
+        # Why: accumulate the characters shown on the command row for later assertions.
+        if row != self._input_row:
+            return
+        if isinstance(char, int):
+            glyph = chr(char)
+        else:
+            glyph = char
+        self._current_input_render.append(glyph)
+
+    def refresh(self) -> None:
+        # Why: snapshot the most recent command prompt rendering as the UI flushes to screen.
+        if self._current_input_render:
+            self.render_history.append("".join(self._current_input_render))
+
+
+class FakeEditorContext:
+    def __init__(self) -> None:
+        # Why: supply the minimal attributes accessed by the editor submission handler.
+        self.current_message = ""
+        self.draft_buffer: list[str] = []
+        self.selected_message_id: int | None = None
+
+
+class FakeEditorRunner:
+    def __init__(self, console: ConsoleService) -> None:
+        # Why: emulate ``SessionRunner`` behaviour without invoking the full kernel stack.
+        self.console = console
+        self.state = SessionState.MESSAGE_EDITOR
+        self._editor_state: EditorState | None = EditorState.POST_MESSAGE
+        self._requires_submission = True
+        self._context = FakeEditorContext()
+        self.abort_indicator_history: list[bool] = []
+        self.submissions: list[tuple[str | None, list[str]]] = []
+        self.abort_calls = 0
+        self._indicator_controller = None
+
+    def set_indicator_controller(self, controller) -> None:
+        # Why: accept the indicator controller assignment that ``SysopConsoleApp`` performs on start-up.
+        self._indicator_controller = controller
+
+    @property
+    def editor_context(self) -> FakeEditorContext:
+        # Why: expose the editor context consumed by ``EditorSubmissionHandler``.
+        return self._context
+
+    def read_output(self) -> str:
+        # Why: mimic the runner's output drain without producing additional screen data.
+        return ""
+
+    def requires_editor_submission(self) -> bool:
+        # Why: advertise when the submission handler should collect subject/body text.
+        return self._requires_submission
+
+    def get_editor_state(self) -> EditorState | None:
+        # Why: surface the editor state so the handler can branch between POST and EDIT flows.
+        return self._editor_state
+
+    def submit_editor_draft(
+        self,
+        *,
+        subject: str | None = None,
+        lines: Sequence[str] | None = None,
+    ) -> SessionState:
+        # Why: capture submitted subject/body pairs and transition back to the menu state.
+        payload_lines = list(lines or [])
+        self.submissions.append((subject, payload_lines))
+        if subject is not None:
+            self._context.current_message = subject
+        self._context.draft_buffer = payload_lines
+        self._requires_submission = False
+        self._editor_state = None
+        self.state = SessionState.MAIN_MENU
+        return self.state
+
+    def abort_editor(self) -> SessionState:
+        # Why: flag abort cycles so tests can confirm ``/abort`` handling clears the draft.
+        self.abort_calls += 1
+        self._requires_submission = False
+        self._editor_state = None
+        self.state = SessionState.MAIN_MENU
+        return self.state
+
+    def set_abort_indicator_state(self, active: bool) -> None:
+        # Why: record the indicator toggles initiated by the submission handler.
+        self.abort_indicator_history.append(active)
+
+
+def test_sysop_console_app_collects_editor_submission() -> None:
+    console = RecordingConsoleService()
+    runner = FakeEditorRunner(console)
+    app = SysopConsoleApp(console, runner=runner)
+
+    input_row = app._input_row_index()
+    inputs = [
+        ord("T"),
+        ord("e"),
+        ord("s"),
+        ord("t"),
+        10,
+        ord("H"),
+        ord("e"),
+        ord("l"),
+        ord("l"),
+        ord("o"),
+        10,
+        ord("/"),
+        ord("s"),
+        ord("e"),
+        ord("n"),
+        ord("d"),
+        10,
+    ]
+    window = FakeCursesWindow(inputs, input_row)
+
+    handled = app._collect_editor_submission(window)
+
+    assert handled is True
+    assert runner.submissions == [("Test", ["Hello"])]
+    assert runner.state is SessionState.MAIN_MENU
+    assert runner.requires_editor_submission() is False
+    assert runner.abort_indicator_history == [True, False]
+    assert app._input_buffer == []
+    assert app._input_prompt == app._default_prompt
+    assert all(code == 0x20 for code in app._masked_input_state)
+    assert window.render_history and window.render_history[-1] == app._default_prompt
+
+
+def test_sysop_console_app_editor_abort_clears_masked_buffer() -> None:
+    console = RecordingConsoleService()
+    runner = FakeEditorRunner(console)
+    app = SysopConsoleApp(console, runner=runner)
+
+    input_row = app._input_row_index()
+    inputs = [
+        ord("/"),
+        ord("a"),
+        ord("b"),
+        ord("o"),
+        ord("r"),
+        ord("t"),
+        10,
+    ]
+    window = FakeCursesWindow(inputs, input_row)
+
+    handled = app._collect_editor_submission(window)
+
+    assert handled is True
+    assert runner.abort_calls == 1
+    assert runner.submissions == []
+    assert runner.state is SessionState.MAIN_MENU
+    assert runner.requires_editor_submission() is False
+    assert runner.abort_indicator_history == [True, False]
+    assert app._input_buffer == []
+    assert app._input_prompt == app._default_prompt
+    assert all(code == 0x20 for code in app._masked_input_state)
+    assert window.render_history and window.render_history[-1] == app._default_prompt
