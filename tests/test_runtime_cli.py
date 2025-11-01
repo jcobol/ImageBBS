@@ -615,7 +615,7 @@ def test_run_session_advances_spinner_and_idle_timer() -> None:
         screen_length=1,
     )
     assert spinner_bytes is not None
-    assert spinner_bytes[0] == 0xAF
+    assert spinner_bytes[0] == 0xB3
 
     digit_values: list[int] = []
     for address in ConsoleService._IDLE_TIMER_SCREEN_ADDRESSES:

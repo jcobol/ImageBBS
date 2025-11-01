@@ -10,7 +10,10 @@ from ..device_context import ConsoleService
 _SPACE_GLYPH = 0x20
 _PAUSE_GLYPH = 0xD0
 _ABORT_GLYPH = 0xC1
-_SPINNER_DEFAULT_FRAMES: tuple[int, ...] = (0xB0, 0xAE, 0xAD, 0xAF)
+# Mirror the overlay's spinner animation codes so phase detection defaults to Image 1.2's frame order.
+_SPINNER_DEFAULT_FRAMES: tuple[int, ...] = tuple(range(0xB0, 0xBA))
+# Strip the reverse-video bit before comparisons so reverse/normal pairs resolve to the same frame.
+_REVERSE_VIDEO_MASK = 0x7F
 _CARRIER_LEADING_GLYPH = 0xA0
 _CARRIER_INDICATOR_GLYPH = 0xFA
 
@@ -79,9 +82,16 @@ class IndicatorController:
             )
         else:
             spinner_value = int(spinner_glyph) & 0xFF
+        if spinner_value is not None:
+            spinner_value = int(spinner_value) & 0xFF
+            normalised_spinner_value = spinner_value & _REVERSE_VIDEO_MASK
+        else:
+            normalised_spinner_value = None
         if spinner_enabled is None:
             spinner_enabled = bool(
-                spinner_value is not None and spinner_value != _SPACE_GLYPH
+                normalised_spinner_value is not None
+                and normalised_spinner_value
+                != (_SPACE_GLYPH & _REVERSE_VIDEO_MASK)
             )
         if spinner_enabled is not None:
             self._spinner_enabled = spinner_enabled
@@ -89,16 +99,38 @@ class IndicatorController:
             if not spinner_enabled:
                 self._spinner_index = 0
             else:
-                if spinner_value is None or spinner_value == _SPACE_GLYPH:
+                if (
+                    normalised_spinner_value is None
+                    or normalised_spinner_value
+                    == (_SPACE_GLYPH & _REVERSE_VIDEO_MASK)
+                ):
                     self._spinner_index = 0
                 elif frames:
-                    try:
-                        self._spinner_index = next(
-                            index for index, glyph in enumerate(frames)
+                    exact_index = next(
+                        (
+                            index
+                            for index, glyph in enumerate(frames)
                             if glyph == spinner_value
+                        ),
+                        None,
+                    )
+                    if exact_index is not None:
+                        self._spinner_index = exact_index
+                    else:
+                        # Preserve the overlay's animation phase even if the glyph toggles reverse-video state.
+                        normalised_index = next(
+                            (
+                                index
+                                for index, glyph in enumerate(frames)
+                                if (glyph & _REVERSE_VIDEO_MASK)
+                                == normalised_spinner_value
+                            ),
+                            None,
                         )
-                    except StopIteration:
-                        self._spinner_index = 0
+                        if normalised_index is not None:
+                            self._spinner_index = normalised_index
+                        else:
+                            self._spinner_index = 0
                 else:
                     self._spinner_index = 0
 
