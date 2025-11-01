@@ -575,6 +575,17 @@ def drive_session(
         if not active:
             _flush_pause_buffer()
 
+    def _request_transfer_abort() -> None:
+        # Why: route abort keystrokes to the transfer module via the context service registry.
+        kernel = getattr(runner, "kernel", None)
+        context = getattr(kernel, "context", None)
+        registry = getattr(context, "service_registry", None)
+        getter = getattr(registry, "get", None)
+        service = getter("file_transfer_abort") if callable(getter) else None
+        request = getattr(service, "request_abort", None)
+        if callable(request):
+            request(True)
+
     def _strip_pause_tokens(text: str) -> str:
         if not text:
             return text
@@ -586,6 +597,9 @@ def drive_session(
                 continue
             if code == 0x11:
                 _set_paused(False)
+                continue
+            if code == 0x18:
+                _request_transfer_abort()
                 continue
             filtered.append(char)
         return "".join(filtered)

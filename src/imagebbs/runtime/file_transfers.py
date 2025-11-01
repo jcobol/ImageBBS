@@ -57,6 +57,17 @@ class TransferSessionState:
 
 
 @dataclass
+class TransferAbortService:
+    """Service wrapper exposing abort toggles for active transfer sessions."""
+
+    module: "FileTransfersModule"
+
+    # Why: delegate abort requests from front-ends to the file-transfer module without exposing private state.
+    def request_abort(self, abort: bool = True) -> None:
+        self.module.request_abort(abort)
+
+
+@dataclass
 class FileTransfersModule:
     """Finite-state approximation of the BASIC file-transfer dispatcher."""
 
@@ -75,6 +86,7 @@ class FileTransfersModule:
     transfer_state_factory: type[TransferSessionState] = TransferSessionState
     _transfer_state: TransferSessionState | None = field(init=False, default=None)
     _active_protocol: str | None = field(init=False, default=None)
+    _abort_service: TransferAbortService | None = field(init=False, default=None)
 
     MENU_HEADER_MACRO = MaskedPaneMacro.FILE_TRANSFERS_HEADER
     MENU_PROMPT_MACRO = MaskedPaneMacro.FILE_TRANSFERS_PROMPT
@@ -212,6 +224,10 @@ class FileTransfersModule:
         self._set_binary_streaming(kernel, False)
         self.active_drive_slot = self._resolve_initial_drive_slot(kernel)
         self._transfer_state = self.transfer_state_factory()
+        self._abort_service = TransferAbortService(self)
+        register_service = getattr(context, "register_service", None)
+        if callable(register_service):
+            register_service("file_transfer_abort", self._abort_service)
         self._active_protocol = self._resolve_initial_protocol(kernel)
         self._render_intro()
         return SessionState.FILE_TRANSFERS
@@ -265,6 +281,7 @@ class FileTransfersModule:
                         return SessionState.FILE_LIBRARY
                     raise
                 finally:
+                    self.request_abort(False)
                     self._set_binary_streaming(kernel, False)
                 self._render_prompt()
                 return SessionState.FILE_TRANSFERS
@@ -513,6 +530,10 @@ class FileTransfersModule:
     # Why: allow protocol drivers to poll for aborts without new dependencies.
     def _should_abort(self) -> bool:
         return bool(self.transfer_state.abort_requested)
+
+    # Why: allow front-ends to toggle transfer abort requests without mutating private attributes.
+    def request_abort(self, abort: bool = True) -> None:
+        self.transfer_state.abort_requested = bool(abort)
 
     # Why: emulate ImageBBS credit adjustments after each transfer cycle.
     def _adjust_credits(self, state: TransferSessionState, delta: int) -> None:
