@@ -106,6 +106,10 @@ class SysopConsoleApp:
 
     SCREEN_WIDTH = 40
     SCREEN_HEIGHT = 25
+    _PAUSE_ACTIVATE_KEY = 19  # Ctrl+S
+    _PAUSE_RELEASE_KEY = 17  # Ctrl+Q
+    _ABORT_ACTIVATE_KEY = 24  # Ctrl+X
+    _ABORT_RELEASE_KEY = 7  # Ctrl+G
 
     def __init__(
         self,
@@ -128,6 +132,10 @@ class SysopConsoleApp:
         self._instrumentation = instrumentation
         self._editor_submit_command = DEFAULT_EDITOR_SUBMIT_COMMAND
         self._editor_abort_command = DEFAULT_EDITOR_ABORT_COMMAND
+        self._pause_hotkey_state = False
+        self._pause_hotkey_synced = False
+        self._abort_hotkey_state = False
+        self._abort_hotkey_synced = False
 
         masked_width = getattr(console, "masked_pane_width", None)
         if masked_width is None:
@@ -326,6 +334,7 @@ class SysopConsoleApp:
             self.idle_timer_scheduler.reset()
 
     def _run_idle_cycle(self) -> None:
+        self._sync_control_indicators()  # Why: flush pending control-key toggles before timers advance their cadence.
         instrumentation = self._instrumentation
         if (
             instrumentation is not None
@@ -436,6 +445,26 @@ class SysopConsoleApp:
         if key == 3:  # Ctrl+C
             self._stop = True
             return False
+        if key == self._PAUSE_ACTIVATE_KEY:
+            # Why: surface the sysop pause toggle immediately when the control-key arrives.
+            self._pause_hotkey_state = True
+            self._sync_control_indicators()
+            return True
+        if key == self._PAUSE_RELEASE_KEY:
+            # Why: release the pause indicator when the resume control-key is pressed.
+            self._pause_hotkey_state = False
+            self._sync_control_indicators()
+            return True
+        if key == self._ABORT_ACTIVATE_KEY:
+            # Why: expose a local abort lamp while the sysop holds the configured shortcut.
+            self._abort_hotkey_state = True
+            self._sync_control_indicators()
+            return True
+        if key == self._ABORT_RELEASE_KEY:
+            # Why: reset the abort indicator once the shortcut sequence is released.
+            self._abort_hotkey_state = False
+            self._sync_control_indicators()
+            return True
         if 0 <= key < 256:
             char = chr(key)
             if char.isprintable():
@@ -444,6 +473,26 @@ class SysopConsoleApp:
                 glyph = self._glyph_for_char(char)
                 self._stage_masked_input_character(offset, glyph)
         return True
+
+    def _sync_control_indicators(self) -> None:
+        # Why: keep pause/abort indicator toggles aligned with the most recent control-key state before each idle tick.
+        runner = self.runner
+        if runner is None:
+            return
+        pause_setter = getattr(runner, "set_pause_indicator_state", None)
+        if (
+            callable(pause_setter)
+            and self._pause_hotkey_state != self._pause_hotkey_synced
+        ):
+            pause_setter(self._pause_hotkey_state)
+            self._pause_hotkey_synced = self._pause_hotkey_state
+        abort_setter = getattr(runner, "set_abort_indicator_state", None)
+        if (
+            callable(abort_setter)
+            and self._abort_hotkey_state != self._abort_hotkey_synced
+        ):
+            abort_setter(self._abort_hotkey_state)
+            self._abort_hotkey_synced = self._abort_hotkey_state
 
     def _render_input(self, stdscr: "curses._CursesWindow", row: int) -> None:
         prompt = self._input_prompt
