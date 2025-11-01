@@ -17,6 +17,7 @@ runtime = ["windows-curses; platform_system == 'Windows'"]
 [project.scripts]
 imagebbs-runtime = "imagebbs.runtime.cli:main"
 ml-extra-refresh = "imagebbs.ml_extra_refresh_pipeline:main"
+masked-pane-map = "imagebbs.runtime.masked_pane_cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
