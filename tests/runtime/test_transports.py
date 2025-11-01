@@ -12,6 +12,7 @@ from imagebbs.message_editor import EditorState
 from imagebbs.runtime.console_ui import IdleTimerScheduler
 from imagebbs.runtime.indicator_controller import IndicatorController
 from imagebbs.runtime.session_instrumentation import SessionInstrumentation
+from imagebbs.runtime.session_runner import SessionRunner
 from imagebbs.runtime.transports import TelnetModemTransport
 from imagebbs.session_kernel import SessionState
 
@@ -176,6 +177,35 @@ def test_telnet_transport_collects_editor_submission_with_custom_tokens() -> Non
     assert runner.commands == ["EX"]
     assert runner.abort_states == [True, False]
     assert "Type /save to save or /cancel to cancel." in transcript
+
+
+# Why: ensures Telnet sessions expose the board banner as soon as the transport opens.
+def test_telnet_transport_bootstrap_writes_board_banner() -> None:
+    # Why: isolate the asynchronous run loop while capturing the initial transcript.
+    async def _exercise() -> tuple[str, SessionRunner]:
+        runner = SessionRunner()
+        reader = asyncio.StreamReader()
+        writer = FakeWriter()
+        transport = TelnetModemTransport(
+            runner,
+            reader,
+            writer,  # type: ignore[arg-type]
+            poll_interval=0.0,
+        )
+        transport.open()
+        await asyncio.sleep(0)
+        transport.close()
+        await transport.wait_closed()
+        transcript = b"".join(writer.buffer).decode("latin-1", errors="ignore")
+        return transcript, runner
+
+    transcript, runner = asyncio.run(_exercise())
+    defaults = runner.defaults
+    assert transcript.startswith(defaults.board_name)
+    segments = transcript.split("\r")
+    assert len(segments) >= 3
+    assert segments[1] == defaults.prompt
+    assert segments[2] == defaults.copyright_notice
 
 
 def test_telnet_transport_updates_idle_timer_via_instrumentation() -> None:

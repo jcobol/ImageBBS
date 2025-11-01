@@ -62,6 +62,7 @@ class SessionRunner:
         },
     )
 
+    # Why: configure the kernel dependencies and advertise board identity before processing state transitions.
     def __post_init__(self) -> None:
         if (
             getattr(self.main_menu_module, "message_editor_factory", None)
@@ -81,6 +82,37 @@ class SessionRunner:
             else SessionContext(board_id=self.board_id, user_id=self.user_id)
         )
         self._editor_context.store = self.message_store
+        banner_strings: list[str] = [
+            f"{line}\r"
+            for line in (
+                self.defaults.board_name,
+                self.defaults.prompt,
+                self.defaults.copyright_notice,
+            )
+            if line
+        ]
+        if banner_strings:
+            device = self.console.device
+            banner_bytes = [
+                payload.encode("latin-1", errors="replace")
+                for payload in banner_strings
+            ]
+            for payload in banner_strings:
+                device.write(payload)
+            output_buffer = device.output
+            moved: list[str] = []
+            for _ in banner_strings:
+                if not output_buffer:
+                    break
+                moved.append(output_buffer.pop())
+            for payload in moved:
+                output_buffer.appendleft(payload)
+            byte_count = sum(len(chunk) for chunk in banner_bytes)
+            if byte_count:
+                transcript = device._transcript  # noqa: SLF001 - internal reordering
+                tail = transcript[-byte_count:]
+                del transcript[-byte_count:]
+                transcript[:0] = tail
         self._initial_message_keys: set[tuple[str, int]] = {
             (record.board_id, record.message_id)
             for record in self.message_store.iter_records()

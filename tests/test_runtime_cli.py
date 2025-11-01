@@ -36,7 +36,7 @@ from imagebbs.runtime.message_store import MessageStore
 from imagebbs.runtime.session_factory import DEFAULT_RUNTIME_SESSION_FACTORY
 from imagebbs.runtime.session_runner import SessionRunner
 
-
+# Why: verifies the CLI session loop exits cleanly and surfaces the board banner on startup.
 def test_drive_session_handles_exit_sequence() -> None:
     args = parse_args([])
     runner = create_runner(args)
@@ -52,6 +52,12 @@ def test_drive_session_handles_exit_sequence() -> None:
     transcript = output_stream.getvalue()
     assert transcript
     assert transcript.isascii()
+    defaults = runner.defaults
+    assert transcript.startswith(defaults.board_name)
+    segments = transcript.split("\r")
+    assert len(segments) >= 3
+    assert segments[1] == defaults.prompt
+    assert segments[2] == defaults.copyright_notice
     assert args.listen is None
     assert args.connect is None
     assert runner.defaults.modem.baud_limit == DEFAULT_MODEM_BAUD_LIMIT
