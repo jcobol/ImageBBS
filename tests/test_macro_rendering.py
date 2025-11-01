@@ -32,12 +32,14 @@ class FakeConsoleService:
         colours: Sequence[int] | Iterable[int],
         *,
         fill_colour: int | None = None,
+        slot: int | None = None,
     ) -> None:
         self.stage_masked_pane_overlay_calls.append(
             {
                 "glyphs": glyphs,
                 "colours": colours,
                 "fill_colour": fill_colour,
+                "slot": slot,
             }
         )
         self.event_log.append(
@@ -46,6 +48,7 @@ class FakeConsoleService:
                 glyphs,
                 colours,
                 fill_colour,
+                slot,
             )
         )
 
@@ -122,14 +125,15 @@ def test_render_macro_with_overlay_commit_uses_fallback_overlay_when_stage_fails
         assert call["glyphs"] is glyphs
         assert call["colours"] is colours
         assert call["fill_colour"] == 7
+        assert call["slot"] == 0x42
 
     assert console.commit_masked_pane_staging_calls == 1
     assert console.push_macro_slot_calls == [0x42]
     assert console.event_log == [
         ("stage_macro_slot", 0x42, 7),
-        ("stage_masked_pane_overlay", glyphs, colours, 7),
+        ("stage_masked_pane_overlay", glyphs, colours, 7, 0x42),
         ("commit_masked_pane_staging",),
         ("stage_macro_slot", 0x42, 7),
-        ("stage_masked_pane_overlay", glyphs, colours, 7),
+        ("stage_masked_pane_overlay", glyphs, colours, 7, 0x42),
         ("push_macro_slot", 0x42),
     ]

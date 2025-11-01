@@ -365,7 +365,9 @@ def test_ampersand_dispatcher_stages_masked_pane_flag_entries() -> None:
     assert tuple(buffers.staged_colour) == (fill_colour,) * buffers.width
 
 
-def test_ampersand_28_sequence_stages_and_commits_once() -> None:
+def test_ampersand_28_sequence_stages_and_commits_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     context = bootstrap_device_context(
         assignments=(), ampersand_overrides=BUILTIN_AMPERSAND_OVERRIDES
     )
@@ -379,6 +381,14 @@ def test_ampersand_28_sequence_stages_and_commits_once() -> None:
     staging = console.masked_pane_staging_map
     sequence = staging.ampersand_sequence("&,28")
     assert sequence
+
+    def _fail_if_scanned(*args, **kwargs):
+        raise AssertionError("slot scan helper should not run when metadata is cached")
+
+    monkeypatch.setattr(
+        "imagebbs.runtime.ampersand_overrides._resolve_staging_map_spec_for_payload",
+        _fail_if_scanned,
+    )
 
     with _capture_macro_staging(console, buffers) as captured:
         dispatcher.dispatch("&,28")
@@ -399,13 +409,17 @@ def test_ampersand_28_sequence_stages_and_commits_once() -> None:
 
     pending = buffers.peek_pending_payload()
     assert pending is not None
-    assert pending[0] == expected_screen_bytes
-    assert pending[1] == expected_colour_bytes
+    pending_screen, pending_colour = pending
+    pending_slot = buffers.peek_pending_slot()
+    assert pending_screen == expected_screen_bytes
+    assert pending_colour == expected_colour_bytes
+    assert pending_slot == last_spec.slot
     assert buffers.dirty is True
 
     dispatcher.dispatch("&,50")
 
     assert buffers.peek_pending_payload() is None
+    assert buffers.peek_pending_slot() is None
     assert buffers.dirty is False
     assert tuple(buffers.live_screen) == expected_last[0]
     assert tuple(buffers.live_colour) == expected_last[1]
@@ -426,6 +440,7 @@ def test_ampersand_28_sequence_stages_and_commits_once() -> None:
     dispatcher.dispatch("&,50")
 
     assert buffers.peek_pending_payload() is None
+    assert buffers.peek_pending_slot() is None
     screen_bytes_again, colour_bytes_again = console.peek_block(
         screen_address=ConsoleService._MASKED_OVERLAY_SCREEN_BASE,
         screen_length=buffers.width,
@@ -473,8 +488,11 @@ def test_ampersand_28_sequences_survive_bare_ampersand_and_toggle_staging() -> N
 
         pending_before = buffers.peek_pending_payload()
         assert pending_before is not None
-        assert pending_before[0] == bytes(prompt_transfer_expected[0])
-        assert pending_before[1] == bytes(prompt_transfer_expected[1])
+        pending_before_screen, pending_before_colour = pending_before
+        pending_before_slot = buffers.peek_pending_slot()
+        assert pending_before_screen == bytes(prompt_transfer_expected[0])
+        assert pending_before_colour == bytes(prompt_transfer_expected[1])
+        assert pending_before_slot == prompt_slot_from_transfer
         assert tuple(buffers.staged_screen) == prompt_transfer_expected[0]
         assert tuple(buffers.staged_colour) == prompt_transfer_expected[1]
         assert buffers.dirty is True
@@ -484,6 +502,8 @@ def test_ampersand_28_sequences_survive_bare_ampersand_and_toggle_staging() -> N
 
         pending_after = buffers.peek_pending_payload()
         assert pending_after is not None
+        pending_after_slot = buffers.peek_pending_slot()
+        assert pending_after_slot == prompt_slot_from_transfer
         assert pending_after[0] == bytes(prompt_transfer_expected[0])
         assert pending_after[1] == bytes(prompt_transfer_expected[1])
         assert buffers.dirty is True
@@ -510,8 +530,11 @@ def test_ampersand_28_sequences_survive_bare_ampersand_and_toggle_staging() -> N
 
         pending_before_commit = buffers.peek_pending_payload()
         assert pending_before_commit is not None
-        assert pending_before_commit[0] == bytes(prompt_transfer_expected[0])
-        assert pending_before_commit[1] == bytes(prompt_transfer_expected[1])
+        pending_commit_screen, pending_commit_colour = pending_before_commit
+        pending_commit_slot = buffers.peek_pending_slot()
+        assert pending_commit_screen == bytes(prompt_transfer_expected[0])
+        assert pending_commit_colour == bytes(prompt_transfer_expected[1])
+        assert pending_commit_slot == prompt_slot_from_transfer
         assert tuple(buffers.staged_screen) == prompt_transfer_expected[0]
         assert tuple(buffers.staged_colour) == prompt_transfer_expected[1]
 
@@ -534,9 +557,12 @@ def test_masked_pane_buffers_pending_payload_helpers() -> None:
 
     buffers.cache_pending_payload(glyphs, colours)
     assert buffers.has_pending_payload() is True
+    assert buffers.peek_pending_slot() is None
     peeked = buffers.peek_pending_payload()
     assert peeked == (glyphs, colours)
 
+    consumed_slot = buffers.consume_pending_slot()
+    assert consumed_slot is None
     consumed = buffers.consume_pending_payload()
     assert consumed == (glyphs, colours)
     assert buffers.has_pending_payload() is False
@@ -545,11 +571,17 @@ def test_masked_pane_buffers_pending_payload_helpers() -> None:
     # the overlay's staging loop.
     buffers.cache_pending_payload(glyphs, colours)
     assert buffers.has_pending_payload() is False
-    buffers.cache_pending_payload(glyphs, colours)
+    buffers.cache_pending_payload(glyphs, colours, slot=0x42)
     assert buffers.peek_pending_payload() == (glyphs, colours)
+    assert buffers.peek_pending_slot() == 0x42
+
+    slot = buffers.consume_pending_slot()
+    assert slot == 0x42
+    assert buffers.consume_pending_payload() == (glyphs, colours)
 
     buffers.clear_pending_payload()
     assert buffers.has_pending_payload() is False
+    assert buffers.peek_pending_slot() is None
 
 
 def test_console_masked_pane_rotation_applies_pending_payload() -> None:
@@ -568,8 +600,10 @@ def test_console_masked_pane_rotation_applies_pending_payload() -> None:
 
     pending = buffers.peek_pending_payload()
     assert pending is not None
-    assert pending[0][: len(glyphs)] == glyphs[: len(pending[0])]
-    assert pending[1][: len(colours)] == colours[: len(pending[1])]
+    pending_screen, pending_colour = pending
+    assert pending_screen[: len(glyphs)] == glyphs[: len(pending_screen)]
+    assert pending_colour[: len(colours)] == colours[: len(pending_colour)]
+    assert buffers.peek_pending_slot() is None
     assert buffers.dirty is True
 
     console.commit_masked_pane_staging()
@@ -779,8 +813,10 @@ def test_outscn_commits_cached_payload_once_per_swap() -> None:
 
     pending = buffers.peek_pending_payload()
     assert pending is not None
-    assert pending[0] == screen_payload
-    assert pending[1] == colour_payload
+    pending_screen, pending_colour = pending
+    assert pending_screen == screen_payload
+    assert pending_colour == colour_payload
+    assert buffers.peek_pending_slot() is None
 
     kernel.dispatcher.dispatch("&,50")
 

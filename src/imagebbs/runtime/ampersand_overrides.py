@@ -568,7 +568,12 @@ def _restage_masked_pane_payload(
     console: ConsoleService, buffers: MaskedPaneBuffers
 ) -> Tuple[bool, int, int]:
     """Restage cached masked-pane payloads prior to a commit."""
+    # Why: ``&,50`` restages the pending spans before rotating them, so the host
+    # mirrors that handshake while preferring cached slot metadata over scans.
 
+    pending_slot: int | None = None
+    if buffers.has_pending_payload():
+        pending_slot = buffers.consume_pending_slot()
     pending_payload = buffers.consume_pending_payload()
     staged = False
 
@@ -576,18 +581,27 @@ def _restage_masked_pane_payload(
         console.capture_masked_pane_buffers(buffers)
         screen_payload, colour_payload = pending_payload
         staging_map = console.masked_pane_staging_map
-        spec = _resolve_staging_map_spec_for_payload(
-            console,
-            staging_map,
-            screen_payload,
-            colour_payload,
-            width=buffers.width,
-        )
-        if spec is not None:
+        spec = None
+        if staging_map is not None:
+            if pending_slot is not None:
+                spec = staging_map.spec_for_slot(pending_slot)
+            if spec is None:
+                spec = _resolve_staging_map_spec_for_payload(
+                    console,
+                    staging_map,
+                    screen_payload,
+                    colour_payload,
+                    width=buffers.width,
+                )
+        if spec is not None and staging_map is not None:
             staging_map.stage_macro(console, spec.macro)
             staged = True
         if not staged:
-            console.stage_masked_pane_overlay(screen_payload, colour_payload)
+            console.stage_masked_pane_overlay(
+                screen_payload,
+                colour_payload,
+                slot=pending_slot,
+            )
 
     fill_glyph = _SPACE_GLYPH
     fill_colour = console.screen_colour & 0xFF

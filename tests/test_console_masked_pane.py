@@ -603,8 +603,10 @@ def test_stage_masked_pane_overlay_normalises_payloads_and_defers_commit() -> No
     assert buffers.dirty is True
     pending_payload = buffers.peek_pending_payload()
     assert pending_payload is not None
-    assert pending_payload[0] == expected_screen
-    assert pending_payload[1] == expected_colour
+    pending_screen, pending_colour = pending_payload
+    assert pending_screen == expected_screen
+    assert pending_colour == expected_colour
+    assert buffers.peek_pending_slot() is None
 
     screen_overflow_payload = bytes((0x60 + i) % 256 for i in range(width + 5))
     service.stage_masked_pane_overlay(screen_overflow_payload)
@@ -617,8 +619,10 @@ def test_stage_masked_pane_overlay_normalises_payloads_and_defers_commit() -> No
     assert buffers.dirty is True
     pending_payload = buffers.peek_pending_payload()
     assert pending_payload is not None
-    assert pending_payload[0] == truncated_screen
-    assert pending_payload[1] == expected_colour
+    overflow_screen, overflow_colour = pending_payload
+    assert overflow_screen == truncated_screen
+    assert overflow_colour == expected_colour
+    assert buffers.peek_pending_slot() is None
 
     assert (
         _read_screen(service, ConsoleService._MASKED_OVERLAY_SCREEN_BASE, width)
@@ -659,8 +663,10 @@ def test_stage_macro_slot_populates_staging_buffers() -> None:
     assert buffers.dirty is True
     pending_payload = buffers.peek_pending_payload()
     assert pending_payload is not None
-    assert pending_payload[0] == expected_screen
-    assert pending_payload[1] == expected_colour
+    pending_screen, pending_colour = pending_payload
+    assert pending_screen == expected_screen
+    assert pending_colour == expected_colour
+    assert buffers.peek_pending_slot() == slot
     assert _read_screen(service, overlay_screen_address, width) == baseline_screen
     assert _read_colour(service, overlay_colour_address, width) == baseline_colour
     assert console.transcript_bytes == b""
@@ -695,8 +701,10 @@ def test_stage_macro_slot_without_screen_uses_rendered_payload() -> None:
     assert buffers.dirty is True
     pending_payload = buffers.peek_pending_payload()
     assert pending_payload is not None
-    assert pending_payload[0] == expected_screen
-    assert pending_payload[1] == expected_colour
+    pending_screen, pending_colour = pending_payload
+    assert pending_screen == expected_screen
+    assert pending_colour == expected_colour
+    assert buffers.peek_pending_slot() == slot
     assert _read_screen(service, overlay_screen_address, width) == baseline_screen
     assert _read_colour(service, overlay_colour_address, width) == baseline_colour
     assert console.transcript_bytes == b""
@@ -716,24 +724,37 @@ def test_pending_masked_pane_payload_consumed_once() -> None:
 
     pending_payload = buffers.peek_pending_payload()
     assert pending_payload is not None
+    pending_screen, pending_colour = pending_payload
+    pending_slot = buffers.peek_pending_slot()
+    consumed_slot = buffers.consume_pending_slot()
+    assert consumed_slot == pending_slot
     consumed = buffers.consume_pending_payload()
     assert consumed == pending_payload
     assert buffers.has_pending_payload() is False
     assert buffers.peek_pending_payload() is None
+    assert buffers.peek_pending_slot() is None
 
     assert bytes(buffers.staged_screen) == screen_payload
     assert bytes(buffers.staged_colour) == colour_payload
 
     assert consumed is not None
-    service.stage_masked_pane_overlay(consumed[0], consumed[1])
+    consumed_screen, consumed_colour = consumed
+    service.stage_masked_pane_overlay(
+        consumed_screen,
+        consumed_colour,
+        slot=pending_slot,
+    )
 
     assert buffers.peek_pending_payload() is None
-    assert bytes(buffers.staged_screen) == consumed[0]
-    assert bytes(buffers.staged_colour) == consumed[1]
+    assert buffers.peek_pending_slot() is None
+    assert bytes(buffers.staged_screen) == consumed_screen
+    assert bytes(buffers.staged_colour) == consumed_colour
 
     buffers.clear_pending_payload()
     service.stage_masked_pane_overlay(screen_payload, colour_payload)
     restored_pending = buffers.peek_pending_payload()
     assert restored_pending is not None
-    assert restored_pending[0] == screen_payload
-    assert restored_pending[1] == colour_payload
+    restored_screen, restored_colour = restored_pending
+    assert restored_screen == screen_payload
+    assert restored_colour == colour_payload
+    assert buffers.peek_pending_slot() is None

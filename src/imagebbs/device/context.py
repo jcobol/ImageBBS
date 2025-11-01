@@ -700,6 +700,7 @@ class MaskedPaneBuffers:
     staging_fill_colour: int = field(init=False, repr=False)
     _pending_screen: bytes | None = field(default=None, init=False, repr=False)
     _pending_colour: bytes | None = field(default=None, init=False, repr=False)
+    _pending_slot: int | None = field(default=None, init=False, repr=False)
     _suppress_cache_once: bool = field(default=False, init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -784,8 +785,12 @@ class MaskedPaneBuffers:
         self,
         screen_payload: Sequence[int] | bytes,
         colour_payload: Sequence[int] | bytes,
+        *,
+        slot: int | None = None,
     ) -> None:
         """Persist the next staged overlay spans until consumed."""
+        # Why: The cache mirrors ImageBBS's rotate-and-commit loop, so we
+        # persist the staged spans (and their macro slot) until the host commits.
 
         if self._suppress_cache_once:
             self._suppress_cache_once = False
@@ -795,6 +800,7 @@ class MaskedPaneBuffers:
         colour_bytes = bytes(colour_payload)[: self.width]
         self._pending_screen = screen_bytes
         self._pending_colour = colour_bytes
+        self._pending_slot = None if slot is None else int(slot)
 
     def has_pending_payload(self) -> bool:
         """Return ``True`` if cached staging spans are waiting to be applied."""
@@ -803,6 +809,8 @@ class MaskedPaneBuffers:
 
     def peek_pending_payload(self) -> tuple[bytes, bytes] | None:
         """Return the cached staging spans without consuming them."""
+        # Why: Restaging needs read-only access to confirm which macro sourced
+        # the payload before mutating any buffers.
 
         if not self.has_pending_payload():
             return None
@@ -813,8 +821,11 @@ class MaskedPaneBuffers:
 
     def consume_pending_payload(self) -> tuple[bytes, bytes] | None:
         """Return and clear the cached staging spans once."""
+        # Why: The rotation step atomically pops the staged spans (clearing the
+        # associated slot) so it can mirror ``loopb94e`` exactly once per commit.
 
         if not self.has_pending_payload():
+            self._pending_slot = None
             return None
 
         payload = (
@@ -823,8 +834,25 @@ class MaskedPaneBuffers:
         )
         self._pending_screen = None
         self._pending_colour = None
+        self._pending_slot = None
         self._suppress_cache_once = True
         return payload
+
+    def peek_pending_slot(self) -> int | None:
+        """Return the cached macro slot without consuming it."""
+        # Why: The commit path needs to reuse slot metadata when cached spans
+        # originate from a specific macro.
+
+        return self._pending_slot
+
+    def consume_pending_slot(self) -> int | None:
+        """Return and clear the cached macro slot once."""
+        # Why: Tests and restaging call sites need to atomically pop slot data
+        # even if they inspect the payload separately.
+
+        slot = self._pending_slot
+        self._pending_slot = None
+        return slot
 
     def clear_pending_payload(self) -> None:
         """Discard any cached staging spans and reset suppression state."""
@@ -832,6 +860,9 @@ class MaskedPaneBuffers:
         self._pending_screen = None
         self._pending_colour = None
         self._suppress_cache_once = False
+        # Why: Resetting the slot ensures subsequent staging records fresh
+        # metadata tied to the new glyph/colour spans.
+        self._pending_slot = None
 
 
 class MaskedPaneBlinkScheduler:
@@ -1199,8 +1230,11 @@ class ConsoleService:
         colour_bytes: Sequence[int] | Iterable[int] | bytes | bytearray | None = None,
         *,
         fill_colour: int | None = None,
+        slot: int | None = None,
     ) -> None:
         """Normalise ``screen_bytes``/``colour_bytes`` and stage them for commit."""
+        # Why: Staging must cache both spans and their slot metadata so
+        # ``&,50`` commits can rebuild the rotation buffers without rescanning.
 
         width = self._MASKED_OVERLAY_WIDTH
 
@@ -1224,7 +1258,11 @@ class ConsoleService:
 
         buffers = self._masked_pane_buffers
         if buffers is not None:
-            buffers.cache_pending_payload(glyph_slice, colour_slice)
+            buffers.cache_pending_payload(
+                glyph_slice,
+                colour_slice,
+                slot=slot,
+            )
             buffers.preview_staging_payload(glyph_slice, colour_slice)
 
         self.poke_block(
@@ -1299,6 +1337,8 @@ class ConsoleService:
         pending_payload = buffers.consume_pending_payload()
         if pending_payload is not None:
             pending_screen, pending_colour = pending_payload
+            # Why: ``loopb94e`` only pushes glyph/colour spans, so slot metadata
+            # becomes irrelevant once the live buffers mirror the pending cache.
             live_screen = self._pad_linear_span(
                 pending_screen, buffers.width, fill_glyph
             )
@@ -1713,7 +1753,10 @@ class ConsoleService:
             glyph_slice,
             colour_slice,
             fill_colour=fill_colour,
+            slot=slot,
         )
+        # Why: Recording the slot lets the commit path restage without
+        # rescanning every macro payload for a matching glyph matrix.
 
         return run
 
@@ -1729,7 +1772,11 @@ class ConsoleService:
                         fallback_overlay = self.masked_pane_staging_map.fallback_overlay_for_slot(slot)
                         if fallback_overlay is not None:
                             glyphs, colours = fallback_overlay
-                            self.stage_masked_pane_overlay(glyphs, colours)
+                            self.stage_masked_pane_overlay(
+                                glyphs,
+                                colours,
+                                slot=slot,
+                            )
                         else:
                             fallback = self.glyph_lookup.macros_by_slot.get(slot)
                             if fallback is not None:
@@ -1738,7 +1785,11 @@ class ConsoleService:
                                     fallback,
                                     fill_colour=None,
                                 )
-                                self.stage_masked_pane_overlay(glyph_slice, colour_slice)
+                                self.stage_masked_pane_overlay(
+                                    glyph_slice,
+                                    colour_slice,
+                                    slot=slot,
+                                )
                 return self.push_macro_slot(slot)
         return None
 
