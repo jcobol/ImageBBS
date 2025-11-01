@@ -40,3 +40,38 @@ def test_session_instrumentation_syncs_indicator_controller_from_console() -> No
 
         controller.set_spinner_enabled(True)
         assert console.screen.peek_screen_address(0x049C) == frames[0]
+
+
+def test_session_instrumentation_reuses_controller_and_refreshes_cache() -> None:
+    # Why: ensure instrumentation reuse re-synchronises indicator caches after console changes.
+    runner = SessionRunner()
+    console = runner.console
+
+    instrumentation = SessionInstrumentation(runner)
+    controller = instrumentation.ensure_indicator_controller()
+    assert controller is not None
+
+    controller.set_pause(True)
+    controller.set_spinner_enabled(False)
+    assert controller._spinner_enabled is False
+
+    frames = tuple(int(code) & 0xFF for code in controller.spinner_frames)
+    if frames:
+        spinner_index = (len(frames) - 1) if len(frames) > 1 else 0
+        console.set_spinner_glyph(frames[spinner_index])
+    else:
+        spinner_index = 0
+
+    console.set_pause_indicator(0xD0, colour=0x07)
+    pause_colour_address = console._colour_address_for(console._PAUSE_SCREEN_ADDRESS)
+    new_pause_colour = console.screen.peek_colour_address(pause_colour_address)
+
+    reused_instrumentation = SessionInstrumentation(runner)
+    reused_controller = reused_instrumentation.ensure_indicator_controller()
+    assert reused_controller is controller
+
+    assert reused_controller._pause_colour_cache == new_pause_colour
+
+    if frames:
+        assert reused_controller._spinner_enabled is True
+        assert reused_controller._spinner_index == spinner_index
