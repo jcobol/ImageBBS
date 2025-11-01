@@ -4,12 +4,10 @@ import json
 import types
 from pathlib import Path
 
-from imagebbs import (
-    ml_extra_metadata_io,
-    ml_extra_refresh_pipeline,
-    ml_extra_snapshot_guard,
-)
-from imagebbs.ml_extra.sanity import core as sanity_core
+import pytest
+
+from imagebbs import ml_extra_metadata_io
+from imagebbs.ml_extra import baseline as baseline_helper
 
 
 def _read_raw(path: Path) -> str:
@@ -64,26 +62,23 @@ def test_read_metadata_snapshot_returns_parsed_payload(tmp_path: Path) -> None:
     assert result == payload
 
 
-def test_refresh_pipeline_if_changed_uses_conditional_write(monkeypatch, tmp_path: Path) -> None:
-    baseline = tmp_path / "baseline.json"
-    baseline.write_text(json.dumps({"value": 1}), encoding="utf-8")
+def test_run_baseline_workflow_respects_metadata_only_if_changed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    baseline_path = tmp_path / "baseline.json"
+    baseline_payload = {"value": 1}
+    baseline_path.write_text(json.dumps(baseline_payload), encoding="utf-8")
 
+    metadata_snapshot = {"value": 2}
     write_calls: list[dict[str, object]] = []
 
-    def fake_run_checks(_overlay):
-        return types.SimpleNamespace(metadata_snapshot={"value": 2})
+    monkeypatch.setattr(
+        baseline_helper.sanity_core,
+        "run_checks",
+        lambda _overlay: types.SimpleNamespace(metadata_snapshot=metadata_snapshot),
+    )
 
-    def fake_diff(baseline, snapshot):
-        return sanity_core.MetadataDiff(
-            matches=True,
-            added=(),
-            removed=(),
-            changed=(),
-            baseline_snapshot=baseline,
-            current_snapshot=snapshot,
-        )
-
-    def fake_write(path: Path, payload, *, only_if_changed: bool, indent: int | None = 2):
+    def fake_write(path: Path, payload, *, only_if_changed: bool, **kwargs):
         write_calls.append(
             {
                 "path": path,
@@ -94,51 +89,43 @@ def test_refresh_pipeline_if_changed_uses_conditional_write(monkeypatch, tmp_pat
         return True
 
     monkeypatch.setattr(
-        "imagebbs.ml_extra_refresh_pipeline.sanity_core.run_checks", fake_run_checks
-    )
-    monkeypatch.setattr(
-        "imagebbs.ml_extra_refresh_pipeline.sanity_core.diff_metadata_snapshots",
-        fake_diff,
-    )
-    monkeypatch.setattr(
-        "imagebbs.ml_extra_refresh_pipeline.ml_extra_metadata_io.write_metadata_snapshot",
+        baseline_helper.ml_extra_metadata_io,
+        "write_metadata_snapshot",
         fake_write,
     )
 
-    exit_code = ml_extra_refresh_pipeline.main(
-        ["--baseline", str(baseline), "--metadata-json", str(tmp_path / "out.json"), "--if-changed"]
+    result = baseline_helper.run_baseline_workflow(
+        overlay_path=None,
+        baseline_path=baseline_path,
+        metadata_path=tmp_path / "out.json",
+        metadata_only_if_changed=True,
     )
 
-    assert exit_code == 0
     assert write_calls == [
         {
             "path": tmp_path / "out.json",
-            "payload": {"value": 2},
+            "payload": metadata_snapshot,
             "only_if_changed": True,
         }
     ]
+    assert result.metadata_updated is True
+    assert result.diff is not None and result.diff.matches is False
 
 
-def test_snapshot_guard_update_baseline_uses_conditional_write(monkeypatch, tmp_path: Path) -> None:
-    baseline = tmp_path / "baseline.json"
-    baseline.write_text(json.dumps({"value": 1}), encoding="utf-8")
+def test_run_baseline_workflow_updates_baseline(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    baseline_path = tmp_path / "baseline.json"
+    baseline_path.write_text(json.dumps({"value": 1}), encoding="utf-8")
 
+    metadata_snapshot = {"value": 2}
     write_calls: list[dict[str, object]] = []
 
-    def fake_run_checks(_overlay):
-        return types.SimpleNamespace(metadata_snapshot={"value": 2})
+    monkeypatch.setattr(
+        baseline_helper.sanity_core,
+        "run_checks",
+        lambda _overlay: types.SimpleNamespace(metadata_snapshot=metadata_snapshot),
+    )
 
-    def fake_diff(baseline, snapshot):
-        return sanity_core.MetadataDiff(
-            matches=True,
-            added=(),
-            removed=(),
-            changed=(),
-            baseline_snapshot=baseline,
-            current_snapshot=snapshot,
-        )
-
-    def fake_write(path: Path, payload, *, only_if_changed: bool, indent: int | None = 2):
+    def fake_write(path: Path, payload, *, only_if_changed: bool, **kwargs):
         write_calls.append(
             {
                 "path": path,
@@ -149,26 +136,24 @@ def test_snapshot_guard_update_baseline_uses_conditional_write(monkeypatch, tmp_
         return True
 
     monkeypatch.setattr(
-        "imagebbs.ml_extra_snapshot_guard.sanity_core.run_checks", fake_run_checks
-    )
-    monkeypatch.setattr(
-        "imagebbs.ml_extra_snapshot_guard.sanity_core.diff_metadata_snapshots",
-        fake_diff,
-    )
-    monkeypatch.setattr(
-        "imagebbs.ml_extra_snapshot_guard.ml_extra_metadata_io.write_metadata_snapshot",
+        baseline_helper.ml_extra_metadata_io,
+        "write_metadata_snapshot",
         fake_write,
     )
 
-    exit_code = ml_extra_snapshot_guard.main(
-        ["--baseline", str(baseline), "--update-baseline"]
+    result = baseline_helper.run_baseline_workflow(
+        overlay_path=None,
+        baseline_path=baseline_path,
+        metadata_path=None,
+        metadata_only_if_changed=False,
+        update_baseline=True,
     )
 
-    assert exit_code == 0
     assert write_calls == [
         {
-            "path": baseline,
-            "payload": {"value": 2},
+            "path": baseline_path,
+            "payload": metadata_snapshot,
             "only_if_changed": True,
         }
     ]
+    assert result.baseline_updated is True
