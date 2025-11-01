@@ -1,74 +1,153 @@
 #!/bin/bash
+set -euo pipefail
 
-# Loop through a directory of *.lbl filenames, fixing an issue where
-# DirMaster for Windows exports Commodore filenames with "/" in them
-# "i/lo.blah" -> "i- lo.blah"
-
-# http://tldp.org/LDP/abs/html/string-manipulation.html
-# (Substring Replacement)
+quiet=0
 use_slashes=1
+verbose=0
 
-function translate_filename()
-# this translates the filename given and returns in $test
-{
-	stringZ=(basename "$1")
-#	compare=(basename "$1")
-# // delimiter replaces globally; / replaces first occurrence
-	echo "Input : $stringZ"
-	test=${stringZ//plus/+}		# plus to +
-	echo "Step 1: $test"
-		if [ "$use_slashes" == "1" ]; then
-			test=${test//\ -\ /\/}		# " - " to / -- escape " " and /!
-		else
-			test=${test//slash/-}		# slash to -
-		fi;
-	echo "Step 2: $test"
-	test=${test//./_}		# . to _
-	echo "Step 3: $test $stringZ"
-	[ "$stringZ" != "$test" ] && echo "Unequal."; exit 0 # success, git mv them
-	echo "Strings equal." && exit 1
+# Why: Provide user guidance when invocation parameters are invalid.
+print_usage() {
+        cat <<'USAGE'
+Usage: github-rename.sh [options] <path> [<path> ...]
+
+Options:
+  -s, --no-slash    Replace occurrences of "slash" with "-" instead of "/".
+  -q, --quiet       Suppress non-essential informational output.
+  -v, --verbose     Emit debug details while translating filenames.
+  -h, --help        Show this help message and exit.
+
+Each <path> may be a file or directory. Directories are searched for *.lbl files.
+USAGE
 }
 
-CURRENT_DIR=$PWD
-cd ../v2/core/jack
-# can't use "find ../v2/core/jack/foo_bar.lbl" because ".." will be translated to "__"
+# Why: Emit optional informational messages without breaking quiet mode semantics.
+log_info() {
+        local message="$1"
+        if (( quiet == 0 )); then
+                printf '%s\n' "$message"
+        fi
+}
 
-translate_filename "i - bla.bla"; echo $test
+# Why: Perform the Commodore filename translation used across rename workflows.
+translate_filename() {
+        local input="$1"
+        local basename_only
+        basename_only=$(basename -- "$input")
+        local result="$basename_only"
 
-find . -name '*.lbl' | \
-    while read fname ;
-	fname=${fname//.lbl/}	# strip .lbl extension to not transform to "_lbl"
-	do translate_filename "$fname";
-	    echo "Status: $?"
-	    if [ "$?" == "1" ]; then
-		echo "$fname.lbl: No transformation required"
-	    else
-		echo "git mv $fname.lbl $test.lbl"
-	    fi;
-    done
+        if (( verbose )); then
+                printf 'Input : %s\n' "$basename_only" >&2
+        fi
 
-echo ${file##*/}
+        result="${result//plus/+}"
+        if (( verbose )); then
+                printf 'Step 1: %s\n' "$result" >&2
+        fi
 
-# old_filename="$1" # "plusslashMM_load.lbl"
+        if (( use_slashes )); then
+                result="${result//slash/\/}"
+        else
+                result="${result//slash/-}"
+        fi
+        if (( verbose )); then
+                printf 'Step 2: %s\n' "$result" >&2
+        fi
 
-translate_filename "$old_filename" # "+/MM.load.lbl"
-C64_FILE=${test//.lbl/}	# remove .lbl extension
+        result="${result//_/.}"
+        if (( verbose )); then
+                printf 'Step 3: %s\n' "$result" >&2
+        fi
 
-# translate_filename "plusplus 2" # "++ 2.prg"
-echo "input_lbl=$input_lbl"
-echo "C64_FILE=$C64_FILE"
+        printf '%s' "$result"
+}
 
-# quote filenames since some have spaces in them
-echo "wine c64list3_05.exe \"$input_lbl\" -prg -ovr"
+# Why: Translate a single .lbl file name and print the rename action when needed.
+process_lbl_file() {
+        local full_path="$1"
+        local dir name_without_ext translated translated_with_ext
 
-# fluffy's sed script
-# find . -name '*.lua' | while read fname ; do sed s/cat/dog/g "$fname" > "$fname.new" ; mv "$fname.new" "$fname" ; done
+        dir=$(dirname -- "$full_path")
+        name_without_ext="$(basename -- "$full_path" .lbl)"
+        translated="$(translate_filename "$name_without_ext")"
+        translated_with_ext="$translated.lbl"
 
-# find ../v2/core/jack -name '*.lbl' | while read fname ;
-#    do translate_filename $fname ;
-#	if [ "$?" = "1" ]; then
-#	    echo "git mv $fname $test";
-#	fi;
-#    done
+        if [[ "$translated_with_ext" == "$(basename -- "$full_path")" ]]; then
+                log_info "$full_path: No transformation required"
+        else
+                log_info "git mv '$full_path' '$dir/$translated_with_ext'"
+        fi
+}
 
-cd $CURRENT_DIR # return to where we were
+# Why: Dispatch processing for files or directories passed on the command line.
+process_path() {
+        local target="$1"
+        if [[ -d "$target" ]]; then
+                while IFS= read -r file; do
+                        process_lbl_file "$file"
+                done < <(find "$target" -type f -name '*.lbl' -print | sort)
+        else
+                if [[ "$target" == *.lbl && -f "$target" ]]; then
+                        process_lbl_file "$target"
+                else
+                        log_info "Skipping unsupported path: $target"
+                fi
+        fi
+}
+
+# Parse options.
+while getopts ':sqvh-:' opt; do
+        case "$opt" in
+        s)
+                use_slashes=0
+                ;;
+        q)
+                quiet=1
+                ;;
+        v)
+                verbose=1
+                ;;
+        h)
+                print_usage
+                exit 0
+                ;;
+        -)
+                case "$OPTARG" in
+                no-slash)
+                        use_slashes=0
+                        ;;
+                quiet)
+                        quiet=1
+                        ;;
+                verbose)
+                        verbose=1
+                        ;;
+                help)
+                        print_usage
+                        exit 0
+                        ;;
+                *)
+                        print_usage >&2
+                        exit 1
+                        ;;
+                esac
+                ;;
+        :)
+                print_usage >&2
+                exit 1
+                ;;
+        *)
+                print_usage >&2
+                exit 1
+                ;;
+        esac
+done
+shift $((OPTIND - 1))
+
+if (( $# == 0 )); then
+        print_usage >&2
+        exit 1
+fi
+
+for path in "$@"; do
+        process_path "$path"
+done
