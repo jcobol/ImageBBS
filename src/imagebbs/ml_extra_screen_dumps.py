@@ -61,7 +61,9 @@ def _collect_macro_screens(
 def _collect_flag_payloads(
     defaults: ml_extra_defaults.MLExtraDefaults,
 ) -> Dict[str, object]:
+    # Why: the CLI must mirror runtime flag screens so regression artifacts stay faithful to the overlay.
     records: List[Dict[str, object]] = []
+    macros_by_slot = {entry.slot: entry for entry in defaults.macros}
     for index, record in enumerate(defaults.flag_records):
         data: Dict[str, object] = {
             "index": index,
@@ -73,11 +75,20 @@ def _collect_flag_payloads(
             "match_text": record.match_text,
             "pointer": f"${record.pointer:02x}",
         }
+        replacement_payload: Sequence[int] | None
+        replacement_text: str
         if record.replacement is not None:
-            data["replacement_bytes"] = _format_bytes(record.replacement)
-            data["replacement_text"] = record.replacement_text
+            replacement_payload = record.replacement
+            replacement_text = record.replacement_text
+        else:
+            macro_entry = macros_by_slot.get(record.pointer)
+            replacement_payload = macro_entry.payload if macro_entry else None
+            replacement_text = macro_entry.decoded_text if macro_entry else ""
+        if replacement_payload is not None:
+            data["replacement_bytes"] = _format_bytes(replacement_payload)
+            data["replacement_text"] = replacement_text
             data["replacement_snapshot"] = _capture_snapshot(
-                record.replacement, defaults=defaults
+                replacement_payload, defaults=defaults
             )
         if record.page1_payload is not None:
             data["page1_bytes"] = _format_bytes(record.page1_payload)

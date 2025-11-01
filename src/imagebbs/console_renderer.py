@@ -952,15 +952,21 @@ def build_overlay_glyph_lookup(
             record.match_text,
             defaults=resolved,
         )
+        replacement_run = _optional_glyph_run(
+            record.replacement,
+            record.replacement_text,
+            defaults=resolved,
+        )
+        if replacement_run is None:
+            pointer_run = macros_by_slot.get(record.pointer)
+            if pointer_run is not None:
+                # Why: pointer slots publish the runtime replacement payload when the overlay omits inline bytes.
+                replacement_run = pointer_run
         flag_runs.append(
             FlagGlyphMapping(
                 record=record,
                 match=match_run,
-                replacement=_optional_glyph_run(
-                    record.replacement,
-                    record.replacement_text,
-                    defaults=resolved,
-                ),
+                replacement=replacement_run,
                 page1=_optional_glyph_run(
                     record.page1_payload,
                     record.page1_text,
