@@ -1,6 +1,8 @@
 """Regression tests for the TOML setup configuration loader."""
 from __future__ import annotations
 
+from dataclasses import replace
+
 from pathlib import Path
 
 import pytest
@@ -33,7 +35,14 @@ def test_load_drive_config_applies_overrides(tmp_path: Path) -> None:
         "0 = \"package.module:callable\"\n"
         '"0x20" = "pkg.mod.attr"\n\n'
         "[modem]\n"
-        "baud_limit = \"2400\"\n",
+        "baud_limit = \"2400\"\n\n"
+        "[indicator]\n"
+        "pause_colour = 6\n"
+        "abort_colour = 7\n"
+        "spinner_colour = 8\n"
+        "carrier_leading_colour = 9\n"
+        "carrier_indicator_colour = 10\n"
+        "spinner_frames = [1, 2, 3]\n",
         encoding="utf-8",
     )
 
@@ -55,6 +64,15 @@ def test_load_drive_config_applies_overrides(tmp_path: Path) -> None:
     assert config.drives == tuple(expected_drives)
     assert config.ampersand_overrides == {0: "package.module:callable", 0x20: "pkg.mod.attr"}
     assert config.modem_baud_limit == 2400
+    assert config.indicator == replace(
+        defaults.indicator,
+        pause_colour=6,
+        abort_colour=7,
+        spinner_colour=8,
+        carrier_leading_colour=9,
+        carrier_indicator_colour=10,
+        spinner_frames=(1, 2, 3),
+    )
 
 
 def test_load_drive_config_accepts_table_slots(tmp_path: Path) -> None:
@@ -101,6 +119,7 @@ def test_load_drive_config_accepts_table_slots(tmp_path: Path) -> None:
 
     assert assignments[2].read_only is True
     assert assignments[1].read_only is False
+    assert config.indicator == defaults.indicator
 
 
 @pytest.mark.parametrize(

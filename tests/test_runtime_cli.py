@@ -3,6 +3,7 @@ import asyncio
 import contextlib
 import io
 from collections import deque
+from dataclasses import replace
 import unittest.mock as mock
 from pathlib import Path
 import types
@@ -10,6 +11,7 @@ import typing
 
 import pytest
 from imagebbs.runtime.cli import (
+    _install_indicator_controller,
     create_runner,
     drive_session,
     parse_args,
@@ -26,6 +28,7 @@ from imagebbs.session_kernel import SessionState
 from imagebbs.setup_defaults import (
     DEFAULT_MODEM_BAUD_LIMIT,
     FilesystemDriveLocator,
+    IndicatorDefaults,
     SetupDefaults,
 )
 from imagebbs.device_context import ConsoleService
@@ -516,7 +519,7 @@ def test_drive_session_uses_custom_editor_commands() -> None:
 
 def test_run_session_pauses_and_flushes_output_on_flow_control() -> None:
     class RecordingIndicatorController:
-        def __init__(self, console: ConsoleService) -> None:
+        def __init__(self, console: ConsoleService, **kwargs) -> None:
             self.console = console
             self.pause_states: list[bool] = []
             self.carrier_states: list[bool] = []
@@ -659,8 +662,8 @@ def test_run_session_advances_spinner_and_idle_timer() -> None:
             )
 
     class RecordingIndicatorController(IndicatorController):
-        def __init__(self, console: ConsoleService):
-            super().__init__(console)
+        def __init__(self, console: ConsoleService, **kwargs):
+            super().__init__(console, **kwargs)
             self.set_spinner_enabled(True)
 
     class ScriptedInput:
@@ -713,7 +716,7 @@ def test_run_session_toggles_pause_indicator_from_control_tokens() -> None:
     class RecordingIndicator:
         instance: "RecordingIndicator | None" = None
 
-        def __init__(self, console: ConsoleService) -> None:
+        def __init__(self, console: ConsoleService, **kwargs) -> None:
             self.console = console
             self.pause_states: list[bool] = []
             RecordingIndicator.instance = self
@@ -760,7 +763,7 @@ def test_main_installs_indicator_controller_for_curses_ui() -> None:
     instrumentation_instances: list["RecordingInstrumentation"] = []
 
     class RecordingIndicator:
-        def __init__(self, console: object) -> None:
+        def __init__(self, console: object, **kwargs) -> None:
             self.console = console
             self.sync_calls = 0
             indicator_instances.append(self)
@@ -874,6 +877,33 @@ def test_main_installs_indicator_controller_for_curses_ui() -> None:
     assert app_instances[0].run_calls == 1
 
 
+def test_install_indicator_controller_applies_indicator_overrides() -> None:
+    overrides = IndicatorDefaults(
+        pause_colour=5,
+        abort_colour=6,
+        spinner_colour=7,
+        carrier_leading_colour=8,
+        carrier_indicator_colour=9,
+        spinner_frames=(0xAA, 0xAB),
+    )
+    runner = SessionRunner(defaults=replace(SetupDefaults.stub(), indicator=overrides))
+
+    recorded: dict[str, dict[str, object]] = {}
+
+    class RecordingIndicator(IndicatorController):
+        def __init__(self, console: ConsoleService, **kwargs) -> None:
+            recorded["kwargs"] = dict(kwargs)
+            super().__init__(console, **kwargs)
+
+    controller = _install_indicator_controller(runner, RecordingIndicator)
+    assert controller is not None
+    assert recorded["kwargs"] == overrides.controller_kwargs()
+    assert controller.pause_colour == overrides.pause_colour
+    assert controller.abort_colour == overrides.abort_colour
+    assert controller.spinner_colour == overrides.spinner_colour
+    assert controller.spinner_frames == overrides.spinner_frames
+
+
 def test_run_stream_session_bridges_telnet_and_persists_messages(tmp_path: Path) -> None:
     messages_path = tmp_path / "messages.json"
     args = parse_args(
@@ -934,8 +964,8 @@ def test_run_stream_session_bridges_telnet_and_persists_messages(tmp_path: Path)
     class RecordingIndicator(IndicatorController):
         instances: list["RecordingIndicator"] = []
 
-        def __init__(self, console: ConsoleService) -> None:
-            super().__init__(console)
+        def __init__(self, console: ConsoleService, **kwargs) -> None:
+            super().__init__(console, **kwargs)
             self.pause_updates: list[bool] = []
             self.carrier_updates: list[bool] = []
             RecordingIndicator.instances.append(self)

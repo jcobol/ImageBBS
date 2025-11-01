@@ -1,7 +1,7 @@
 """Helpers for wiring session instrumentation across interfaces."""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Dict
 
 from .console_ui import IdleTimerScheduler
 from .indicator_controller import IndicatorController
@@ -69,7 +69,13 @@ class SessionInstrumentation:
         console = getattr(self.runner, "console", None)
         if console is None:
             return None
-        controller = controller_cls(console)
+        indicator_kwargs: Dict[str, object] = {}
+        indicator_defaults = getattr(getattr(self.runner, "defaults", None), "indicator", None)
+        controller_kwargs = getattr(indicator_defaults, "controller_kwargs", None)
+        if callable(controller_kwargs):
+            # Why: pass through configured colours and spinner frames so controller instances mirror host preferences.
+            indicator_kwargs = dict(controller_kwargs())
+        controller = controller_cls(console, **indicator_kwargs)
         sync_from_console = getattr(controller, "sync_from_console", None)
         if callable(sync_from_console):
             sync_from_console()

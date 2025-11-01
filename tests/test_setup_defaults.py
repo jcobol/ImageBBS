@@ -9,6 +9,7 @@ from imagebbs.setup_defaults import (
     DriveInventory,
     DeviceDriveMap,
     FilesystemDriveLocator,
+    IndicatorDefaults,
     SetupDefaults,
     derive_drive_inventory,
     extract_overlay_sequence,
@@ -101,6 +102,14 @@ def test_setup_defaults_stub_matches_known_defaults() -> None:
 
     # Modem defaults and overlays.
     assert defaults.modem.baud_limit == 1200
+    indicator = defaults.indicator
+    assert isinstance(indicator, IndicatorDefaults)
+    assert indicator.pause_colour is None
+    assert indicator.abort_colour is None
+    assert indicator.spinner_colour is None
+    assert indicator.carrier_leading_colour is None
+    assert indicator.carrier_indicator_colour is None
+    assert indicator.spinner_frames == tuple(range(0xB0, 0xBA))
     assert defaults.macro_modules == EXPECTED_OVERLAYS
 
     # DATA records pulled from the recovered listing.

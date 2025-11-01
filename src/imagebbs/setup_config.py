@@ -6,9 +6,12 @@ from typing import Any, Dict, Mapping
 
 import tomllib
 
+from dataclasses import replace
+
 from .setup_defaults import (
     DriveAssignment,
     FilesystemDriveLocator,
+    IndicatorDefaults,
     SetupConfig,
     SetupDefaults,
 )
@@ -24,6 +27,7 @@ def load_drive_config(config_path: Path) -> SetupConfig:
     drive_overrides = _parse_drive_config(data, base=config_path.parent)
     ampersand_overrides = _parse_ampersand_overrides(data)
     modem_baud_limit = _parse_modem_baud_limit(data)
+    indicator_overrides = _parse_indicator_config(data)
 
     merged: list[DriveAssignment] = []
     remaining = dict(drive_overrides)
@@ -33,10 +37,16 @@ def load_drive_config(config_path: Path) -> SetupConfig:
     for slot in sorted(remaining):
         merged.append(remaining[slot])
 
+    indicator = defaults.indicator
+    # Why: carry stubbed indicator defaults forward while letting TOML overrides adjust palette and spinner settings.
+    if indicator_overrides:
+        indicator = replace(indicator, **indicator_overrides)
+
     return SetupConfig(
         drives=tuple(merged),
         ampersand_overrides=ampersand_overrides,
         modem_baud_limit=modem_baud_limit,
+        indicator=indicator,
     )
 
 
@@ -108,6 +118,73 @@ def _parse_modem_baud_limit(data: Mapping[str, Any]) -> int | None:
         except ValueError as exc:  # pragma: no cover - defensive guard
             raise ValueError("modem.baud_limit must be an integer") from exc
     raise TypeError("modem.baud_limit must be an integer")
+
+
+def _parse_indicator_config(data: Mapping[str, Any]) -> Dict[str, object]:
+    # Why: merge optional indicator palette and spinner overrides with stub defaults for controller construction.
+    raw_indicator = data.get("indicator")
+    if raw_indicator is None:
+        return {}
+    if not isinstance(raw_indicator, Mapping):
+        raise ValueError("indicator configuration must be a mapping")
+
+    def _coerce_colour(value: Any) -> int | None:
+        if value is None:
+            return None
+        if isinstance(value, int):
+            colour = value
+        elif isinstance(value, str):
+            text = value.strip()
+            if not text:
+                return None
+            base = 16 if text.lower().startswith("0x") else 10
+            try:
+                colour = int(text, base=base)
+            except ValueError as exc:  # pragma: no cover - defensive guard
+                raise ValueError("indicator colours must be integers") from exc
+        else:
+            raise TypeError("indicator colours must be integers")
+        if not 0 <= colour <= 0xFF:
+            raise ValueError("indicator colours must be between 0 and 255")
+        return colour
+
+    def _coerce_frame(value: Any) -> int:
+        if isinstance(value, int):
+            frame = value
+        elif isinstance(value, str):
+            text = value.strip()
+            base = 16 if text.lower().startswith("0x") else 10
+            try:
+                frame = int(text, base=base)
+            except ValueError as exc:  # pragma: no cover - defensive guard
+                raise ValueError("indicator spinner frames must be integers") from exc
+        else:
+            raise TypeError("indicator spinner frames must be integers")
+        if not 0 <= frame <= 0xFF:
+            raise ValueError("indicator spinner frames must be between 0 and 255")
+        return frame
+
+    overrides: Dict[str, object] = {}
+    for key in (
+        "pause_colour",
+        "abort_colour",
+        "spinner_colour",
+        "carrier_leading_colour",
+        "carrier_indicator_colour",
+    ):
+        if key in raw_indicator:
+            overrides[key] = _coerce_colour(raw_indicator.get(key))
+
+    if "spinner_frames" in raw_indicator:
+        frames_value = raw_indicator.get("spinner_frames")
+        if frames_value is None:
+            overrides["spinner_frames"] = None
+        else:
+            if not isinstance(frames_value, (list, tuple)):
+                raise TypeError("indicator spinner_frames must be a list or tuple")
+            overrides["spinner_frames"] = tuple(_coerce_frame(entry) for entry in frames_value)
+
+    return overrides
 
 
 def _coerce_slot(raw_slot: Any) -> int:
