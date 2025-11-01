@@ -20,8 +20,8 @@ class IndicatorController:
     """Cache indicator state and proxy updates into :class:`ConsoleService`."""
 
     console: ConsoleService
-    pause_colour: int | None = 0x01
-    abort_colour: int | None = 0x02
+    pause_colour: int | None = None
+    abort_colour: int | None = None
     spinner_colour: int | None = None
     carrier_leading_colour: int | None = None
     carrier_indicator_colour: int | None = None
@@ -34,6 +34,16 @@ class IndicatorController:
     _carrier_active: bool = field(init=False, default=False)
     _spinner_enabled: bool = field(init=False, default=False)
     _spinner_index: int = field(init=False, default=0)
+    _pause_colour_cache: int | None = field(init=False, default=None)
+    _abort_colour_cache: int | None = field(init=False, default=None)
+    _carrier_leading_colour_cache: int | None = field(init=False, default=None)
+    _carrier_indicator_colour_cache: int | None = field(
+        init=False, default=None
+    )
+
+    def __post_init__(self) -> None:
+        # Refresh cached colours immediately so overlay defaults are honoured before we touch the screen.
+        self._refresh_indicator_colour_cache()
 
     def sync_from_console(
         self,
@@ -45,6 +55,9 @@ class IndicatorController:
         carrier_active: bool | None = None,
     ) -> None:
         """Refresh cached indicator state from the console without mutating it."""
+
+        # Keep the colour cache aligned with console RAM so later writes reuse the operator's palette.
+        self._refresh_indicator_colour_cache()
 
         if pause_active is None:
             pause_value = self._peek_screen_byte(self.console._PAUSE_SCREEN_ADDRESS)
@@ -110,7 +123,10 @@ class IndicatorController:
             return
         self._pause_active = active
         glyph = _PAUSE_GLYPH if active else _SPACE_GLYPH
-        self.console.set_pause_indicator(glyph, colour=self.pause_colour)
+        colour = self.pause_colour
+        if colour is None:
+            colour = self._pause_colour_cache
+        self.console.set_pause_indicator(glyph, colour=colour)
 
     def set_abort(self, active: bool) -> None:
         """Flip the abort indicator if ``active`` changed."""
@@ -119,7 +135,10 @@ class IndicatorController:
             return
         self._abort_active = active
         glyph = _ABORT_GLYPH if active else _SPACE_GLYPH
-        self.console.set_abort_indicator(glyph, colour=self.abort_colour)
+        colour = self.abort_colour
+        if colour is None:
+            colour = self._abort_colour_cache
+        self.console.set_abort_indicator(glyph, colour=colour)
 
     def set_carrier(self, active: bool) -> None:
         """Update carrier cells and synchronise spinner activation."""
@@ -137,8 +156,16 @@ class IndicatorController:
         self.console.set_carrier_indicator(
             leading_cell=leading_glyph,
             indicator_cell=indicator_glyph,
-            leading_colour=self.carrier_leading_colour,
-            indicator_colour=self.carrier_indicator_colour,
+            leading_colour=(
+                self.carrier_leading_colour
+                if self.carrier_leading_colour is not None
+                else self._carrier_leading_colour_cache
+            ),
+            indicator_colour=(
+                self.carrier_indicator_colour
+                if self.carrier_indicator_colour is not None
+                else self._carrier_indicator_colour_cache
+            ),
         )
         self.set_spinner_enabled(active)
 
@@ -176,6 +203,39 @@ class IndicatorController:
         if not screen:
             return None
         return screen[0]
+
+    def _refresh_indicator_colour_cache(self) -> None:
+        # Capture indicator colour RAM so writes reuse overlay defaults when overrides are absent.
+        self._pause_colour_cache = self._resolve_indicator_colour(
+            self.pause_colour, self.console._PAUSE_SCREEN_ADDRESS
+        )
+        self._abort_colour_cache = self._resolve_indicator_colour(
+            self.abort_colour, self.console._ABORT_SCREEN_ADDRESS
+        )
+        self._carrier_leading_colour_cache = self._resolve_indicator_colour(
+            self.carrier_leading_colour,
+            self.console._CARRIER_LEADING_SCREEN_ADDRESS,
+        )
+        self._carrier_indicator_colour_cache = self._resolve_indicator_colour(
+            self.carrier_indicator_colour,
+            self.console._CARRIER_INDICATOR_SCREEN_ADDRESS,
+        )
+
+    def _resolve_indicator_colour(
+        self, override: int | None, screen_address: int
+    ) -> int | None:
+        # Delegate colour lookups through peek_block so controller writes mirror the console state exactly.
+        if override is not None:
+            return int(override) & 0xFF
+        colour_address = self.console._COLOUR_BASE + (
+            int(screen_address) - self.console._SCREEN_BASE
+        )
+        _, colours = self.console.peek_block(
+            colour_address=colour_address, colour_length=1
+        )
+        if not colours:
+            return None
+        return colours[0]
 
 
 __all__ = ["IndicatorController"]

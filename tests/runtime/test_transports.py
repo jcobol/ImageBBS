@@ -7,7 +7,7 @@ from collections import deque
 from types import SimpleNamespace
 from typing import Coroutine, Optional
 
-from imagebbs.device_context import ConsoleService
+from imagebbs.device_context import Console, ConsoleService
 from imagebbs.message_editor import EditorState
 from imagebbs.runtime.console_ui import IdleTimerScheduler
 from imagebbs.runtime.indicator_controller import IndicatorController
@@ -274,13 +274,36 @@ def test_telnet_transport_updates_idle_timer_via_instrumentation() -> None:
 
 
 def test_telnet_transport_forwards_indicator_controller_without_instrumentation() -> None:
-    class RecordingConsoleService:
+    class RecordingConsoleService(ConsoleService):
         def __init__(self) -> None:
+            super().__init__(Console())
+            # Preload distinct indicator colours so autodetection can be asserted in transport tests.
             self.spinner_glyphs: list[int] = []
             self.carrier_updates: list[tuple[int, int]] = []
+            self.pause_colours: list[int | None] = []
+            self.abort_colours: list[int | None] = []
+            self.carrier_colour_updates: list[tuple[int | None, int | None]] = []
+            colour_plan = {
+                self._PAUSE_SCREEN_ADDRESS: 0x02,
+                self._ABORT_SCREEN_ADDRESS: 0x08,
+                self._CARRIER_LEADING_SCREEN_ADDRESS: 0x00,
+                self._CARRIER_INDICATOR_SCREEN_ADDRESS: 0x02,
+            }
+            for screen_address, value in colour_plan.items():
+                colour_address = self._COLOUR_BASE + (
+                    screen_address - self._SCREEN_BASE
+                )
+                self.device.screen.poke_colour_address(colour_address, value)
 
-        def set_pause_indicator(self, glyph: int, *, colour=None) -> None:  # pragma: no cover - unused
-            pass
+        def set_pause_indicator(self, glyph: int, *, colour=None) -> None:  # pragma: no cover - exercised via IndicatorController
+            # Record pause colours so autodetected palettes surface through instrumentation.
+            super().set_pause_indicator(glyph, colour=colour)
+            self.pause_colours.append(colour)
+
+        def set_abort_indicator(self, glyph: int, *, colour=None) -> None:  # pragma: no cover - exercised via IndicatorController
+            # Track abort colours to ensure autodetection propagates during transport setup.
+            super().set_abort_indicator(glyph, colour=colour)
+            self.abort_colours.append(colour)
 
         def set_carrier_indicator(
             self,
@@ -290,9 +313,19 @@ def test_telnet_transport_forwards_indicator_controller_without_instrumentation(
             leading_colour=None,
             indicator_colour=None,
         ) -> None:
+            # Mirror carrier colours so we can assert autodetected values survive transport mediation.
+            super().set_carrier_indicator(
+                leading_cell=leading_cell,
+                indicator_cell=indicator_cell,
+                leading_colour=leading_colour,
+                indicator_colour=indicator_colour,
+            )
             self.carrier_updates.append((leading_cell & 0xFF, indicator_cell & 0xFF))
+            self.carrier_colour_updates.append((leading_colour, indicator_colour))
 
         def set_spinner_glyph(self, glyph: int, *, colour=None) -> None:
+            # Capture spinner frames so the test can confirm idle ticks ran as expected.
+            super().set_spinner_glyph(glyph, colour=colour)
             self.spinner_glyphs.append(glyph & 0xFF)
 
     class IdleRunner:
@@ -364,6 +397,8 @@ def test_telnet_transport_forwards_indicator_controller_without_instrumentation(
     assert console.carrier_updates, console.carrier_updates
     assert console.carrier_updates[0] == (0xA0, 0xFA)
     assert console.carrier_updates[-1] == (0x20, 0x20)
+    assert console.carrier_colour_updates
+    assert console.carrier_colour_updates[0] == (0x00, 0x02)
     assert controller is not None
     assert len(console.spinner_glyphs) >= 3
     assert console.spinner_glyphs[0] == 0xB0
