@@ -430,6 +430,36 @@ class DummyRunner:
             self._indicator_controller.set_pause(active)
 
 
+class HotkeyRecordingRunner:
+    def __init__(self, console: ConsoleService) -> None:
+        # Why: isolate control-key handling so tests can assert indicator toggles without invoking the kernel.
+        self.console = console
+        self.state = SessionState.MAIN_MENU
+        self.pause_history: list[bool] = []
+        self.abort_history: list[bool] = []
+        self._indicator_controller = None
+
+    def set_indicator_controller(self, controller) -> None:
+        # Why: satisfy ``SysopConsoleApp`` bootstrap wiring without mutating indicator state during tests.
+        self._indicator_controller = controller
+
+    def read_output(self) -> str:
+        # Why: mirror the runner interface without producing extra console text during hotkey assertions.
+        return ""
+
+    def send_command(self, command: str) -> SessionState:
+        # Why: ignore command dispatch because pause/abort hotkey tests only verify indicator side effects.
+        return self.state
+
+    def set_pause_indicator_state(self, active: bool) -> None:
+        # Why: capture each pause toggle requested by control-key handling.
+        self.pause_history.append(active)
+
+    def set_abort_indicator_state(self, active: bool) -> None:
+        # Why: capture each abort toggle requested by control-key handling.
+        self.abort_history.append(active)
+
+
 def test_idle_timer_scheduler_updates_digits_and_preserves_colon() -> None:
     console = RecordingConsoleService()
     console.device.poke_screen_byte(0x04DF, 0x3A)
@@ -660,6 +690,55 @@ def test_sysop_console_app_shares_pause_indicator_with_instrumentation() -> None
     frame = app.capture_frame()
     assert frame.pause_active is False
 
+
+def test_sysop_console_app_control_keys_toggle_pause_indicator() -> None:
+    # Why: ensure Ctrl+S/Ctrl+Q sequences drive pause indicator state through the runner facade.
+    console = RecordingConsoleService()
+    runner = HotkeyRecordingRunner(console)
+    app = SysopConsoleApp(console, runner=runner)
+
+    assert app._handle_key(app._PAUSE_ACTIVATE_KEY) is True
+    assert runner.pause_history == [True]
+    assert app._pause_hotkey_state is True
+
+    assert app._handle_key(app._PAUSE_RELEASE_KEY) is True
+    assert runner.pause_history == [True, False]
+    assert app._pause_hotkey_state is False
+
+
+def test_sysop_console_app_control_keys_toggle_abort_indicator() -> None:
+    # Why: confirm the abort hotkey mirrors indicator state without disturbing the input buffer.
+    console = RecordingConsoleService()
+    runner = HotkeyRecordingRunner(console)
+    app = SysopConsoleApp(console, runner=runner)
+
+    assert app._handle_key(app._ABORT_ACTIVATE_KEY) is True
+    assert runner.abort_history == [True]
+    assert app._abort_hotkey_state is True
+
+    assert app._handle_key(app._ABORT_RELEASE_KEY) is True
+    assert runner.abort_history == [True, False]
+    assert app._abort_hotkey_state is False
+    assert app._input_buffer == []
+
+
+def test_sysop_console_app_idle_cycle_flushes_hotkey_resets() -> None:
+    # Why: guard against missed toggle releases by syncing pending hotkey states during idle ticks.
+    console = RecordingConsoleService()
+    runner = HotkeyRecordingRunner(console)
+    app = SysopConsoleApp(console, runner=runner)
+
+    app._pause_hotkey_state = True
+    app._pause_hotkey_synced = False
+    app._abort_hotkey_state = True
+    app._abort_hotkey_synced = False
+
+    app._run_idle_cycle()
+
+    assert runner.pause_history == [True]
+    assert runner.abort_history == [True]
+    assert app._pause_hotkey_synced is True
+    assert app._abort_hotkey_synced is True
 
 class FakeCursesWindow:
     def __init__(self, inputs: Sequence[int], input_row: int) -> None:
