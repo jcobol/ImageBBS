@@ -1,6 +1,7 @@
 from __future__ import annotations
 from imagebbs import MessageEditor
 from imagebbs.device_context import ConsoleService
+from imagebbs.runtime.configuration_editor import ConfigurationEditorModule
 from imagebbs.runtime.main_menu import MainMenuEvent, MainMenuModule
 from imagebbs.runtime.sysop_options import SysopOptionsModule
 from imagebbs.session_kernel import SessionKernel, SessionState
@@ -165,6 +166,17 @@ def test_main_menu_routes_to_sysop_options() -> None:
     console_service = kernel.services["console"]
     assert isinstance(console_service, ConsoleService)
     assert module.MENU_HEADER_SLOT in console_service.macro_glyphs
+
+
+# Why: ensure main menu selections dispatch the configuration editor module.
+def test_main_menu_routes_to_configuration_editor() -> None:
+    kernel, module = _bootstrap_kernel()
+    kernel.step(MainMenuEvent.ENTER)
+
+    state = kernel.step(MainMenuEvent.SELECTION, "cf")
+
+    assert state is SessionState.CONFIGURATION_EDITOR
+    assert isinstance(kernel.module, ConfigurationEditorModule)
 
 
 def test_main_menu_exit_terminates_kernel() -> None:
