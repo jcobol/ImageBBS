@@ -11,13 +11,17 @@ def test_translate_petscii_returns_glyph_and_reverse_flag() -> None:
 @pytest.mark.parametrize(
     "byte, expected",
     [
+        (0x05, "{WHITE}"),
         (0x41, "A"),
         (0x8D, "\n"),
         (0xC1, "A"),
-        (0xFF, "{CBM-$FF}"),
+        (0x11, "{CURSOR-DOWN}"),
+        (0x91, "{CURSOR-UP}"),
+        (0xFF, "{SHIFT-POUND}"),
     ],
 )
 def test_petscii_to_cli_glyph(byte: int, expected: str) -> None:
+    # Why: Confirm PETSCII bytes resolve to stable CLI glyphs that documentation examples can rely on.
     assert petscii.petscii_to_cli_glyph(byte) == expected
 
 
@@ -60,4 +64,16 @@ def test_decoder_reset_restores_state() -> None:
     decoder.reset()
 
     assert decoder.feed([ord("A")]) == "A"
+
+
+def test_decoder_emits_descriptive_tokens() -> None:
+    decoder = petscii.PetsciiStreamDecoder()
+
+    # Why: Surface human-readable placeholders for unmapped PETSCII so transcripts retain diagnostic fidelity.
+    assert decoder.decode([0xFF]) == "{SHIFT-POUND}"
+
+    decoder.reset()
+
+    # Why: Guard against control-byte labels appearing when cursor movement remains handled internally.
+    assert decoder.decode([0x91, ord("A")]) == "A"
 
