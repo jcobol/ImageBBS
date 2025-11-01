@@ -77,6 +77,7 @@ def test_telnet_transport_applies_custom_idle_interval() -> None:
         def set_indicator_controller(self, controller) -> None:
             # Why: accept controller wiring performed during transport start-up.
             self.indicator_controller = controller
+            self._indicator_controller = controller
 
         def set_pause_indicator_state(self, active: bool) -> None:
             # Why: provide the hook consumed by Telnet pause tokens.
@@ -196,7 +197,9 @@ def test_telnet_transport_collects_editor_submission_with_custom_tokens() -> Non
             self.abort_states.append(active)
 
         def set_indicator_controller(self, controller) -> None:
+            # Why: capture instrumentation-supplied controllers so editor prompts reflect pause state.
             self.indicator_controller = controller
+            self._indicator_controller = controller
 
         def read_output(self) -> str:
             return ""
@@ -327,7 +330,9 @@ def test_telnet_transport_updates_idle_timer_via_instrumentation() -> None:
             return self.state
 
         def set_indicator_controller(self, controller) -> None:
+            # Why: expose controller swaps so instrumentation honours idle loop configuration.
             self._indicator = controller
+            self._indicator_controller = controller
 
     async def _exercise() -> None:
         console = FakeConsole()
@@ -459,7 +464,9 @@ def test_telnet_transport_forwards_indicator_controller_without_instrumentation(
             return self.state
 
         def set_indicator_controller(self, controller) -> None:  # pragma: no cover - unused
+            # Why: record controller bindings so instrumentation cache comparisons succeed in tests.
             self._indicator = controller
+            self._indicator_controller = controller
 
         def requires_editor_submission(self) -> bool:  # pragma: no cover - unused
             return False
@@ -545,7 +552,9 @@ def test_telnet_transport_filters_pause_tokens_and_updates_indicator() -> None:
             return self.state
 
         def set_indicator_controller(self, controller) -> None:
+            # Why: retain instrumentation controllers so pause signals surface during assertions.
             self.indicator_controller = controller
+            self._indicator_controller = controller
 
         def set_pause_indicator_state(self, active: bool) -> None:
             self.pause_states.append(active)
@@ -617,7 +626,9 @@ def test_telnet_transport_pauses_outbound_until_resume() -> None:
             return self.state
 
         def set_indicator_controller(self, controller) -> None:
+            # Why: mirror transport wiring so cached instrumentation controllers remain authoritative.
             self.indicator_controller = controller
+            self._indicator_controller = controller
 
         def set_pause_indicator_state(self, active: bool) -> None:
             self.pause_states.append(active)
@@ -935,7 +946,9 @@ def test_telnet_transport_handles_empty_editor_cycles_gracefully() -> None:
             return False
 
         def set_indicator_controller(self, controller) -> None:
+            # Why: surface instrumentation controller state so carrier assertions reflect transport activity.
             self.indicator_controller = controller
+            self._indicator_controller = controller
 
     async def _exercise() -> StubIndicatorController:
         console = FakeConsole()
