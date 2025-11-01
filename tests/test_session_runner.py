@@ -36,7 +36,7 @@ class DummyIndicatorController:
         self.abort_updates.append(active)
 
 
-# Why: validate that indicator controllers are synchronised and exposed via the kernel context when registered.
+# Why: validate that indicator controllers are synchronised, exposed via the kernel context, and withdrawn from services when cleared.
 def test_session_runner_registers_indicator_controller(runner: SessionRunner) -> None:
     controller = DummyIndicatorController()
 
@@ -62,6 +62,12 @@ def test_session_runner_registers_indicator_controller(runner: SessionRunner) ->
 
     assert controller.pause_updates == [True, False]
     assert controller.abort_updates == [True, False]
+
+    runner.set_indicator_controller(None)
+
+    service_registry = context.service_registry
+    assert "indicator_controller" not in service_registry
+    assert "console" in service_registry
 
 
 def test_session_runner_initialises_and_emits_enter(runner: SessionRunner) -> None:

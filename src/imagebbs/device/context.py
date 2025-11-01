@@ -1928,6 +1928,12 @@ class DeviceContext:
 
         self.services[name] = service
 
+    # Why: allow subsystems to withdraw services so consumers never interact with obsolete dependencies.
+    def unregister_service(self, name: str) -> None:
+        """Remove the service associated with ``name`` when present."""
+
+        self.services.pop(name, None)
+
     def register_console_device(self, console: Console | None = None) -> ConsoleService:
         """Register a console device and expose the service wrapper."""
 

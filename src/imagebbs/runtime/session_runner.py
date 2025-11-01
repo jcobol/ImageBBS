@@ -180,13 +180,18 @@ class SessionRunner:
             buffer.append(output.popleft())
         return "".join(buffer)
 
-    # Why: integrate indicator controllers with console state and service registration for downstream consumers.
+    # Why: integrate indicator controllers with console state and keep the service registry aligned when controllers change.
     def set_indicator_controller(
         self, controller: "IndicatorController" | None
     ) -> None:
         """Register ``controller`` to mirror pause/abort signals."""
 
+        register_service = getattr(self.kernel.context, "register_service", None)
+        unregister_service = getattr(self.kernel.context, "unregister_service", None)
+
         if controller is None:
+            if callable(unregister_service):
+                unregister_service("indicator_controller")
             self._indicator_controller = None
             return
 
@@ -196,7 +201,6 @@ class SessionRunner:
         if callable(sync_from_console):
             sync_from_console()
 
-        register_service = getattr(self.kernel.context, "register_service", None)
         if callable(register_service):
             register_service("indicator_controller", controller)
 
