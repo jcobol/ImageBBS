@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import threading
 import time
 from pathlib import Path
 
@@ -180,4 +182,90 @@ def test_message_store_lock_times_out_under_contention(
         assert elapsed >= 0.1
     finally:
         holder.release()
+
+
+def test_message_store_lock_times_out_when_os_lock_held_unix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Why: confirm OS-level lock contention triggers the same timeout path on Unix hosts.
+    if os.name == "nt":
+        pytest.skip("Unix-specific assertion")
+
+    monkeypatch.setenv("IMAGEBBS_MESSAGE_LOCK_TIMEOUT", "0.2")
+    path = tmp_path / "messages.json"
+    lock_path = path.parent / f"{path.name}.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+
+    ready = threading.Event()
+    release = threading.Event()
+
+    def holder() -> None:
+        # Why: occupy the fcntl lock to simulate inter-process contention.
+        import fcntl
+
+        with open(lock_path, "a+b") as handle:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            ready.set()
+            try:
+                release.wait()
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+    thread = threading.Thread(target=holder, name="unix-lock-holder", daemon=True)
+    thread.start()
+    assert ready.wait(timeout=5)
+
+    competitor = message_store_lock(path)
+    start_time = time.monotonic()
+    with pytest.raises(TimeoutError, match="Timed out acquiring message store lock"):
+        competitor.acquire(owner_id=3)
+    elapsed = time.monotonic() - start_time
+    assert elapsed >= 0.2
+
+    release.set()
+    thread.join(timeout=5)
+    assert not thread.is_alive()
+
+
+def test_message_store_lock_times_out_when_os_lock_held_windows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Why: confirm OS-level lock contention triggers the same timeout path on Windows hosts.
+    if os.name != "nt":
+        pytest.skip("Windows-specific assertion")
+
+    import msvcrt
+
+    monkeypatch.setenv("IMAGEBBS_MESSAGE_LOCK_TIMEOUT", "0.2")
+    path = tmp_path / "messages.json"
+    lock_path = path.parent / f"{path.name}.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+
+    ready = threading.Event()
+    release = threading.Event()
+
+    def holder() -> None:
+        # Why: occupy the Windows byte-range lock to simulate inter-process contention.
+        with open(lock_path, "a+b") as handle:
+            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+            ready.set()
+            try:
+                release.wait()
+            finally:
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+
+    thread = threading.Thread(target=holder, name="windows-lock-holder", daemon=True)
+    thread.start()
+    assert ready.wait(timeout=5)
+
+    competitor = message_store_lock(path)
+    start_time = time.monotonic()
+    with pytest.raises(TimeoutError, match="Timed out acquiring message store lock"):
+        competitor.acquire(owner_id=4)
+    elapsed = time.monotonic() - start_time
+    assert elapsed >= 0.2
+
+    release.set()
+    thread.join(timeout=5)
+    assert not thread.is_alive()
 
