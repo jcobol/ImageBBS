@@ -7,7 +7,7 @@ from typing import ClassVar, Iterable, Mapping, Optional, Literal
 
 from ..ampersand_dispatcher import AmpersandDispatcher
 from ..ampersand_registry import AmpersandRegistry
-from ..device_context import ConsoleService, ModemTransport
+from ..device_context import ConsoleService, DeviceError, ModemTransport
 from ..session_kernel import SessionKernel, SessionState
 from .file_library import FileLibraryModule
 from .file_transfer_protocols import (
@@ -18,6 +18,7 @@ from .file_transfer_protocols import (
 )
 from .macro_rendering import render_macro_with_overlay_commit
 from .masked_pane_staging import MaskedPaneMacro
+from .indicator_controller import IndicatorController
 
 class FileTransferMenuState(Enum):
     """Internal states exposed by :class:`FileTransfersModule`."""
@@ -67,6 +68,9 @@ class FileTransfersModule:
     active_drive_slot: int = field(init=False, default=1)
     _console: ConsoleService | None = field(init=False, default=None)
     _dispatcher: AmpersandDispatcher | None = field(init=False, default=None)
+    _indicator_controller: IndicatorController | None = field(
+        init=False, default=None
+    )
     library_module_factory: type[FileLibraryModule] = FileLibraryModule
     transfer_state_factory: type[TransferSessionState] = TransferSessionState
     _transfer_state: TransferSessionState | None = field(init=False, default=None)
@@ -182,7 +186,7 @@ class FileTransfersModule:
         {"Q", "EX", "LG", "AT", "BA", "EP", "QM"}
     )
 
-    # Why: wire services, reset session state, and honour persisted protocol defaults.
+    # Why: wire services, capture indicator controllers, reset session state, and honour persisted protocol defaults.
     def start(self, kernel: SessionKernel) -> SessionState:
         """Bind runtime services and render the introductory macros."""
 
@@ -192,6 +196,16 @@ class FileTransfersModule:
         if not isinstance(console, ConsoleService):
             raise TypeError("console service missing from session kernel")
         self._console = console
+        context = getattr(kernel, "context", None)
+        controller: IndicatorController | None = None
+        if context is not None:
+            try:
+                candidate = context.get_service("indicator_controller")
+            except DeviceError:
+                candidate = None
+            if isinstance(candidate, IndicatorController):
+                controller = candidate
+        self._indicator_controller = controller
         self.rendered_slots.clear()
         self.last_command = ""
         self.state = FileTransferMenuState.INTRO
@@ -507,8 +521,19 @@ class FileTransfersModule:
         else:
             state.credits = max(0, state.credits + delta)
 
-    # Why: toggle pause/abort indicators while a transfer is active.
+    # Why: toggle pause/abort indicators while a transfer is active, preferring indicator controllers when available.
     def _set_transfer_indicators(self, active: bool) -> None:
+        controller = self._indicator_controller
+        if isinstance(controller, IndicatorController):
+            if active:
+                controller.pause_colour = 2
+                controller.abort_colour = 2
+            else:
+                controller.pause_colour = None
+                controller.abort_colour = None
+            controller.set_pause(active)
+            controller.set_abort(active)
+            return
         if not isinstance(self._console, ConsoleService):
             return
         if active:
