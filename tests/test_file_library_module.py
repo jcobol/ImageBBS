@@ -134,7 +134,7 @@ def test_library_module_prefers_host_entries(tmp_path: Path) -> None:
 
 
 def test_library_module_adds_to_host_directory(tmp_path: Path) -> None:
-    kernel, _module, _ = _bootstrap_kernel_with_storage(tmp_path)
+    kernel, _module, library_root = _bootstrap_kernel_with_storage(tmp_path)
     kernel.step(FileTransferEvent.ENTER)
     kernel.step(FileTransferEvent.COMMAND, "UD")
 
@@ -149,10 +149,35 @@ def test_library_module_adds_to_host_directory(tmp_path: Path) -> None:
     output = "".join(console.device.output)
     assert "Added NEWFILE" in output
 
+    new_path = library_root / "NEWFILE"
+    assert new_path.exists()
+
+    identifier = module._active_identifier
+    entries_after_add = list(module._entries_by_id[identifier])
+    assert any(entry.filename == "NEWFILE" for entry in entries_after_add)
+    new_entry_number = next(
+        entry.number for entry in entries_after_add if entry.filename == "NEWFILE"
+    )
+
     console.device.output.clear()
     kernel.step(FileLibraryEvent.COMMAND, "S")
     listing = "".join(console.device.output)
     assert "NEWFILE" in listing
+
+    console.device.output.clear()
+    kernel.step(FileLibraryEvent.COMMAND, f"K {new_entry_number}")
+    removal_output = "".join(console.device.output)
+    assert "Removed entry" in removal_output
+
+    assert not new_path.exists()
+
+    entries_after_delete = list(module._entries_by_id[identifier])
+    assert all(entry.filename != "NEWFILE" for entry in entries_after_delete)
+
+    console.device.output.clear()
+    kernel.step(FileLibraryEvent.COMMAND, "S")
+    final_listing = "".join(console.device.output)
+    assert "NEWFILE" not in final_listing
 
 
 def test_library_module_rejects_read_only_host_directory(tmp_path: Path) -> None:
