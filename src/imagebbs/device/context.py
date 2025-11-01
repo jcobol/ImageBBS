@@ -908,10 +908,33 @@ class ConsoleFramePayload:
     abort_char: int
     carrier_char: int
     spinner_char: int
+    pause_colour: int
+    abort_colour: int
+    carrier_colour: int
+    spinner_colour: int
     pause_active: bool
     abort_active: bool
     carrier_active: bool
     idle_timer_digits: Tuple[int, int, int]
+
+
+@dataclass(frozen=True)
+class IndicatorCellSnapshot:
+    """Tuple mapping a console indicator cell to its glyph and colour."""
+
+    glyph: int
+    colour: int
+
+
+@dataclass(frozen=True)
+class IndicatorSnapshot:
+    """Aggregate view of indicator glyph/colour pairs."""
+
+    pause: IndicatorCellSnapshot
+    abort: IndicatorCellSnapshot
+    spinner: IndicatorCellSnapshot
+    carrier_leading: IndicatorCellSnapshot
+    carrier_indicator: IndicatorCellSnapshot
 
 
 @dataclass
@@ -1021,6 +1044,13 @@ class ConsoleService:
             offset = clamp_offset(address)
             return screen_payload[offset]
 
+        def read_colour(address: int, *, default: int) -> int:
+            # Why: colour exports must follow the same clamp rules so missing RAM mirrors real hardware fallbacks.
+            if total_cells <= 0 or not colour_payload:
+                return int(default) & 0xFF
+            offset = clamp_offset(address)
+            return colour_payload[offset]
+
         def indicator_active(code: int) -> bool:
             value = int(code) & 0xFF
             return value not in (0x00, 0x20)
@@ -1031,6 +1061,12 @@ class ConsoleService:
             self._CARRIER_INDICATOR_SCREEN_ADDRESS, default=0x20
         )
         spinner_char = read_screen(self._SPINNER_SCREEN_ADDRESS, default=0x20)
+        pause_colour = read_colour(self._PAUSE_SCREEN_ADDRESS, default=0x00)
+        abort_colour = read_colour(self._ABORT_SCREEN_ADDRESS, default=0x00)
+        carrier_colour = read_colour(
+            self._CARRIER_INDICATOR_SCREEN_ADDRESS, default=0x00
+        )
+        spinner_colour = read_colour(self._SPINNER_SCREEN_ADDRESS, default=0x00)
 
         idle_timer_digits = tuple(
             read_screen(address, default=0x30)
@@ -1076,10 +1112,43 @@ class ConsoleService:
             abort_char=abort_char,
             carrier_char=carrier_char,
             spinner_char=spinner_char,
+            pause_colour=pause_colour,
+            abort_colour=abort_colour,
+            carrier_colour=carrier_colour,
+            spinner_colour=spinner_colour,
             pause_active=indicator_active(pause_char),
             abort_active=indicator_active(abort_char),
             carrier_active=indicator_active(carrier_char),
             idle_timer_digits=tuple(int(digit) & 0xFF for digit in idle_timer_digits),
+        )
+
+    def indicator_snapshot(self) -> IndicatorSnapshot:
+        """Return a consolidated view of indicator glyphs and colours."""
+
+        # Why: Higher layers need a single call that surfaces indicator glyph/colour pairs without duplicating peek logic.
+
+        def read_cell(screen_address: int) -> IndicatorCellSnapshot:
+            colour_address = self._colour_address_for(screen_address)
+            screen_bytes, colour_bytes = self.peek_block(
+                screen_address=screen_address,
+                screen_length=1,
+                colour_address=colour_address,
+                colour_length=1,
+            )
+            glyph = 0x20
+            colour = 0x00
+            if screen_bytes:
+                glyph = int(screen_bytes[0]) & 0xFF
+            if colour_bytes:
+                colour = int(colour_bytes[0]) & 0xFF
+            return IndicatorCellSnapshot(glyph=glyph, colour=colour)
+
+        return IndicatorSnapshot(
+            pause=read_cell(self._PAUSE_SCREEN_ADDRESS),
+            abort=read_cell(self._ABORT_SCREEN_ADDRESS),
+            spinner=read_cell(self._SPINNER_SCREEN_ADDRESS),
+            carrier_leading=read_cell(self._CARRIER_LEADING_SCREEN_ADDRESS),
+            carrier_indicator=read_cell(self._CARRIER_INDICATOR_SCREEN_ADDRESS),
         )
 
     @property
@@ -2166,6 +2235,8 @@ __all__ = [
     "Console",
     "ConsoleService",
     "ConsoleFramePayload",
+    "IndicatorCellSnapshot",
+    "IndicatorSnapshot",
     "ConsoleRegionBuffer",
     "DeviceContext",
     "DeviceError",

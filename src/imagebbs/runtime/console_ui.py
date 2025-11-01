@@ -40,6 +40,10 @@ class ConsoleFrame:
     abort_active: bool
     carrier_active: bool
     spinner_char: int
+    pause_colour: int
+    abort_colour: int
+    carrier_colour: int
+    spinner_colour: int
     pause_position: Tuple[int, int]
     abort_position: Tuple[int, int]
     carrier_position: Tuple[int, int]
@@ -208,6 +212,10 @@ class SysopConsoleApp:
             abort_active=payload.abort_active,
             carrier_active=payload.carrier_active,
             spinner_char=payload.spinner_char,
+            pause_colour=int(payload.pause_colour),
+            abort_colour=int(payload.abort_colour),
+            carrier_colour=int(payload.carrier_colour),
+            spinner_colour=int(payload.spinner_colour),
             pause_position=pause_position,
             abort_position=abort_position,
             carrier_position=carrier_position,

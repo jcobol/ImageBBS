@@ -16,6 +16,11 @@ def _resolve_palette_colour(value: int, palette: tuple[int, ...], *, default_ind
     return palette[default_index]
 
 
+def _colour_address(service: ConsoleService, screen_address: int) -> int:
+    # Why: reuse service offsets so indicator tests write to matching colour cells.
+    return service._COLOUR_BASE + (screen_address - service._SCREEN_BASE)
+
+
 def test_poke_screen_byte_updates_screen_without_transcript() -> None:
     console = Console()
 
@@ -132,4 +137,54 @@ def test_carrier_indicator_helper_updates_both_cells() -> None:
     assert console.screen.peek_colour_address(0xD800) == leading_colour
     assert console.screen.peek_colour_address(0xD827) == indicator_colour
     assert console.transcript_bytes == b""
+
+
+def test_indicator_snapshot_reports_glyphs_and_colours() -> None:
+    console = Console()
+    service = ConsoleService(console)
+
+    console.poke_screen_byte(service._PAUSE_SCREEN_ADDRESS, 0xD0)
+    console.poke_screen_byte(service._ABORT_SCREEN_ADDRESS, 0xC1)
+    console.poke_screen_byte(service._SPINNER_SCREEN_ADDRESS, 0xC8)
+    console.poke_screen_byte(service._CARRIER_LEADING_SCREEN_ADDRESS, 0xA0)
+    console.poke_screen_byte(service._CARRIER_INDICATOR_SCREEN_ADDRESS, 0xFA)
+
+    console.screen.poke_colour_address(
+        _colour_address(service, service._PAUSE_SCREEN_ADDRESS), 0x01
+    )
+    console.screen.poke_colour_address(
+        _colour_address(service, service._ABORT_SCREEN_ADDRESS), 0x02
+    )
+    console.screen.poke_colour_address(
+        _colour_address(service, service._SPINNER_SCREEN_ADDRESS), 0x03
+    )
+    console.screen.poke_colour_address(
+        _colour_address(service, service._CARRIER_LEADING_SCREEN_ADDRESS), 0x04
+    )
+    console.screen.poke_colour_address(
+        _colour_address(service, service._CARRIER_INDICATOR_SCREEN_ADDRESS), 0x05
+    )
+
+    snapshot = service.indicator_snapshot()
+
+    assert snapshot.pause.glyph == 0xD0
+    assert snapshot.pause.colour == console.screen.peek_colour_address(
+        _colour_address(service, service._PAUSE_SCREEN_ADDRESS)
+    )
+    assert snapshot.abort.glyph == 0xC1
+    assert snapshot.abort.colour == console.screen.peek_colour_address(
+        _colour_address(service, service._ABORT_SCREEN_ADDRESS)
+    )
+    assert snapshot.spinner.glyph == 0xC8
+    assert snapshot.spinner.colour == console.screen.peek_colour_address(
+        _colour_address(service, service._SPINNER_SCREEN_ADDRESS)
+    )
+    assert snapshot.carrier_leading.glyph == 0xA0
+    assert snapshot.carrier_leading.colour == console.screen.peek_colour_address(
+        _colour_address(service, service._CARRIER_LEADING_SCREEN_ADDRESS)
+    )
+    assert snapshot.carrier_indicator.glyph == 0xFA
+    assert snapshot.carrier_indicator.colour == console.screen.peek_colour_address(
+        _colour_address(service, service._CARRIER_INDICATOR_SCREEN_ADDRESS)
+    )
 

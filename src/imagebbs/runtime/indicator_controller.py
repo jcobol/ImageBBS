@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Sequence
 
-from ..device_context import ConsoleService
+from ..device_context import ConsoleService, IndicatorSnapshot
 
 _SPACE_GLYPH = 0x20
 _PAUSE_GLYPH = 0xD0
@@ -45,7 +45,7 @@ class IndicatorController:
     )
 
     def __post_init__(self) -> None:
-        # Refresh cached colours immediately so overlay defaults are honoured before we touch the screen.
+        # Why: Refresh cached colours immediately so overlay defaults are honoured before we touch the screen.
         self._refresh_indicator_colour_cache()
 
     def sync_from_console(
@@ -59,38 +59,31 @@ class IndicatorController:
     ) -> None:
         """Refresh cached indicator state from the console without mutating it."""
 
-        # Keep the colour cache aligned with console RAM so later writes reuse the operator's palette.
-        self._refresh_indicator_colour_cache()
+        # Why: Gather a single snapshot so indicator cache updates and state detection reference identical RAM reads.
+        snapshot = self.console.indicator_snapshot()
+        self._refresh_indicator_colour_cache(snapshot)
 
         if pause_active is None:
-            pause_value = self._peek_screen_byte(self.console._PAUSE_SCREEN_ADDRESS)
-            if pause_value is not None:
-                pause_active = bool(pause_value == _PAUSE_GLYPH)
+            pause_value = snapshot.pause.glyph
+            pause_active = bool(pause_value == _PAUSE_GLYPH)
         if pause_active is not None:
             self._pause_active = pause_active
 
         if abort_active is None:
-            abort_value = self._peek_screen_byte(self.console._ABORT_SCREEN_ADDRESS)
-            if abort_value is not None:
-                abort_active = bool(abort_value == _ABORT_GLYPH)
+            abort_value = snapshot.abort.glyph
+            abort_active = bool(abort_value == _ABORT_GLYPH)
         if abort_active is not None:
             self._abort_active = abort_active
 
         if spinner_glyph is None:
-            spinner_value = self._peek_screen_byte(
-                self.console._SPINNER_SCREEN_ADDRESS
-            )
+            spinner_value = snapshot.spinner.glyph
         else:
             spinner_value = int(spinner_glyph) & 0xFF
-        if spinner_value is not None:
-            spinner_value = int(spinner_value) & 0xFF
-            normalised_spinner_value = spinner_value & _REVERSE_VIDEO_MASK
-        else:
-            normalised_spinner_value = None
+        spinner_value = int(spinner_value) & 0xFF
+        normalised_spinner_value = spinner_value & _REVERSE_VIDEO_MASK
         if spinner_enabled is None:
             spinner_enabled = bool(
-                normalised_spinner_value is not None
-                and normalised_spinner_value
+                normalised_spinner_value
                 != (_SPACE_GLYPH & _REVERSE_VIDEO_MASK)
             )
         if spinner_enabled is not None:
@@ -135,15 +128,11 @@ class IndicatorController:
                     self._spinner_index = 0
 
         if carrier_active is None:
-            leading_value = self._peek_screen_byte(
-                self.console._CARRIER_LEADING_SCREEN_ADDRESS
-            )
-            indicator_value = self._peek_screen_byte(
-                self.console._CARRIER_INDICATOR_SCREEN_ADDRESS
-            )
+            leading_value = snapshot.carrier_leading.glyph
+            indicator_value = snapshot.carrier_indicator.glyph
             carrier_active = bool(
-                (leading_value is not None and leading_value != _SPACE_GLYPH)
-                or (indicator_value is not None and indicator_value != _SPACE_GLYPH)
+                leading_value != _SPACE_GLYPH
+                or indicator_value != _SPACE_GLYPH
             )
         if carrier_active is not None:
             self._carrier_active = carrier_active
@@ -230,44 +219,32 @@ class IndicatorController:
             return _SPACE_GLYPH
         return frames[self._spinner_index % len(frames)]
 
-    def _peek_screen_byte(self, address: int) -> int | None:
-        screen, _ = self.console.peek_block(screen_address=address, screen_length=1)
-        if not screen:
-            return None
-        return screen[0]
-
-    def _refresh_indicator_colour_cache(self) -> None:
-        # Capture indicator colour RAM so writes reuse overlay defaults when overrides are absent.
-        self._pause_colour_cache = self._resolve_indicator_colour(
-            self.pause_colour, self.console._PAUSE_SCREEN_ADDRESS
+    def _refresh_indicator_colour_cache(
+        self, snapshot: IndicatorSnapshot | None = None
+    ) -> None:
+        # Why: Cache colours from a shared snapshot so indicator writes keep console RAM in sync with palette edits.
+        if snapshot is None:
+            snapshot = self.console.indicator_snapshot()
+        self._pause_colour_cache = self._resolve_snapshot_colour(
+            self.pause_colour, snapshot.pause.colour
         )
-        self._abort_colour_cache = self._resolve_indicator_colour(
-            self.abort_colour, self.console._ABORT_SCREEN_ADDRESS
+        self._abort_colour_cache = self._resolve_snapshot_colour(
+            self.abort_colour, snapshot.abort.colour
         )
-        self._carrier_leading_colour_cache = self._resolve_indicator_colour(
-            self.carrier_leading_colour,
-            self.console._CARRIER_LEADING_SCREEN_ADDRESS,
+        self._carrier_leading_colour_cache = self._resolve_snapshot_colour(
+            self.carrier_leading_colour, snapshot.carrier_leading.colour
         )
-        self._carrier_indicator_colour_cache = self._resolve_indicator_colour(
-            self.carrier_indicator_colour,
-            self.console._CARRIER_INDICATOR_SCREEN_ADDRESS,
+        self._carrier_indicator_colour_cache = self._resolve_snapshot_colour(
+            self.carrier_indicator_colour, snapshot.carrier_indicator.colour
         )
 
-    def _resolve_indicator_colour(
-        self, override: int | None, screen_address: int
+    def _resolve_snapshot_colour(
+        self, override: int | None, snapshot_colour: int
     ) -> int | None:
-        # Delegate colour lookups through peek_block so controller writes mirror the console state exactly.
+        # Why: Permit override fallbacks while trusting cached snapshot colours when overrides are absent.
         if override is not None:
             return int(override) & 0xFF
-        colour_address = self.console._COLOUR_BASE + (
-            int(screen_address) - self.console._SCREEN_BASE
-        )
-        _, colours = self.console.peek_block(
-            colour_address=colour_address, colour_length=1
-        )
-        if not colours:
-            return None
-        return colours[0]
+        return int(snapshot_colour) & 0xFF
 
 
 __all__ = ["IndicatorController"]
