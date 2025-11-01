@@ -21,6 +21,7 @@ class SessionState(Enum):
     FILE_TRANSFERS = auto()
     FILE_LIBRARY = auto()
     SYSOP_OPTIONS = auto()
+    CONFIGURATION_EDITOR = auto()
     EXIT = auto()
 
 

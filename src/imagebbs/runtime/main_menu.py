@@ -10,6 +10,7 @@ from ..ampersand_registry import AmpersandRegistry
 from ..device_context import ConsoleService
 from ..message_editor import MessageEditor
 from ..session_kernel import SessionKernel, SessionModule, SessionState
+from .configuration_editor import ConfigurationEditorModule
 from .file_transfers import FileTransfersModule
 from .macro_rendering import render_macro_with_overlay_commit
 from .masked_pane_staging import MaskedPaneMacro
@@ -37,6 +38,7 @@ class MenuCommand(Enum):
     MESSAGE_BASE = auto()
     FILE_TRANSFERS = auto()
     SYSOP = auto()
+    CONFIGURATION_EDITOR = auto()
     EXIT = auto()
     UNKNOWN = auto()
 
@@ -49,6 +51,7 @@ class MainMenuModule:
     message_editor_factory: type[SessionModule] = MessageEditor
     file_transfers_factory: type[SessionModule] = FileTransfersModule
     sysop_options_factory: type[SessionModule] = SysopOptionsModule
+    configuration_editor_factory: type[SessionModule] = ConfigurationEditorModule
     state: MenuState = field(init=False, default=MenuState.INTRO)
     rendered_slots: list[int] = field(init=False, default_factory=list)
     _console: ConsoleService | None = field(init=False, default=None)
@@ -98,6 +101,7 @@ class MainMenuModule:
         MenuCommand.MESSAGE_BASE: SessionState.MESSAGE_EDITOR,
         MenuCommand.FILE_TRANSFERS: SessionState.FILE_TRANSFERS,
         MenuCommand.SYSOP: SessionState.SYSOP_OPTIONS,
+        MenuCommand.CONFIGURATION_EDITOR: SessionState.CONFIGURATION_EDITOR,
         MenuCommand.EXIT: SessionState.EXIT,
     }
 
@@ -123,8 +127,10 @@ class MainMenuModule:
         "CD",
     })
     _SYSOP_CODES: Iterable[str] = frozenset({"SY"})
+    _CONFIGURATION_CODES: Iterable[str] = frozenset({"CF"})
     _EXIT_CODES: Iterable[str] = frozenset({"EX", "LG", "AT", "Q"})
 
+    # Why: attach supporting modules so menu selections transition to their handlers.
     def start(self, kernel: SessionKernel) -> SessionState:
         """Bind registry and register auxiliary modules with ``kernel``."""
 
@@ -147,10 +153,16 @@ class MainMenuModule:
             kernel.register_module(
                 SessionState.SYSOP_OPTIONS, self.sysop_options_factory()
             )
+        if self.configuration_editor_factory is not None:
+            kernel.register_module(
+                SessionState.CONFIGURATION_EDITOR,
+                self.configuration_editor_factory(),
+            )
         self.state = MenuState.INTRO
         self._render_intro()
         return SessionState.MAIN_MENU
 
+    # Why: translate menu events into macro renders and cross-module transitions.
     def handle_event(
         self,
         kernel: SessionKernel,
@@ -184,6 +196,7 @@ class MainMenuModule:
 
     # Internal helpers -----------------------------------------------------
 
+    # Why: map textual selections to high-level command groups.
     def _parse_selection(self, selection: Optional[str]) -> MenuCommand:
         if not selection:
             return MenuCommand.NONE
@@ -199,6 +212,8 @@ class MainMenuModule:
             return MenuCommand.FILE_TRANSFERS
         if prefix in self._SYSOP_CODES:
             return MenuCommand.SYSOP
+        if prefix in self._CONFIGURATION_CODES:
+            return MenuCommand.CONFIGURATION_EDITOR
         return MenuCommand.UNKNOWN
 
     def _render_macro(self, macro: MaskedPaneMacro) -> None:

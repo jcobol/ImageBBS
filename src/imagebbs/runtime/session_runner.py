@@ -11,6 +11,7 @@ from ..message_editor import EditorState, Event as MessageEditorEvent
 from ..message_editor import MessageEditor, SessionContext
 from ..session_kernel import SessionKernel, SessionState
 from ..setup_defaults import SetupDefaults
+from .configuration_editor import ConfigurationEditorEvent
 from .file_transfers import FileTransferEvent
 from .main_menu import MainMenuEvent, MainMenuModule
 from .message_store import MessageStore
@@ -50,6 +51,7 @@ class SessionRunner:
             SessionState.FILE_TRANSFERS: FileTransferEvent.ENTER,
             SessionState.SYSOP_OPTIONS: SysopOptionsEvent.ENTER,
             SessionState.MESSAGE_EDITOR: MessageEditorEvent.ENTER,
+            SessionState.CONFIGURATION_EDITOR: ConfigurationEditorEvent.ENTER,
         },
     )
     _COMMAND_EVENTS: Mapping[SessionState, object] = field(
@@ -59,6 +61,7 @@ class SessionRunner:
             SessionState.FILE_TRANSFERS: FileTransferEvent.COMMAND,
             SessionState.SYSOP_OPTIONS: SysopOptionsEvent.COMMAND,
             SessionState.MESSAGE_EDITOR: MessageEditorEvent.COMMAND_SELECTED,
+            SessionState.CONFIGURATION_EDITOR: ConfigurationEditorEvent.COMMAND,
         },
     )
 
