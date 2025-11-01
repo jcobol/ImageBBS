@@ -9,6 +9,12 @@ from typing import Callable, Tuple, TYPE_CHECKING
 
 from ..device_context import ConsoleService
 from ..petscii import translate_petscii
+from .editor_submission import (
+    DEFAULT_EDITOR_ABORT_COMMAND,
+    DEFAULT_EDITOR_SUBMIT_COMMAND,
+    EditorSubmissionHandler,
+    SyncEditorIO,
+)
 from .indicator_controller import IndicatorController
 from .masked_input import MaskedPaneKeystroke, apply_masked_pane_keystrokes
 
@@ -115,9 +121,13 @@ class SysopConsoleApp:
         screen = getattr(console, "screen", None)
         self.screen_width = getattr(screen, "width", self.SCREEN_WIDTH)
         self.screen_height = getattr(screen, "height", self.SCREEN_HEIGHT)
+        self._default_prompt = "CMD> "
+        self._input_prompt = self._default_prompt
         self._input_buffer: list[str] = []
         self._stop = False
         self._instrumentation = instrumentation
+        self._editor_submit_command = DEFAULT_EDITOR_SUBMIT_COMMAND
+        self._editor_abort_command = DEFAULT_EDITOR_ABORT_COMMAND
 
         masked_width = getattr(console, "masked_pane_width", None)
         if masked_width is None:
@@ -221,6 +231,12 @@ class SysopConsoleApp:
                 state = self.runner.state
                 if state is SessionState.EXIT:
                     break
+                if state is SessionState.MESSAGE_EDITOR and self.runner.requires_editor_submission():
+                    if self._collect_editor_submission(stdscr):
+                        state = self.runner.state
+                        if state is SessionState.EXIT:
+                            break
+                        continue
 
             self._poll_input(stdscr)
             self._run_idle_cycle()
@@ -271,7 +287,7 @@ class SysopConsoleApp:
             except curses.error:
                 continue
 
-        input_row = overlay_row + 2
+        input_row = self._input_row_index()
         self._render_input(stdscr, input_row)
         stdscr.refresh()
 
@@ -374,6 +390,18 @@ class SysopConsoleApp:
         # Why: Approximate BASIC key echoes by mirroring printable ASCII into PETSCII codes.
         return ord(char) & 0xFF
 
+    def _input_row_index(self) -> int:
+        # Why: Anchor the command/input row so editor prompts reuse the same viewport slot.
+        return self.screen_height + 4
+
+    def _set_input_prompt(self, prompt: str) -> None:
+        # Why: Allow editor flows to replace the default "CMD> " prefix while staging user input.
+        self._input_prompt = str(prompt)
+
+    def _restore_default_prompt(self) -> None:
+        # Why: Reset the command prompt after editor submissions hand control back to BASIC loops.
+        self._input_prompt = self._default_prompt
+
     def _poll_input(self, stdscr: "curses._CursesWindow") -> None:
         if self.runner is None:
             return
@@ -418,7 +446,7 @@ class SysopConsoleApp:
         return True
 
     def _render_input(self, stdscr: "curses._CursesWindow", row: int) -> None:
-        prompt = "CMD> "
+        prompt = self._input_prompt
         text = prompt + "".join(self._input_buffer)
         try:
             stdscr.move(row, 0)
@@ -466,6 +494,124 @@ class SysopConsoleApp:
         col = offset % self.screen_width
         return row, col
 
+    def _collect_editor_submission(self, stdscr: "curses._CursesWindow") -> bool:
+        # Why: Bridge editor submission prompts into the curses UI whenever the runner requests input.
+        runner = self.runner
+        if runner is None:
+            return False
+        if not runner.requires_editor_submission():
+            return False
+        handler = EditorSubmissionHandler(
+            runner,
+            submit_command=self._editor_submit_command,
+            abort_command=self._editor_abort_command,
+        )
+        io = _CursesEditorIO(self, stdscr)
+        stdscr.nodelay(False)
+        stdscr.timeout(-1)
+        try:
+            handled = handler.collect_sync(io)
+        finally:
+            stdscr.nodelay(True)
+            stdscr.timeout(0)
+            self._input_buffer.clear()
+            self._reset_masked_pane_input()
+            self._restore_default_prompt()
+            self._render_input(stdscr, self._input_row_index())
+            try:
+                stdscr.refresh()
+            except curses.error:
+                pass
+        return handled
+
+    def _begin_editor_prompt(
+        self,
+        stdscr: "curses._CursesWindow",
+        prompt: str,
+    ) -> None:
+        # Why: Present editor prompts on the command row so keystrokes mirror BASIC's cadence.
+        self._set_input_prompt(prompt)
+        self._input_buffer.clear()
+        self._reset_masked_pane_input()
+        self._render_input(stdscr, self._input_row_index())
+        try:
+            stdscr.refresh()
+        except curses.error:
+            pass
+
+    def _readline_from_editor(
+        self,
+        stdscr: "curses._CursesWindow",
+    ) -> str | None:
+        # Why: Capture synchronous editor input while echoing characters through the masked pane.
+        row = self._input_row_index()
+        self._render_input(stdscr, row)
+        buffer = self._input_buffer
+        while True:
+            key = stdscr.getch()
+            if key == -1:
+                continue
+            if key in (curses.KEY_EXIT, 27):
+                self._stop = True
+                self._reset_masked_pane_input()
+                buffer.clear()
+                self._render_input(stdscr, row)
+                return None
+            if key in (curses.KEY_ENTER, 10, 13):
+                line = "".join(buffer)
+                buffer.clear()
+                self._reset_masked_pane_input()
+                self._render_input(stdscr, row)
+                return line
+            if key in (curses.KEY_BACKSPACE, 127, 8):
+                if buffer:
+                    buffer.pop()
+                    self._stage_masked_input_character(len(buffer), 0x20)
+                self._render_input(stdscr, row)
+                continue
+            if key == 3:
+                self._stop = True
+                self._reset_masked_pane_input()
+                buffer.clear()
+                self._render_input(stdscr, row)
+                return None
+            if 0 <= key < 256:
+                char = chr(key)
+                if char.isprintable():
+                    buffer.append(char)
+                    offset = len(buffer) - 1
+                    glyph = self._glyph_for_char(char)
+                    self._stage_masked_input_character(offset, glyph)
+                    self._render_input(stdscr, row)
+        return None
+
 
 from ..session_kernel import SessionState  # noqa: E402  (circular import guard)
+
+
+class _CursesEditorIO(SyncEditorIO):
+    """Bridge :class:`EditorSubmissionHandler` prompts into the curses UI."""
+
+    def __init__(
+        self,
+        app: SysopConsoleApp,
+        stdscr: "curses._CursesWindow",
+    ) -> None:
+        # Why: capture shared state so synchronous handler calls can manipulate the console UI.
+        self._app = app
+        self._stdscr = stdscr
+
+    def write_line(self, text: str = "") -> None:
+        # Why: no-op placeholder because the runtime already renders the main screen contents.
+        _ = text
+
+    def write_prompt(self, prompt: str) -> None:
+        # Why: delegate prompt rendering so the command row mirrors BASIC message entry prompts.
+        self._app._begin_editor_prompt(self._stdscr, prompt)
+
+    def readline(self) -> str | None:
+        # Why: translate blocking keyboard reads into masked-pane aware text submissions.
+        return self._app._readline_from_editor(
+            self._stdscr,
+        )
 
