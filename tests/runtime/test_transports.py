@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 from collections import deque
 from types import SimpleNamespace
-from typing import Coroutine, Optional
+from typing import Coroutine, Optional, cast
+
+import pytest
 
 from imagebbs.device_context import Console, ConsoleService
 from imagebbs.message_editor import EditorState
@@ -111,6 +113,22 @@ def test_telnet_transport_applies_custom_idle_interval() -> None:
 
     recorded_interval = asyncio.run(_exercise())
     assert recorded_interval == 0.3
+
+
+# Why: verify Telnet transports store poll interval overrides for downstream diagnostics.
+def test_telnet_transport_records_poll_interval() -> None:
+    runner = SimpleNamespace(console=None)
+    reader = cast(asyncio.StreamReader, object())
+    writer = FakeWriter()
+
+    transport = TelnetModemTransport(
+        runner,
+        reader,
+        writer,  # type: ignore[arg-type]
+        poll_interval=0.15,
+    )
+
+    assert transport.poll_interval == pytest.approx(0.15)
 
 
 class StubIndicatorController:
