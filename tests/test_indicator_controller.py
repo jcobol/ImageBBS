@@ -1,3 +1,5 @@
+import pytest
+
 from imagebbs.device_context import Console, ConsoleService
 from imagebbs.runtime.indicator_controller import IndicatorController
 
@@ -175,4 +177,33 @@ def test_indicator_controller_refreshes_colour_cache_on_sync() -> None:
             _colour_address(service, service._PAUSE_SCREEN_ADDRESS)
         )
         == 0x02
+    )
+
+
+@pytest.mark.parametrize("seed_glyph", (0x33, 0xB3))
+def test_indicator_controller_syncs_spinner_phase(seed_glyph: int) -> None:
+    console = Console()
+    service = ConsoleService(console)
+    controller = IndicatorController(service)
+
+    console.poke_screen_byte(service._SPINNER_SCREEN_ADDRESS, seed_glyph)
+
+    controller.sync_from_console()
+
+    spinner_address = service._SPINNER_SCREEN_ADDRESS
+    assert console.screen.peek_screen_address(spinner_address) == seed_glyph
+
+    frames = tuple(int(code) & 0xFF for code in controller.spinner_frames)
+    normalised_seed = seed_glyph & 0x7F
+    matched_index = next(
+        index
+        for index, glyph in enumerate(frames)
+        if (glyph & 0x7F) == normalised_seed
+    )
+
+    controller.on_idle_tick()
+
+    expected_glyph = frames[(matched_index + 1) % len(frames)]
+    assert (
+        console.screen.peek_screen_address(spinner_address) == expected_glyph
     )

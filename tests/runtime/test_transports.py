@@ -512,7 +512,7 @@ def test_telnet_transport_forwards_indicator_controller_without_instrumentation(
     assert controller is not None
     assert len(console.spinner_glyphs) >= 3
     assert console.spinner_glyphs[0] == 0xB0
-    assert console.spinner_glyphs[1] == 0xAE
+    assert console.spinner_glyphs[1] == 0xB1
     assert console.spinner_glyphs[-1] == 0x20
 
 
