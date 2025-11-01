@@ -1,6 +1,11 @@
 from pathlib import Path
 
 from imagebbs.device_context import ConsoleService, DiskDrive, LoopbackModemTransport
+from imagebbs.runtime.file_library import (
+    FileLibraryEvent,
+    FileLibraryModule,
+    FileLibraryState,
+)
 from imagebbs.session_kernel import SessionKernel, SessionState
 from imagebbs.runtime.file_transfers import (
     FileTransferEvent,
@@ -138,16 +143,11 @@ def test_file_transfers_accepts_known_command() -> None:
 
     state = kernel.step(FileTransferEvent.COMMAND, " ud ")
 
-    assert state is SessionState.FILE_TRANSFERS
+    assert state is SessionState.FILE_LIBRARY
     assert module.last_command == "UD"
-    assert module.rendered_slots[-1] == module.MENU_PROMPT_SLOT
-
-    glyphs, colours = _expected_overlay(
-        module, console_service, module.MENU_PROMPT_SLOT
-    )
-    overlay_screen, overlay_colour = _masked_overlay(console_service)
-    assert overlay_screen[:40] == glyphs
-    assert overlay_colour[:40] == colours
+    library_module = kernel.module
+    assert isinstance(library_module, FileLibraryModule)
+    assert library_module.state in {FileLibraryState.INTRO, FileLibraryState.READY}
 
 
 def test_file_transfers_rejects_unknown_command() -> None:
@@ -315,8 +315,13 @@ def test_file_transfers_toggles_binary_mode_for_stream_commands() -> None:
     transport.binary_modes.clear()
 
     state = kernel.step(FileTransferEvent.COMMAND, "UL")
-    assert state is SessionState.FILE_TRANSFERS
-    assert transport.binary_modes == [True]
+    assert state is SessionState.FILE_LIBRARY
+    assert transport.binary_modes == [False]
+    library_module = kernel.module
+    assert isinstance(library_module, FileLibraryModule)
+    kernel.step(FileLibraryEvent.ENTER)
+    kernel.step(FileLibraryEvent.COMMAND, "Q")
+    assert kernel.state is SessionState.FILE_TRANSFERS
 
     state = kernel.step(FileTransferEvent.COMMAND, "ED")
     assert state is SessionState.FILE_TRANSFERS

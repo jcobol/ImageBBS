@@ -19,6 +19,7 @@ class SessionState(Enum):
     MAIN_MENU = auto()
     MESSAGE_EDITOR = auto()
     FILE_TRANSFERS = auto()
+    FILE_LIBRARY = auto()
     SYSOP_OPTIONS = auto()
     EXIT = auto()
 
