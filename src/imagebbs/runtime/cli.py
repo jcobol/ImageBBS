@@ -218,6 +218,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Comma-separated PETSCII codes to use for spinner frames",
     )
+    indicator_group.add_argument(
+        "--no-indicators",
+        dest="no_indicators",
+        action="store_true",
+        help="Disable indicator controller wiring and rely on console fallbacks",
+    )
     return parser.parse_args(argv)
 
 
@@ -271,9 +277,16 @@ def _resolve_indicator_controller_cls() -> type[IndicatorController]:
     return IndicatorController
 
 
+    # Why: allow operators to opt out of indicator instrumentation while keeping screen fallbacks in sync.
 def _install_indicator_controller(
-    runner: SessionRunner, controller_cls: type[IndicatorController] | None
+    runner: SessionRunner,
+    controller_cls: type[IndicatorController] | None,
+    *,
+    indicators_enabled: bool = True,
 ) -> IndicatorController | None:
+    if not indicators_enabled:
+        runner.set_indicator_controller(None)
+        return None
     if controller_cls is None:
         return None
     console = getattr(runner, "console", None)
@@ -405,12 +418,15 @@ async def run_stream_session(
     """Create a runner and bridge it to ``reader``/``writer``."""
 
     runtime_factory = _ensure_factory(factory)
+    indicators_enabled = not getattr(args, "no_indicators", False)
     newline_translation = _resolve_telnet_newline(args.telnet_newline)
     async with _async_runner_with_persistence(args, factory=runtime_factory) as runner:
         # Why: propagate CLI idle timer preferences into instrumentation and transport wiring.
         instrumentation = SessionInstrumentation(
             runner,
-            indicator_controller_cls=_resolve_indicator_controller_cls(),
+            indicator_controller_cls=(
+                _resolve_indicator_controller_cls() if indicators_enabled else None
+            ),
             idle_timer_scheduler_cls=_resolve_idle_timer_scheduler_cls(),
             idle_tick_interval=args.idle_tick_interval,
         )
@@ -542,6 +558,7 @@ def drive_session(
     editor_submit_command: str = DEFAULT_EDITOR_SUBMIT_COMMAND,
     editor_abort_command: str = DEFAULT_EDITOR_ABORT_COMMAND,
     idle_tick_interval: float = 1.0,
+    indicators_enabled: bool = True,
 ) -> SessionState:
     """Drive ``runner`` using ``input_stream`` and ``output_stream``."""
 
@@ -549,7 +566,9 @@ def drive_session(
     # Why: feed CLI-specified idle cadence into shared instrumentation for console loops.
     instrumentation = SessionInstrumentation(
         runner,
-        indicator_controller_cls=_resolve_indicator_controller_cls(),
+        indicator_controller_cls=(
+            _resolve_indicator_controller_cls() if indicators_enabled else None
+        ),
         idle_timer_scheduler_cls=_resolve_idle_timer_scheduler_cls(),
         idle_tick_interval=idle_tick_interval,
     )
@@ -667,6 +686,7 @@ def run_session(
             editor_submit_command=args.editor_submit_command,
             editor_abort_command=args.editor_abort_command,
             idle_tick_interval=args.idle_tick_interval,
+            indicators_enabled=not getattr(args, "no_indicators", False),
         )
 
 
@@ -685,9 +705,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         asyncio.run(run_connect(args, host, port))
         return 0
     runtime_factory = DEFAULT_RUNTIME_SESSION_FACTORY
-    indicator_controller_cls = _resolve_indicator_controller_cls()
+    indicators_enabled = not getattr(args, "no_indicators", False)
+    indicator_controller_cls = (
+        _resolve_indicator_controller_cls() if indicators_enabled else None
+    )
     with _runner_with_persistence(args, factory=runtime_factory) as runner:
-        _install_indicator_controller(runner, indicator_controller_cls)
+        _install_indicator_controller(
+            runner,
+            indicator_controller_cls,
+            indicators_enabled=indicators_enabled,
+        )
         if args.curses_ui:
             instrumentation = SessionInstrumentation(
                 runner,
@@ -709,6 +736,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 editor_submit_command=args.editor_submit_command,
                 editor_abort_command=args.editor_abort_command,
                 idle_tick_interval=args.idle_tick_interval,
+                indicators_enabled=indicators_enabled,
             )
     return 0
 

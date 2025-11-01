@@ -10,7 +10,12 @@ from ..device_context import ConsoleService
 from ..message_editor import EditorState, Event as MessageEditorEvent
 from ..message_editor import MessageEditor, SessionContext
 from ..session_kernel import SessionKernel, SessionState
-from ..setup_defaults import SetupDefaults
+from ..setup_defaults import IndicatorDefaults, SetupDefaults
+
+# Why: mirror overlay glyphs so console fallbacks preserve ImageBBS indicator semantics.
+_SPACE_GLYPH = 0x20
+_PAUSE_GLYPH = 0xD0
+_ABORT_GLYPH = 0xC1
 from .configuration_editor import ConfigurationEditorEvent
 from .file_library import FileLibraryEvent
 from .file_transfers import FileTransferEvent
@@ -213,19 +218,51 @@ class SessionRunner:
         if not already_registered:
             self._indicator_controller = controller
 
+    # Why: reuse CLI palette overrides when console fallbacks paint indicator cells directly.
+    def _indicator_colour_override(self, field: str) -> int | None:
+        indicator_defaults = getattr(self.defaults, "indicator", None)
+        if isinstance(indicator_defaults, IndicatorDefaults):
+            value = getattr(indicator_defaults, field, None)
+            if value is not None:
+                return int(value) & 0xFF
+        return None
+
     def set_pause_indicator_state(self, active: bool) -> None:
         """Forward pause state to the registered indicator controller."""
 
         controller = self._indicator_controller
         if controller is not None:
             controller.set_pause(active)
+            return
+        console = getattr(self, "console", None)
+        setter = getattr(console, "set_pause_indicator", None)
+        if not callable(setter):
+            return
+        glyph = _PAUSE_GLYPH if active else _SPACE_GLYPH
+        colour = self._indicator_colour_override("pause_colour")
+        if colour is not None:
+            setter(glyph, colour=colour)
+        else:
+            setter(glyph)
 
+    # Why: keep abort indicator fallbacks aligned with CLI palette overrides when controllers are absent.
     def set_abort_indicator_state(self, active: bool) -> None:
         """Forward abort state to the registered indicator controller."""
 
         controller = self._indicator_controller
         if controller is not None:
             controller.set_abort(active)
+            return
+        console = getattr(self, "console", None)
+        setter = getattr(console, "set_abort_indicator", None)
+        if not callable(setter):
+            return
+        glyph = _ABORT_GLYPH if active else _SPACE_GLYPH
+        colour = self._indicator_colour_override("abort_colour")
+        if colour is not None:
+            setter(glyph, colour=colour)
+        else:
+            setter(glyph)
 
     def send_command(self, text: str) -> SessionState:
         """Deliver ``text`` to the active module and propagate transitions."""
