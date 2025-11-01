@@ -36,21 +36,31 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
             " Defaults to docs/porting/artifacts/ml-extra-overlay-metadata.json."
         ),
     )
-    parser.add_argument(
+    comparison_group = parser.add_mutually_exclusive_group()
+    comparison_group.add_argument(
         "--baseline",
         type=Path,
-        default=DEFAULT_BASELINE,
+        default=None,
         help=(
             "Baseline metadata snapshot to compare against."
-            " Defaults to docs/porting/artifacts/ml-extra-overlay-metadata.json."
+            " Defaults to docs/porting/artifacts/ml-extra-overlay-metadata.json when"
+            " not running in metadata-only mode."
         ),
+    )
+    comparison_group.add_argument(
+        "--metadata-only",
+        action="store_true",
+        help="Skip baseline comparison and only refresh overlay metadata.",
     )
     parser.add_argument(
         "--if-changed",
         action="store_true",
         help="Only overwrite the metadata JSON when the contents change.",
     )
-    return parser.parse_args(argv)
+    namespace = parser.parse_args(argv)
+    if not namespace.metadata_only and namespace.baseline is None:
+        namespace.baseline = DEFAULT_BASELINE
+    return namespace
 
 
 # Why: Drive the refresh pipeline end-to-end so CI can enforce overlay metadata drift detection.
@@ -58,10 +68,11 @@ def main(argv: List[str] | None = None) -> int:
     """Entry point for the ``ml_extra_refresh_pipeline`` CLI."""
 
     args = parse_args(argv)
+    baseline_path = None if args.metadata_only else args.baseline
     try:
         result = run_baseline_workflow(
             overlay_path=args.overlay,
-            baseline_path=args.baseline,
+            baseline_path=baseline_path,
             metadata_path=args.metadata_json,
             metadata_only_if_changed=args.if_changed,
         )
@@ -77,8 +88,11 @@ def main(argv: List[str] | None = None) -> int:
     else:
         print(f"Metadata snapshot written to: {metadata_path}")
 
+    if args.metadata_only:
+        return 0
+
     diff = result.diff
-    baseline_path = result.baseline_path or args.baseline
+    baseline_path = result.baseline_path or baseline_path
     if diff is None:
         raise SystemExit(
             "baseline comparison requested but metadata snapshot is unavailable"
