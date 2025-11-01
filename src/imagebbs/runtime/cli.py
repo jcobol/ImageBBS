@@ -464,6 +464,7 @@ def drive_session(
 ) -> SessionState:
     """Drive ``runner`` using ``input_stream`` and ``output_stream``."""
 
+    # Why: orchestrate console I/O loops so transport-agnostic tests can drive sessions.
     # Why: feed CLI-specified idle cadence into shared instrumentation for console loops.
     instrumentation = SessionInstrumentation(
         runner,
@@ -478,6 +479,7 @@ def drive_session(
     pause_buffer: list[str] = []
 
     def _flush_pause_buffer() -> None:
+        # Why: deliver buffered output accumulated while paused once the session resumes or exits.
         if not pause_buffer:
             return
         _write_and_flush(output_stream, "".join(pause_buffer))
@@ -507,6 +509,11 @@ def drive_session(
             filtered.append(char)
         return "".join(filtered)
 
+    def _finalize_exit(state: SessionState) -> SessionState:
+        # Why: make sure paused text reaches the console before signalling the terminal session state.
+        _flush_pause_buffer()
+        return state
+
     while True:
         instrumentation.on_idle_cycle()
 
@@ -518,7 +525,7 @@ def drive_session(
                 _write_and_flush(output_stream, flushed)
 
         if runner.state is SessionState.EXIT:
-            return SessionState.EXIT
+            return _finalize_exit(SessionState.EXIT)
 
         if _maybe_collect_editor_submission(
             runner,
@@ -534,17 +541,17 @@ def drive_session(
         except KeyboardInterrupt:  # pragma: no cover - user interrupt
             output_stream.write("\n")
             output_stream.flush()
-            return runner.state
+            return _finalize_exit(runner.state)
 
         if raw_line == "":  # EOF
-            return runner.state
+            return _finalize_exit(runner.state)
 
         line = _strip_pause_tokens(raw_line)
         if not line:
             continue
         runner.send_command(line.rstrip("\r\n"))
         if runner.state is SessionState.EXIT:
-            return SessionState.EXIT
+            return _finalize_exit(SessionState.EXIT)
 
 
 def run_session(
