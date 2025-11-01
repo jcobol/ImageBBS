@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable, Mapping, TYPE_CHECKING
+from typing import Iterable, Mapping
 
 from ..device_context import ConsoleService
 from ..message_editor import EditorState, Event as MessageEditorEvent
@@ -18,9 +18,12 @@ from .main_menu import MainMenuEvent, MainMenuModule
 from .message_store import MessageStore
 from .message_store_repository import save_message_store
 from .sysop_options import SysopOptionsEvent
-
-if TYPE_CHECKING:  # pragma: no cover - imported for type checking only
-    from .indicator_controller import IndicatorController
+from .indicator_controller import (
+    IndicatorController,
+    _ABORT_GLYPH,
+    _PAUSE_GLYPH,
+    _SPACE_GLYPH,
+)
 
 
 @dataclass(slots=True)
@@ -213,19 +216,41 @@ class SessionRunner:
         if not already_registered:
             self._indicator_controller = controller
 
+    # Why: propagate pause toggles to whichever surface owns indicator state, even when no controller is registered.
     def set_pause_indicator_state(self, active: bool) -> None:
         """Forward pause state to the registered indicator controller."""
 
         controller = self._indicator_controller
         if controller is not None:
             controller.set_pause(active)
+            return
 
+        glyph = _PAUSE_GLYPH if active else _SPACE_GLYPH
+        colour = self._indicator_colour_from_console(
+            self.console._PAUSE_SCREEN_ADDRESS
+        )
+        if colour is not None:
+            self.console.set_pause_indicator(glyph, colour=colour)
+        else:
+            self.console.set_pause_indicator(glyph)
+
+    # Why: propagate abort toggles to the console so overlay expectations hold without a controller.
     def set_abort_indicator_state(self, active: bool) -> None:
         """Forward abort state to the registered indicator controller."""
 
         controller = self._indicator_controller
         if controller is not None:
             controller.set_abort(active)
+            return
+
+        glyph = _ABORT_GLYPH if active else _SPACE_GLYPH
+        colour = self._indicator_colour_from_console(
+            self.console._ABORT_SCREEN_ADDRESS
+        )
+        if colour is not None:
+            self.console.set_abort_indicator(glyph, colour=colour)
+        else:
+            self.console.set_abort_indicator(glyph)
 
     def send_command(self, text: str) -> SessionState:
         """Deliver ``text`` to the active module and propagate transitions."""
@@ -289,6 +314,16 @@ class SessionRunner:
             return
 
         self._dispatch(enter_event)
+
+    # Why: reuse the console's palette data when manual indicator updates bypass the controller cache.
+    def _indicator_colour_from_console(self, screen_address: int) -> int | None:
+        colour_address = self.console._colour_address_for(screen_address)
+        _, colour_bytes = self.console.peek_block(
+            colour_address=colour_address, colour_length=1
+        )
+        if colour_bytes:
+            return colour_bytes[0]
+        return None
 
     def _prepare_editor_for_enter(self) -> None:
         module = self._get_message_editor()

@@ -7,6 +7,11 @@ from imagebbs import SessionRunner, SessionState
 from imagebbs.message_editor import EditorState, MessageEditor
 from imagebbs.runtime.file_library import FileLibraryModule
 from imagebbs.runtime.file_transfers import FileTransfersModule
+from imagebbs.runtime.indicator_controller import (
+    _ABORT_GLYPH,
+    _PAUSE_GLYPH,
+    _SPACE_GLYPH,
+)
 from imagebbs.runtime.main_menu import MainMenuModule
 from imagebbs.runtime.message_store import MessageStore
 from imagebbs.runtime.sysop_options import SysopOptionsModule
@@ -69,6 +74,70 @@ def test_session_runner_registers_indicator_controller(runner: SessionRunner) ->
     service_registry = context.service_registry
     assert "indicator_controller" not in service_registry
     assert "console" in service_registry
+
+
+# Why: confirm console indicator bytes toggle when the runner has no controller registered.
+def test_session_runner_updates_indicators_without_controller(
+    runner: SessionRunner,
+) -> None:
+    console = runner.console
+    pause_address = console._PAUSE_SCREEN_ADDRESS
+    abort_address = console._ABORT_SCREEN_ADDRESS
+    pause_colour_address = console._colour_address_for(pause_address)
+    abort_colour_address = console._colour_address_for(abort_address)
+
+    console.device.poke_screen_byte(pause_address, _SPACE_GLYPH)
+    console.device.poke_colour_byte(pause_colour_address, 0x02)
+    console.device.poke_screen_byte(abort_address, _SPACE_GLYPH)
+
+    _, pause_colour_before = console.peek_block(
+        colour_address=pause_colour_address, colour_length=1
+    )
+    assert pause_colour_before == bytes((0x02,))
+    _, abort_colour_before = console.peek_block(
+        colour_address=abort_colour_address, colour_length=1
+    )
+    assert abort_colour_before and len(abort_colour_before) == 1
+
+    runner.set_pause_indicator_state(True)
+    screen_bytes, colour_bytes = console.peek_block(
+        screen_address=pause_address,
+        screen_length=1,
+        colour_address=pause_colour_address,
+        colour_length=1,
+    )
+    assert screen_bytes == bytes((_PAUSE_GLYPH,))
+    assert colour_bytes == pause_colour_before
+
+    runner.set_pause_indicator_state(False)
+    screen_bytes, colour_bytes = console.peek_block(
+        screen_address=pause_address,
+        screen_length=1,
+        colour_address=pause_colour_address,
+        colour_length=1,
+    )
+    assert screen_bytes == bytes((_SPACE_GLYPH,))
+    assert colour_bytes == pause_colour_before
+
+    runner.set_abort_indicator_state(True)
+    screen_bytes, colour_bytes = console.peek_block(
+        screen_address=abort_address,
+        screen_length=1,
+        colour_address=abort_colour_address,
+        colour_length=1,
+    )
+    assert screen_bytes == bytes((_ABORT_GLYPH,))
+    assert colour_bytes == abort_colour_before
+
+    runner.set_abort_indicator_state(False)
+    screen_bytes, colour_bytes = console.peek_block(
+        screen_address=abort_address,
+        screen_length=1,
+        colour_address=abort_colour_address,
+        colour_length=1,
+    )
+    assert screen_bytes == bytes((_SPACE_GLYPH,))
+    assert colour_bytes == abort_colour_before
 
 
 def test_session_runner_initialises_and_emits_enter(runner: SessionRunner) -> None:
