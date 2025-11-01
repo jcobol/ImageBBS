@@ -5,7 +5,7 @@ import ast
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional, Protocol, Tuple
+from typing import Any, Dict, Iterable, Mapping, Optional, Protocol, Tuple
 
 
 class DriveLocator(Protocol):
@@ -174,6 +174,44 @@ class ModemDefaults:
     baud_limit: Optional[int] = None
 
 
+@dataclass(frozen=True)
+class FileLibraryEntry:
+    """Structured metadata describing a single upload/download record."""
+
+    number: int
+    filename: str
+    blocks: int
+    downloads: int
+    description: str
+    uploader: str
+    validated: bool
+
+
+@dataclass(frozen=True)
+class FileLibraryDescriptor:
+    """Configuration surfaced for each logical file-transfer library."""
+
+    code: str
+    identifier: str
+    name: str
+    drive_slot: int
+    directory: str
+    macro: str
+    path: Tuple[str, ...]
+    total_files: int
+    new_files: int
+    credit_balance: int
+    protocol: str
+    subops: Tuple[str, ...]
+    entries: Tuple[FileLibraryEntry, ...] = ()
+
+    @property
+    def display_path(self) -> str:
+        """Return the hierarchical label used when listing directories."""
+
+        return " / ".join(self.path) if self.path else self.name
+
+
 DEFAULT_MODEM_BAUD_LIMIT = 1200
 
 
@@ -209,12 +247,36 @@ class SetupDefaults:
     chat_mode_messages: ChatModeMessages
     macro_modules: Tuple[str, ...]
     modem: ModemDefaults = field(default_factory=ModemDefaults)
+    library_macros: Mapping[str, str] = field(default_factory=dict)
+    file_libraries: Tuple[FileLibraryDescriptor, ...] = field(
+        default_factory=tuple
+    )
 
     @property
     def active_drives(self) -> Tuple[DriveAssignment, ...]:
         """Return the drive slots that point at configured devices."""
 
         return tuple(assignment for assignment in self.drives if assignment.is_configured)
+
+    @property
+    # Why: summarise configured library groups so runtime modules can discover available codes.
+    def library_codes(self) -> Tuple[str, ...]:
+        """Expose the library codes provisioned by the setup stub."""
+
+        return tuple(sorted({entry.code for entry in self.file_libraries}))
+
+    # Why: offer a deterministic ordering so session modules can switch between libraries reliably.
+    def libraries_for_code(self, code: str) -> Tuple[FileLibraryDescriptor, ...]:
+        """Return the libraries matching ``code`` while preserving stub order."""
+
+        normalised = code.upper()
+        return tuple(entry for entry in self.file_libraries if entry.code == normalised)
+
+    # Why: expose introductory text so runtime modules can emulate BASIC's entry banners.
+    def library_macro(self, macro: str) -> Optional[str]:
+        """Return the introductory macro text associated with ``macro``."""
+
+        return self.library_macros.get(macro)
 
     @property
     def last_caller(self) -> str:
@@ -288,6 +350,10 @@ class SetupDefaults:
         chat_messages = ChatModeMessages(**defaults["chat_mode_messages"])
         raw_modem = defaults.get("modem")
         modem_defaults = _derive_modem_defaults(raw_modem)
+        library_macros = _coerce_library_macros(defaults.get("library_macros", {}))
+        library_descriptors = _coerce_library_descriptors(
+            defaults.get("libraries", ())
+        )
 
         stub_overlays = tuple(defaults.get("overlays", ()))
         actual_overlays = extract_overlay_sequence()
@@ -314,6 +380,8 @@ class SetupDefaults:
             chat_mode_messages=chat_messages,
             modem=modem_defaults,
             macro_modules=macro_modules,
+            library_macros=library_macros,
+            file_libraries=library_descriptors,
         )
 
 
@@ -357,6 +425,8 @@ __all__ = [
     "SetupConfig",
     "SetupDefaults",
     "SysopProfile",
+    "FileLibraryDescriptor",
+    "FileLibraryEntry",
     "SetupDataRecords",
     "extract_overlay_sequence",
     "load_setup_data_records",
@@ -403,6 +473,82 @@ def _coerce_optional_int(value: Any) -> Optional[int]:
         return int(value)
     except (TypeError, ValueError) as exc:  # pragma: no cover - defensive guard
         raise ValueError(f"expected integer value, received {value!r}") from exc
+
+
+# Why: normalise stub macro mappings so runtime modules can replay entry banners.
+def _coerce_library_macros(raw: Any) -> Dict[str, str]:
+    if not isinstance(raw, Mapping):
+        return {}
+    macros: Dict[str, str] = {}
+    for key, value in raw.items():
+        macros[str(key)] = str(value)
+    return macros
+
+
+# Why: translate stub file entries into immutable records consumable by runtime modules.
+def _coerce_library_entry(raw: Mapping[str, Any]) -> FileLibraryEntry:
+    return FileLibraryEntry(
+        number=int(raw.get("number", 0)),
+        filename=str(raw.get("filename", "")),
+        blocks=int(raw.get("blocks", 0)),
+        downloads=int(raw.get("downloads", 0)),
+        description=str(raw.get("description", "")),
+        uploader=str(raw.get("uploader", "")),
+        validated=bool(raw.get("validated", False)),
+    )
+
+
+# Why: expose hierarchical library metadata derived from stub dictionaries.
+def _coerce_library_descriptor(raw: Mapping[str, Any]) -> FileLibraryDescriptor:
+    entries_raw = raw.get("entries", ())
+    if isinstance(entries_raw, Mapping):
+        entries_raw = (entries_raw,)
+    entries: Tuple[FileLibraryEntry, ...] = tuple(
+        _coerce_library_entry(entry)
+        for entry in entries_raw
+        if isinstance(entry, Mapping)
+    )
+    path_raw = raw.get("path")
+    if isinstance(path_raw, (list, tuple)):
+        path = tuple(str(segment) for segment in path_raw)
+    elif isinstance(path_raw, str) and path_raw:
+        path = tuple(segment.strip() for segment in path_raw.split("/") if segment.strip())
+    else:
+        path = (str(raw.get("name", "Library")),)
+    subops_raw = raw.get("subops", ())
+    if isinstance(subops_raw, str):
+        subops = (subops_raw,)
+    else:
+        subops = tuple(str(entry) for entry in subops_raw) if isinstance(subops_raw, (list, tuple)) else tuple()
+    return FileLibraryDescriptor(
+        code=str(raw.get("code", "UD")).upper(),
+        identifier=str(raw.get("identifier", "1")),
+        name=str(raw.get("name", "Library")),
+        drive_slot=int(raw.get("drive_slot", 8)),
+        directory=str(raw.get("directory", "")),
+        macro=str(raw.get("macro", "s.UD")),
+        path=path,
+        total_files=int(raw.get("total_files", len(entries))),
+        new_files=int(raw.get("new_files", 0)),
+        credit_balance=int(raw.get("credit_balance", 0)),
+        protocol=str(raw.get("protocol", "Punter")),
+        subops=subops,
+        entries=entries,
+    )
+
+
+# Why: convert the heterogeneous stub library payload into strongly typed descriptors.
+def _coerce_library_descriptors(raw: Any) -> Tuple[FileLibraryDescriptor, ...]:
+    if isinstance(raw, Mapping):
+        raw_iterable = raw.values()
+    else:
+        raw_iterable = raw
+    descriptors: list[FileLibraryDescriptor] = []
+    if isinstance(raw_iterable, Iterable):
+        for entry in raw_iterable:
+            if isinstance(entry, Mapping):
+                descriptors.append(_coerce_library_descriptor(entry))
+    return tuple(descriptors)
 
 
 def _derive_modem_defaults(raw_modem: Any) -> ModemDefaults:

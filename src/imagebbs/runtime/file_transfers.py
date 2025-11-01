@@ -9,6 +9,7 @@ from ..ampersand_dispatcher import AmpersandDispatcher
 from ..ampersand_registry import AmpersandRegistry
 from ..device_context import ConsoleService
 from ..session_kernel import SessionKernel, SessionState
+from .file_library import FileLibraryModule
 from .macro_rendering import render_macro_with_overlay_commit
 from .masked_pane_staging import MaskedPaneMacro
 
@@ -37,6 +38,7 @@ class FileTransfersModule:
     active_drive_slot: int = field(init=False, default=1)
     _console: ConsoleService | None = field(init=False, default=None)
     _dispatcher: AmpersandDispatcher | None = field(init=False, default=None)
+    library_module_factory: type[FileLibraryModule] = FileLibraryModule
 
     MENU_HEADER_MACRO = MaskedPaneMacro.FILE_TRANSFERS_HEADER
     MENU_PROMPT_MACRO = MaskedPaneMacro.FILE_TRANSFERS_PROMPT
@@ -51,6 +53,14 @@ class FileTransfersModule:
     _BINARY_STREAM_COMMANDS: ClassVar[frozenset[str]] = frozenset(
         {"UD", "UL", "UX", "VB", "BB", "RF"}
     )
+    _LIBRARY_COMMAND_CODES: ClassVar[dict[str, str]] = {
+        "UD": "UD",
+        "UL": "UD",
+        "UX": "UX",
+        "VB": "VB",
+        "BB": "BB",
+        "RF": "RF",
+    }
 
     @property
     def MENU_HEADER_SLOT(self) -> int:
@@ -140,6 +150,7 @@ class FileTransfersModule:
         self._render_intro()
         return SessionState.FILE_TRANSFERS
 
+    # Why: translate masked-pane selections into state transitions and auxiliary module launches.
     def handle_event(
         self,
         kernel: SessionKernel,
@@ -171,6 +182,13 @@ class FileTransfersModule:
                 self.last_command = normalised
                 self._set_binary_streaming(kernel, False)
                 return SessionState.MAIN_MENU
+
+            library_code = self._LIBRARY_COMMAND_CODES.get(normalised)
+            if library_code is not None:
+                self.last_command = normalised
+                self._set_binary_streaming(kernel, False)
+                self._register_library_module(kernel, library_code, normalised)
+                return SessionState.FILE_LIBRARY
 
             if normalised == "RD":
                 self.last_command = normalised
@@ -262,6 +280,15 @@ class FileTransfersModule:
             return staging_map.slot(macro)
         except KeyError:
             return self._DEFAULT_MACRO_SLOTS[macro]
+
+    # Why: hand off UD/UX processing to the dedicated library module.
+    def _register_library_module(
+        self, kernel: SessionKernel, code: str, command: str
+    ) -> None:
+        module = self.library_module_factory(
+            library_code=code, invoked_command=command
+        )
+        kernel.register_module(SessionState.FILE_LIBRARY, module)
 
     @staticmethod
     def _normalise_command(selection: Optional[str]) -> str:
