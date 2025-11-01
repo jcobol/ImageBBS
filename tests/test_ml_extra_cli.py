@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import base64
 import gzip
+import hashlib
 import json
 import os
 import subprocess
 import sys
 from pathlib import Path
+
+from datetime import datetime
 
 import pytest
 
@@ -110,6 +113,26 @@ def test_dump_macros_metadata_json_file(
     assert payload["macro_slots"] == [entry.slot for entry in defaults.macros]
     output = capsys.readouterr().out
     assert "slot" in output, "expected macro dump output alongside file write"
+
+
+def test_dump_macros_hashes_json(
+    tmp_path: Path, defaults: ml_extra_defaults.MLExtraDefaults
+) -> None:
+    # Why: Ensure the CLI snapshot exports stable slot hashes for overlay regression tracking.
+    destination = tmp_path / "hashes.json"
+    ml_extra_dump_macros.main(["--hashes-json", str(destination)])
+    payload = json.loads(destination.read_text())
+    assert "timestamp" in payload
+    parsed_timestamp = datetime.fromisoformat(payload["timestamp"].replace("Z", "+00:00"))
+    assert parsed_timestamp.tzinfo is not None
+    overlay_path = Path(payload["overlay"]).resolve()
+    assert overlay_path == ml_extra_defaults.default_overlay_path().resolve()
+    expected_hashes = {
+        f"{entry.slot:02x}": hashlib.sha256(bytes(entry.payload)).hexdigest()
+        for entry in defaults.macros
+    }
+    assert payload["hashes"] == expected_hashes
+    assert list(payload["hashes"].keys()) == sorted(payload["hashes"].keys())
 
 
 def test_dump_flag_strings_cli_output(

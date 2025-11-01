@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, List, Sequence
@@ -89,6 +90,7 @@ def parse_slots(raw: Sequence[str] | None) -> List[int]:
 
 
 def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
+    # Why: Capture CLI parameters so callers can request metadata, hashes, or slot filters.
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "overlay",
@@ -116,6 +118,11 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
         type=Path,
         help="Write overlay metadata to the specified JSON file",
     )
+    parser.add_argument(
+        "--hashes-json",
+        type=Path,
+        help="Write slot-to-hash mappings and overlay metadata to the specified JSON file",
+    )
     return parser.parse_args(argv)
 
 
@@ -132,6 +139,7 @@ def format_report(rows: Iterable[MacroDump]) -> str:
 
 
 def main(argv: List[str] | None = None) -> None:
+    # Why: Drive the CLI workflow so contributors can inspect or persist overlay snapshots.
     args = parse_args(argv)
     defaults = ml_extra_defaults.MLExtraDefaults.from_overlay(args.overlay)
     slots = parse_slots(args.slot)
@@ -143,6 +151,17 @@ def main(argv: List[str] | None = None) -> None:
     if args.metadata_json:
         args.metadata_json.parent.mkdir(parents=True, exist_ok=True)
         args.metadata_json.write_text(json.dumps(metadata, indent=2) + "\n")
+    if args.hashes_json:
+        args.hashes_json.parent.mkdir(parents=True, exist_ok=True)
+        overlay_path = args.overlay or ml_extra_defaults.default_overlay_path()
+        timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        hash_rows = sorted(rows, key=lambda row: row.slot)
+        payload = {
+            "timestamp": timestamp,
+            "overlay": str(overlay_path),
+            "hashes": {f"{row.slot:02x}": row.sha256 for row in hash_rows},
+        }
+        args.hashes_json.write_text(json.dumps(payload, separators=(",", ":")) + "\n")
     if args.json:
         payload: object
         if metadata is None:
