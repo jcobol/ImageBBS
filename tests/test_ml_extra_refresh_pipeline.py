@@ -141,3 +141,56 @@ def test_main_if_changed_updates_file(tmp_path: Path, monkeypatch, capsys):
     assert out[1] == "rendered diff"
 
     assert exit_code == 1
+
+
+# Why: Verify the CLI can refresh metadata without requiring a baseline comparison.
+def test_main_metadata_only_skips_diff(tmp_path: Path, monkeypatch, capsys):
+    metadata_path = tmp_path / "metadata.json"
+
+    recorded_call: dict[str, object] = {}
+
+    fake_result = BaselineWorkflowResult(
+        report=types.SimpleNamespace(metadata_snapshot={"version": "1.2"}),
+        metadata_snapshot={"version": "1.2"},
+        baseline_snapshot=None,
+        diff=None,
+        metadata_path=metadata_path,
+        metadata_updated=True,
+        baseline_path=None,
+        baseline_updated=None,
+    )
+
+    def fake_run_baseline_workflow(**kwargs):
+        recorded_call.update(kwargs)
+        return fake_result
+
+    def fail_render(*_args, **_kwargs):  # pragma: no cover - should not execute
+        raise AssertionError("render_diff_summary should not be called in metadata-only mode")
+
+    monkeypatch.setattr(
+        ml_extra_refresh_pipeline, "run_baseline_workflow", fake_run_baseline_workflow
+    )
+    monkeypatch.setattr(
+        ml_extra_refresh_pipeline.sanity_reporting, "render_diff_summary", fail_render
+    )
+
+    exit_code = ml_extra_refresh_pipeline.main(
+        [
+            "--metadata-json",
+            str(metadata_path),
+            "--metadata-only",
+            "--if-changed",
+        ]
+    )
+
+    out = capsys.readouterr().out.splitlines()
+    assert out == [f"Metadata snapshot updated: {metadata_path}"]
+
+    assert recorded_call == {
+        "overlay_path": None,
+        "baseline_path": None,
+        "metadata_path": metadata_path,
+        "metadata_only_if_changed": True,
+    }
+
+    assert exit_code == 0

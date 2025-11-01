@@ -84,3 +84,34 @@ def test_ml_extra_refresh_console_script(console_script: Path, project_root: Pat
 
     assert failure.returncode == 1
     assert "Drift detected relative" in failure.stdout
+
+
+# Why: Ensure metadata-only mode succeeds without requiring a baseline artifact.
+def test_ml_extra_refresh_console_metadata_only(
+    console_script: Path, project_root: Path, tmp_path: Path
+) -> None:
+    output_path = tmp_path / "metadata-only" / "ml-extra-refresh.json"
+
+    env = os.environ.copy()
+    path_entries = [str(project_root), str(project_root / "src")]
+    existing_path = env.get("PYTHONPATH")
+    if existing_path:
+        path_entries.append(existing_path)
+    env["PYTHONPATH"] = os.pathsep.join(path_entries)
+
+    result = subprocess.run(
+        [
+            str(console_script),
+            "--metadata-json",
+            str(output_path),
+            "--metadata-only",
+        ],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert output_path.exists()
+    assert "Metadata snapshot" in result.stdout
