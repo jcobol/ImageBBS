@@ -165,14 +165,19 @@ def test_run_stream_session_honours_telnet_newline_setting() -> None:
             writer: asyncio.StreamWriter,
             *,
             instrumentation: StubInstrumentation,
+            idle_timer_scheduler_cls: type[IdleTimerScheduler] | None = None,
+            idle_tick_interval: float = 1.0,
             editor_submit_command: str,
             editor_abort_command: str,
             newline_translation: str | None,
         ) -> None:
+            # Why: mirror the production transport signature for newline translation tests.
             self.runner = runner
             self.reader = reader
             self.writer = writer
             self.instrumentation = instrumentation
+            self.idle_timer_scheduler_cls = idle_timer_scheduler_cls
+            self.idle_tick_interval = idle_tick_interval
             self.editor_submit_command = editor_submit_command
             self.editor_abort_command = editor_abort_command
             self.newline_translation = newline_translation
@@ -437,7 +442,13 @@ def test_run_session_pauses_and_flushes_output_on_flow_control() -> None:
             self.idle_ticks += 1
 
     class RecordingScheduler:
-        def __init__(self, console: ConsoleService) -> None:
+        def __init__(
+            self,
+            console: ConsoleService,
+            *,
+            idle_tick_interval: float = 1.0,
+        ) -> None:
+            # Why: expose counters so the test can assert idle loop interactions.
             self.console = console
             self.reset_calls = 0
             self.tick_calls = 0
@@ -542,8 +553,18 @@ def test_run_session_advances_spinner_and_idle_timer() -> None:
     fake_clock = FakeClock([0.0, 1.0, 2.0])
 
     class RecordingScheduler(IdleTimerScheduler):
-        def __init__(self, console: ConsoleService):
-            super().__init__(console, time_source=fake_clock)
+        def __init__(
+            self,
+            console: ConsoleService,
+            *,
+            idle_tick_interval: float = 1.0,
+        ) -> None:
+            # Why: wrap the concrete scheduler so tests can inject a deterministic clock.
+            super().__init__(
+                console,
+                idle_tick_interval=idle_tick_interval,
+                time_source=fake_clock,
+            )
 
     class RecordingIndicatorController(IndicatorController):
         def __init__(self, console: ConsoleService):
@@ -685,10 +706,13 @@ def test_main_installs_indicator_controller_for_curses_ui() -> None:
             *,
             indicator_controller_cls,
             idle_timer_scheduler_cls,
+            idle_tick_interval: float = 1.0,
         ) -> None:
+            # Why: capture instrumentation wiring while tolerating optional idle cadence overrides.
             self.runner = runner
             self.indicator_controller_cls = indicator_controller_cls
             self.idle_timer_scheduler_cls = idle_timer_scheduler_cls
+            self.idle_tick_interval = idle_tick_interval
             self.ensure_calls = 0
             self.reset_calls = 0
             self.indicator_controller: object | None = None

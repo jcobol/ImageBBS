@@ -19,12 +19,15 @@ class SessionInstrumentation:
         *,
         indicator_controller_cls: type[IndicatorController] | None = IndicatorController,
         idle_timer_scheduler_cls: type[IdleTimerScheduler] | None = IdleTimerScheduler,
+        idle_tick_interval: float = 1.0,
     ) -> None:
+        # Why: centralise instrumentation wiring so transports share indicator and timer state.
         self.runner = runner
         self._indicator_controller_cls = indicator_controller_cls
         self._idle_timer_scheduler_cls = idle_timer_scheduler_cls
         self._indicator_controller: IndicatorController | None = None
         self._idle_timer_scheduler: IdleTimerScheduler | None = None
+        self._idle_tick_interval = float(idle_tick_interval)
 
     @property
     def indicator_controller(self) -> IndicatorController | None:
@@ -76,7 +79,10 @@ class SessionInstrumentation:
         console = getattr(self.runner, "console", None)
         if console is None:
             return None
-        scheduler = scheduler_cls(console)
+        scheduler = scheduler_cls(
+            console,
+            idle_tick_interval=self._idle_tick_interval,
+        )
         self._idle_timer_scheduler = scheduler
         return scheduler
 

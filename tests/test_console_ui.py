@@ -1,15 +1,13 @@
 from __future__ import annotations
+import io
 from dataclasses import dataclass
 from typing import Sequence
 
 import pytest
 
 from imagebbs.device_context import Console, ConsoleFramePayload, ConsoleService
-from imagebbs.runtime.console_ui import (
-    IdleTimerScheduler,
-    SysopConsoleApp,
-    translate_petscii,
-)
+from imagebbs.runtime.cli import drive_session
+from imagebbs.runtime.console_ui import IdleTimerScheduler, SysopConsoleApp, translate_petscii
 from imagebbs.runtime.session_instrumentation import SessionInstrumentation
 from imagebbs.session_kernel import SessionState
 
@@ -440,6 +438,33 @@ def test_idle_timer_scheduler_updates_digits_and_preserves_colon() -> None:
     assert console.screen.peek_screen_address(0x04DF) == 0x3A
 
 
+def test_idle_timer_scheduler_honours_custom_interval() -> None:
+    # Why: verify non-default intervals still drive digit updates at the requested cadence.
+    console = RecordingConsoleService()
+    timer_source = FakeMonotonic()
+    timer = IdleTimerScheduler(
+        console,
+        idle_tick_interval=0.5,
+        time_source=timer_source,
+    )
+
+    timer.tick()
+    assert console.digit_history[-1] == (0x30, 0x30, 0x30)
+
+    timer_source.advance(0.4)
+    timer.tick()
+    assert len(console.digit_history) == 1
+
+    timer_source.advance(0.1)
+    timer.tick()
+    assert len(console.digit_history) == 2
+    assert console.digit_history[-1] == (0x30, 0x30, 0x30)
+
+    timer_source.advance(0.6)
+    timer.tick()
+    assert console.digit_history[-1] == (0x30, 0x30, 0x31)
+
+
 def test_idle_timer_scheduler_overwrites_digits_without_transcript() -> None:
     console = RecordingConsoleService()
     timer_source = FakeMonotonic()
@@ -457,6 +482,69 @@ def test_idle_timer_scheduler_overwrites_digits_without_transcript() -> None:
         (0x30, 0x30, 0x32),
     ]
     assert console.device.transcript_bytes == b""
+
+
+def test_drive_session_threads_idle_interval(monkeypatch) -> None:
+    # Why: ensure the synchronous CLI path applies custom idle intervals to scheduler instances.
+    captured: list[float] = []
+
+    class RecordingScheduler(IdleTimerScheduler):
+        def __init__(
+            self,
+            console: ConsoleService,
+            *,
+            idle_tick_interval: float = 1.0,
+            time_source=None,
+        ) -> None:
+            # Why: capture the configured interval so the test can assert correct propagation.
+            captured.append(idle_tick_interval)
+            super().__init__(
+                console,
+                idle_tick_interval=idle_tick_interval,
+                time_source=time_source,
+            )
+
+    monkeypatch.setattr(
+        "imagebbs.runtime.cli._resolve_idle_timer_scheduler_cls",
+        lambda: RecordingScheduler,
+    )
+
+    class RecordingRunner:
+        def __init__(self) -> None:
+            # Why: provide a minimal runner facade so drive_session can instantiate instrumentation.
+            self.console = ConsoleService(Console())
+            self.state = SessionState.MAIN_MENU
+
+        def set_indicator_controller(self, controller) -> None:
+            # Why: record the controller assignment expected by the CLI wiring.
+            self.indicator_controller = controller
+
+        def read_output(self) -> str:
+            # Why: emulate the runner interface without producing output during the loop.
+            return ""
+
+        def set_pause_indicator_state(self, active: bool) -> None:
+            # Why: accept pause toggle requests even though the test never uses them.
+            self.pause_state = active
+
+        def send_command(self, command: str) -> SessionState:
+            # Why: flip to EXIT on any command so drive_session terminates promptly.
+            self.state = SessionState.EXIT
+            return self.state
+
+    runner = RecordingRunner()
+    input_stream = io.StringIO("")
+    output_stream = io.StringIO()
+
+    result = drive_session(
+        runner,
+        input_stream=input_stream,
+        output_stream=output_stream,
+        idle_tick_interval=0.25,
+    )
+
+    assert result is SessionState.MAIN_MENU
+    assert captured == [0.25]
 
 
 def test_sysop_console_app_frame_loop_updates_idle_timer_without_touching_colon() -> None:

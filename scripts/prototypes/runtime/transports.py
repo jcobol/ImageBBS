@@ -230,6 +230,8 @@ class TelnetModemTransport(ModemTransport):
         encoding: str = "latin-1",
         poll_interval: float = 0.02,
         indicator_controller: IndicatorController | None = None,
+        idle_timer_scheduler_cls: type[IdleTimerScheduler] | None = IdleTimerScheduler,
+        idle_tick_interval: float = 1.0,
     ) -> None:
         self.runner = runner
         self.reader = reader
@@ -237,6 +239,9 @@ class TelnetModemTransport(ModemTransport):
         self.encoding = encoding
         self.poll_interval = poll_interval
         self.indicator_controller = indicator_controller
+        # Why: mirror production transport signature for compatibility with legacy tests.
+        self._idle_timer_scheduler_cls = idle_timer_scheduler_cls
+        self._idle_tick_interval = float(idle_tick_interval)
 
         self._loop: asyncio.AbstractEventLoop | None = None
         self._close_event = asyncio.Event()
@@ -259,8 +264,17 @@ class TelnetModemTransport(ModemTransport):
             self.send(initial)
         console = getattr(self.runner, "console", None)
         if console is not None:
-            self._idle_timer_scheduler = IdleTimerScheduler(console)
-            self._idle_timer_scheduler.reset()
+            scheduler_cls = self._idle_timer_scheduler_cls
+            if scheduler_cls is not None:
+                self._idle_timer_scheduler = scheduler_cls(
+                    console,
+                    idle_tick_interval=self._idle_tick_interval,
+                )
+            else:
+                self._idle_timer_scheduler = None
+            if self._idle_timer_scheduler is not None:
+                # Why: ensure legacy harnesses still reset timers when sessions open.
+                self._idle_timer_scheduler.reset()
         self._create_task(self._pump_console())
         self._create_task(self._pump_reader())
 

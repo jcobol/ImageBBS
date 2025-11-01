@@ -73,11 +73,14 @@ class _IndicatorAwareTransportMixin:
         indicator_controller: IndicatorController | None = None,
         instrumentation: SessionInstrumentation | None = None,
         idle_timer_scheduler_cls: type[IdleTimerScheduler] | None = IdleTimerScheduler,
+        idle_tick_interval: float = 1.0,
     ) -> None:
+        # Why: prepare idle indicator helpers so transports toggle carrier and timer states consistently.
         self._instrumentation = instrumentation
         self.indicator_controller = indicator_controller
         self._idle_timer_scheduler_cls = idle_timer_scheduler_cls
         self._idle_timer_scheduler: IdleTimerScheduler | None = None
+        self._idle_tick_interval = float(idle_tick_interval)
 
     def _indicator_on_open(self, runner) -> None:
         instrumentation = self._instrumentation
@@ -96,7 +99,10 @@ class _IndicatorAwareTransportMixin:
             scheduler_cls = self._idle_timer_scheduler_cls
             console = getattr(runner, "console", None)
             if scheduler_cls is not None and console is not None:
-                scheduler = scheduler_cls(console)
+                scheduler = scheduler_cls(
+                    console,
+                    idle_tick_interval=self._idle_tick_interval,
+                )
         self._idle_timer_scheduler = scheduler
         if scheduler is not None:
             scheduler.reset()
@@ -341,6 +347,7 @@ class TelnetModemTransport(_IndicatorAwareTransportMixin, ModemTransport):
         indicator_controller: IndicatorController | None = None,
         instrumentation: SessionInstrumentation | None = None,
         idle_timer_scheduler_cls: type[IdleTimerScheduler] | None = IdleTimerScheduler,
+        idle_tick_interval: float = 1.0,
         editor_submit_command: str = DEFAULT_EDITOR_SUBMIT_COMMAND,
         editor_abort_command: str = DEFAULT_EDITOR_ABORT_COMMAND,
         newline_translation: str | None = None,
@@ -350,7 +357,9 @@ class TelnetModemTransport(_IndicatorAwareTransportMixin, ModemTransport):
             indicator_controller=indicator_controller,
             instrumentation=instrumentation,
             idle_timer_scheduler_cls=idle_timer_scheduler_cls,
+            idle_tick_interval=idle_tick_interval,
         )
+        # Why: maintain runtime handles so Telnet sessions can reflect carrier and idle state.
         self.runner = runner
         self.reader = reader
         self.writer = writer

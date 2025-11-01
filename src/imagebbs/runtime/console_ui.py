@@ -48,31 +48,40 @@ class IdleTimerScheduler:
         self,
         console: ConsoleService,
         *,
+        idle_tick_interval: float = 1.0,
         time_source: Callable[[], float] | None = None,
     ) -> None:
+        # Why: stash configuration so UI refresh code can translate elapsed time into timer digits.
         self.console = console
         self._time_source = time_source or time.monotonic
         self._epoch: float | None = None
         self._last_second: int | None = None
+        interval = float(idle_tick_interval)
+        if interval <= 0.0:
+            interval = 1.0
+        self._tick_interval = interval
 
     def reset(self) -> None:
         """Clear cached timing state so a new session can start at ``0:00``."""
 
+        # Why: reset guards ensure each session restart begins with a clean timer display.
         self._epoch = None
         self._last_second = None
 
     def tick(self) -> None:
         """Advance the idle timer when the elapsed second changes."""
 
+        # Why: honour custom tick cadences so throttled loops still update the timer accurately.
         now = self._time_source()
         if self._epoch is None:
             self._epoch = now
-        elapsed_seconds = int(max(0.0, now - self._epoch))
-        if self._last_second == elapsed_seconds:
+        elapsed_ticks = int(max(0.0, (now - self._epoch) / self._tick_interval))
+        if self._last_second == elapsed_ticks:
             return
+        elapsed_seconds = int(max(0.0, now - self._epoch))
         digits = self._format_digits(elapsed_seconds)
         self.console.update_idle_timer_digits(digits)
-        self._last_second = elapsed_seconds
+        self._last_second = elapsed_ticks
 
     def _format_digits(self, elapsed_seconds: int) -> Tuple[int, int, int]:
         minutes, seconds = divmod(max(0, elapsed_seconds), 60)

@@ -137,6 +137,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Override the user identifier for the session context",
     )
+    # Why: allow operators to tune idle timer updates for slow or fast polling loops.
+    parser.add_argument(
+        "--idle-tick-interval",
+        type=float,
+        default=1.0,
+        help="Seconds between idle timer updates for sysop displays",
+    )
     return parser.parse_args(argv)
 
 
@@ -312,10 +319,12 @@ async def run_stream_session(
     runtime_factory = _ensure_factory(factory)
     newline_translation = _resolve_telnet_newline(args.telnet_newline)
     async with _async_runner_with_persistence(args, factory=runtime_factory) as runner:
+        # Why: propagate CLI idle timer preferences into instrumentation and transport wiring.
         instrumentation = SessionInstrumentation(
             runner,
             indicator_controller_cls=_resolve_indicator_controller_cls(),
             idle_timer_scheduler_cls=_resolve_idle_timer_scheduler_cls(),
+            idle_tick_interval=args.idle_tick_interval,
         )
         instrumentation.ensure_indicator_controller()
         if telnet_transport_factory is None:
@@ -325,6 +334,7 @@ async def run_stream_session(
                     reader,
                     writer,
                     instrumentation=instrumentation,
+                    idle_tick_interval=args.idle_tick_interval,
                     editor_submit_command=args.editor_submit_command,
                     editor_abort_command=args.editor_abort_command,
                     newline_translation=newline_translation,
@@ -442,13 +452,16 @@ def drive_session(
     output_stream: IO[str] = sys.stdout,
     editor_submit_command: str = DEFAULT_EDITOR_SUBMIT_COMMAND,
     editor_abort_command: str = DEFAULT_EDITOR_ABORT_COMMAND,
+    idle_tick_interval: float = 1.0,
 ) -> SessionState:
     """Drive ``runner`` using ``input_stream`` and ``output_stream``."""
 
+    # Why: feed CLI-specified idle cadence into shared instrumentation for console loops.
     instrumentation = SessionInstrumentation(
         runner,
         indicator_controller_cls=_resolve_indicator_controller_cls(),
         idle_timer_scheduler_cls=_resolve_idle_timer_scheduler_cls(),
+        idle_tick_interval=idle_tick_interval,
     )
     instrumentation.ensure_indicator_controller()
     instrumentation.reset_idle_timer()
@@ -543,6 +556,7 @@ def run_session(
             output_stream=output_stream,
             editor_submit_command=args.editor_submit_command,
             editor_abort_command=args.editor_abort_command,
+            idle_tick_interval=args.idle_tick_interval,
         )
 
 
@@ -569,6 +583,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 runner,
                 indicator_controller_cls=indicator_controller_cls,
                 idle_timer_scheduler_cls=_resolve_idle_timer_scheduler_cls(),
+                idle_tick_interval=args.idle_tick_interval,
             )
             instrumentation.ensure_indicator_controller()
             instrumentation.reset_idle_timer()
@@ -583,6 +598,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 runner,
                 editor_submit_command=args.editor_submit_command,
                 editor_abort_command=args.editor_abort_command,
+                idle_tick_interval=args.idle_tick_interval,
             )
     return 0
 
