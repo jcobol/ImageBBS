@@ -163,7 +163,11 @@ def test_main_writes_metadata_json(
     capture = capsys.readouterr()
     assert destination.exists(), "expected metadata JSON to be written"
 
-    written = json.loads(destination.read_text())
+    snapshot_text = destination.read_text(encoding="utf-8")
+    expected_encoding = json.dumps(metadata_snapshot, indent=2, sort_keys=True) + "\n"
+    assert snapshot_text == expected_encoding
+
+    written = json.loads(snapshot_text)
     assert written == metadata_snapshot
 
     # Ensure the text report is still rendered alongside the metadata export.

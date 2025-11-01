@@ -9,6 +9,7 @@ from typing import List
 
 from .core import MetadataDiff, SanityReport, diff_metadata_snapshots, run_checks
 from .reporting import format_report
+from ...ml_extra_metadata_io import write_metadata_snapshot
 
 __all__ = ["parse_args", "main"]
 
@@ -66,9 +67,11 @@ def main(argv: List[str] | None = None) -> None:
             exit_code = 1
 
     if args.metadata_json and metadata_snapshot:
-        args.metadata_json.parent.mkdir(parents=True, exist_ok=True)
-        args.metadata_json.write_text(
-            json.dumps(metadata_snapshot, indent=2, sort_keys=True) + "\n"
+        # Why: Delegate disk writes to the shared helper so every CLI emits identical snapshots.
+        write_metadata_snapshot(
+            args.metadata_json,
+            metadata_snapshot,
+            sort_keys=True,
         )
 
     if args.json:
