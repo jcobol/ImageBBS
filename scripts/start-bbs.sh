@@ -1,6 +1,27 @@
 #!/bin/bash
 set -euo pipefail
 
+# Usage: start-bbs.sh [--vice-bin PATH] [--baud RATE] [--rsdev TARGET] [BASEDIR [BOOT_IMAGE [SUPPORT_IMAGE]]]
+#
+# Examples:
+#   start-bbs.sh
+#   start-bbs.sh --vice-bin /usr/bin/x64sc --baud 9600
+#   start-bbs.sh "~/c64/Image BBS/v2" "custom boot.d81" "custom support.d81"
+
+# Why: Provide quick-reference documentation so operators can discover new runtime flags without consulting external docs.
+print_usage() {
+  cat <<'EOF'
+Usage: start-bbs.sh [--vice-bin PATH] [--baud RATE] [--rsdev TARGET] [BASEDIR [BOOT_IMAGE [SUPPORT_IMAGE]]]
+
+Options:
+  --vice-bin PATH   Path to the VICE x64 binary to invoke (default: x64)
+  --baud RATE       Baud rate configured for the RS232 user port (default: 2400)
+  --rsdev TARGET    tcpser connection target passed to -rsdev1 (default: 0)
+
+Positional arguments retain their previous meaning and may be combined with the new flags.
+EOF
+}
+
 # Why: Expand user-provided paths so overrides can use shell-style tilde notation.
 expand_path() {
   local path="$1"
@@ -32,6 +53,78 @@ absolute_path() {
     fi
   fi
 }
+
+vice_bin="x64"
+baud="2400"
+rsdev="0"
+
+declare -a positional_args=()
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --vice-bin)
+      if [[ $# -lt 2 ]]; then
+        echo "Error: --vice-bin requires a value" >&2
+        print_usage
+        exit 1
+      fi
+      vice_bin="$2"
+      shift 2
+      ;;
+    --vice-bin=*)
+      vice_bin="${1#*=}"
+      shift
+      ;;
+    --baud)
+      if [[ $# -lt 2 ]]; then
+        echo "Error: --baud requires a value" >&2
+        print_usage
+        exit 1
+      fi
+      baud="$2"
+      shift 2
+      ;;
+    --baud=*)
+      baud="${1#*=}"
+      shift
+      ;;
+    --rsdev)
+      if [[ $# -lt 2 ]]; then
+        echo "Error: --rsdev requires a value" >&2
+        print_usage
+        exit 1
+      fi
+      rsdev="$2"
+      shift 2
+      ;;
+    --rsdev=*)
+      rsdev="${1#*=}"
+      shift
+      ;;
+    --help)
+      print_usage
+      exit 0
+      ;;
+    --)
+      shift
+      while [[ $# -gt 0 ]]; do
+        positional_args+=("$1")
+        shift
+      done
+      ;;
+    -*)
+      echo "Error: Unknown option: $1" >&2
+      print_usage
+      exit 1
+      ;;
+    *)
+      positional_args+=("$1")
+      shift
+      ;;
+  esac
+done
+
+set -- "${positional_args[@]:+${positional_args[@]}}"
 
 default_basedir="${HOME}/c64/Image BBS/v2"
 
@@ -104,11 +197,9 @@ support_image=$(absolute_path "$support_image")
 # -drive10type  1581
 # -10           attach disk image
 
-x64 -verbose \
-+acia \
--rsdev1 0 \
 # -rsuserdev1 \|nc\ -p\ 3064\ 127.0.0.1\ 25232
--rsuser \
--rsdev1baud 2400 \
--drive10type 1581 -10 "$boot_image" \
--drive11type 1581 -11 "$support_image"
+
+# Why: Build the VICE command as an array so user-provided paths and overrides are preserved without additional quoting gymnastics.
+vice_cmd=("$vice_bin" "-verbose" "+acia" "-rsdev1" "$rsdev" "-rsuser" "-rsdev1baud" "$baud" "-drive10type" "1581" "-10" "$boot_image" "-drive11type" "1581" "-11" "$support_image")
+
+"${vice_cmd[@]}"
