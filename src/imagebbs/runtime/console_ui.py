@@ -10,6 +10,7 @@ from typing import Callable, Tuple, TYPE_CHECKING
 from ..device_context import ConsoleService
 from ..petscii import translate_petscii
 from .indicator_controller import IndicatorController
+from .masked_input import MaskedPaneKeystroke, apply_masked_pane_keystrokes
 
 if TYPE_CHECKING:  # pragma: no cover - imported for type checking only
     from .session_instrumentation import SessionInstrumentation
@@ -117,6 +118,21 @@ class SysopConsoleApp:
         self._input_buffer: list[str] = []
         self._stop = False
         self._instrumentation = instrumentation
+
+        masked_width = getattr(console, "masked_pane_width", None)
+        if masked_width is None:
+            masked_width = getattr(console, "_MASKED_PANE_WIDTH", self.SCREEN_WIDTH)
+        self._masked_input_width = int(masked_width)
+        raw_colour = getattr(console, "screen_colour", None)
+        if raw_colour is None:
+            raw_colour = getattr(console, "_screen_colour", 0)
+        try:
+            default_colour = int(raw_colour) & 0xFF
+        except TypeError:
+            default_colour = 0
+        self._masked_default_colour = default_colour
+        self._masked_input_state: list[int] = [0x20] * self._masked_input_width
+        self._masked_input_colours: list[int] = [default_colour] * self._masked_input_width
 
         controller = self._resolve_indicator_controller(instrumentation)
         scheduler = self._resolve_idle_timer_scheduler(instrumentation)
@@ -317,6 +333,47 @@ class SysopConsoleApp:
         if self.idle_timer_scheduler is not None:
             self.idle_timer_scheduler.tick()
 
+    def _resolve_masked_input_colour(self, override: int | None = None) -> int:
+        # Why: Track the BASIC ``mcolor`` equivalent so staged glyphs retain the sysop tint.
+        if override is None:
+            colour = self.console.screen_colour & 0xFF
+        else:
+            colour = int(override) & 0xFF
+        self._masked_default_colour = colour
+        return colour
+
+    def _stage_masked_input_character(
+        self, offset: int, glyph: int, *, colour: int | None = None
+    ) -> None:
+        # Why: Route buffered keystrokes through ``write_masked_pane_cell`` before staging commits.
+        if not 0 <= offset < self._masked_input_width:
+            return
+        glyph_byte = int(glyph) & 0xFF
+        colour_value = self._resolve_masked_input_colour(colour)
+        current_glyph = self._masked_input_state[offset]
+        current_colour = self._masked_input_colours[offset]
+        if glyph_byte == current_glyph and colour_value == current_colour:
+            return
+        keystroke = MaskedPaneKeystroke(
+            offset=offset,
+            glyph=glyph_byte,
+            colour=colour_value,
+        )
+        apply_masked_pane_keystrokes(self.console, (keystroke,))
+        self._masked_input_state[offset] = glyph_byte
+        self._masked_input_colours[offset] = colour_value
+
+    def _reset_masked_pane_input(self) -> None:
+        # Why: Clear the masked pane once the buffered command hands off to the kernel.
+        colour = self._resolve_masked_input_colour()
+        for offset, glyph in enumerate(self._masked_input_state):
+            if glyph != 0x20 or self._masked_input_colours[offset] != colour:
+                self._stage_masked_input_character(offset, 0x20, colour=colour)
+
+    def _glyph_for_char(self, char: str) -> int:
+        # Why: Approximate BASIC key echoes by mirroring printable ASCII into PETSCII codes.
+        return ord(char) & 0xFF
+
     def _poll_input(self, stdscr: "curses._CursesWindow") -> None:
         if self.runner is None:
             return
@@ -332,6 +389,7 @@ class SysopConsoleApp:
             time.sleep(poll_delay)
 
     def _handle_key(self, key: int) -> bool:
+        # Why: Mirror sysop keystrokes through the masked pane before ``&,50`` commits flush staging.
         if key in (curses.KEY_EXIT, 27):
             self._stop = True
             return False
@@ -340,10 +398,12 @@ class SysopConsoleApp:
             if self.runner is not None:
                 self.runner.send_command(command)
             self._input_buffer.clear()
+            self._reset_masked_pane_input()
             return True
         if key in (curses.KEY_BACKSPACE, 127, 8):
             if self._input_buffer:
                 self._input_buffer.pop()
+                self._stage_masked_input_character(len(self._input_buffer), 0x20)
             return True
         if key == 3:  # Ctrl+C
             self._stop = True
@@ -352,6 +412,9 @@ class SysopConsoleApp:
             char = chr(key)
             if char.isprintable():
                 self._input_buffer.append(char)
+                offset = len(self._input_buffer) - 1
+                glyph = self._glyph_for_char(char)
+                self._stage_masked_input_character(offset, glyph)
         return True
 
     def _render_input(self, stdscr: "curses._CursesWindow", row: int) -> None:

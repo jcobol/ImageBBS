@@ -10,6 +10,7 @@ from . import file_transfers as _file_transfers
 from . import indicator_controller as _indicator_controller
 from . import macro_rendering as _macro_rendering
 from . import main_menu as _main_menu
+from . import masked_input as _masked_input
 from . import masked_pane_staging as _masked_pane_staging
 from . import message_store as _message_store
 from . import message_store_repository as _message_store_repository
@@ -26,6 +27,7 @@ _modules = [
     _indicator_controller,
     _macro_rendering,
     _main_menu,
+    _masked_input,
     _masked_pane_staging,
     _message_store,
     _message_store_repository,

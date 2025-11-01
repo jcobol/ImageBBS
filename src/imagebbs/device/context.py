@@ -1120,6 +1120,13 @@ class ConsoleService:
         return self.device.screen_colour
 
     @property
+    def masked_pane_width(self) -> int:
+        """Return the number of cells allocated to the masked sysop pane."""
+
+        # Why: Runtime input mirrors need the overlay width to align keystroke offsets.
+        return self._MASKED_PANE_WIDTH
+
+    @property
     def cursor_position(self) -> tuple[int, int]:
         """Return the current cursor position from the renderer."""
 
