@@ -8,6 +8,7 @@ from imagebbs.runtime.file_transfers import (
     FileTransfersModule,
 )
 from imagebbs.runtime.indicator_controller import IndicatorController
+from imagebbs.storage_config import DriveMapping, StorageConfig
 
 
 def _bootstrap_kernel(
@@ -26,6 +27,31 @@ def _register_drive_slot(context, slot: int, root: Path) -> DiskDrive:
     context.register(device_name, drive)
     context.open(device_name, slot, 15)
     return drive
+
+
+# Why: align storage metadata with registered drives so upload helpers can resolve host files.
+def _configure_storage_drive(
+    kernel: SessionKernel,
+    module: FileTransfersModule,
+    drive_root: Path,
+    *,
+    drive_number: int = 8,
+    read_only: bool = False,
+) -> None:
+    defaults = kernel.defaults
+    storage = StorageConfig(
+        drives={
+            drive_number: DriveMapping(
+                drive=drive_number, root=drive_root, read_only=read_only
+            )
+        },
+        default_drive=drive_number,
+    )
+    object.__setattr__(defaults, "storage_config", storage)
+    object.__setattr__(defaults, "filesystem_drive_roots", {drive_number: drive_root})
+    object.__setattr__(defaults, "filesystem_drive_slots", {drive_number: module.active_drive_slot})
+    object.__setattr__(defaults, "default_filesystem_drive", drive_number)
+    object.__setattr__(defaults, "default_filesystem_drive_slot", module.active_drive_slot)
 
 
 def _expected_overlay(
@@ -375,6 +401,50 @@ def test_file_transfers_upload_streams_payload_and_updates_state() -> None:
     )
     assert transmissions == expected_frame
     assert kernel.defaults.last_file_transfer_protocol == "Xmodem CRC"
+
+
+# Why: ensure host-backed uploads stream disk contents when staged payloads are absent.
+def test_file_transfers_upload_reads_host_file(tmp_path: Path) -> None:
+    module = FileTransfersModule(default_protocol="Xmodem CRC")
+    kernel, module = _bootstrap_kernel(module)
+    transport = RecordingLoopbackTransport()
+    modem = kernel.context.register_modem_device(transport=transport)
+    console_service = kernel.services["console"]
+    assert isinstance(console_service, ConsoleService)
+
+    drive_slot = module.active_drive_slot
+    drive_root = tmp_path / "drive8"
+    drive_root.mkdir(parents=True, exist_ok=True)
+    _register_drive_slot(kernel.context, drive_slot, drive_root)
+    _configure_storage_drive(kernel, module, drive_root)
+
+    host_payload = b"PAYLOAD"
+    (drive_root / "PAYLOAD.SEQ").write_bytes(host_payload)
+
+    kernel.step(FileTransferEvent.ENTER)
+    state = module.transfer_state
+    state.progress_events.clear()
+    transport.feed("C" + chr(0x06) + chr(0x06))
+    modem.collect_transmit()
+    console_service.device.output.clear()
+
+    result_state = kernel.step(FileTransferEvent.COMMAND, "UL PAYLOAD.SEQ")
+
+    assert result_state is SessionState.FILE_TRANSFERS
+    assert state.completed_uploads["UL"] == host_payload
+    assert state.credits == 1
+    transmissions = modem.collect_transmit().encode("latin-1")
+    padded = host_payload + bytes((0x1A,)) * (128 - len(host_payload))
+    crc = _crc16(padded)
+    expected_frame = (
+        bytes((0x01, 0x01, 0xFE))
+        + padded
+        + bytes(((crc >> 8) & 0xFF, crc & 0xFF))
+        + b"\x04"
+    )
+    assert transmissions == expected_frame
+    output = "".join(console_service.device.output)
+    assert "Upload complete." in output
 
 # Why: confirm downloads adjust credits and persist the chosen protocol.
 def test_file_transfers_download_streams_payload_and_persists_protocol() -> None:

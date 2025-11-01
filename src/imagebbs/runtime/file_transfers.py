@@ -16,6 +16,7 @@ from .file_transfer_protocols import (
     FileTransferProtocolDriver,
     build_protocol_driver,
 )
+from ..storage_config import StorageConfigError
 from .macro_rendering import render_macro_with_overlay_commit
 from .masked_pane_staging import MaskedPaneMacro
 from .indicator_controller import IndicatorController
@@ -75,6 +76,7 @@ class FileTransfersModule:
     transfer_state_factory: type[TransferSessionState] = TransferSessionState
     _transfer_state: TransferSessionState | None = field(init=False, default=None)
     _active_protocol: str | None = field(init=False, default=None)
+    _last_selection: str = field(init=False, default="")
 
     MENU_HEADER_MACRO = MaskedPaneMacro.FILE_TRANSFERS_HEADER
     MENU_PROMPT_MACRO = MaskedPaneMacro.FILE_TRANSFERS_PROMPT
@@ -226,12 +228,14 @@ class FileTransfersModule:
         """Render macros and translate text commands to :class:`SessionState`."""
 
         if self._matches_event(event, FileTransferEvent.ENTER):
+            self._last_selection = ""
             self._render_intro()
             self.state = FileTransferMenuState.READY
             self._set_binary_streaming(kernel, False)
             return SessionState.FILE_TRANSFERS
 
         if self._matches_event(event, FileTransferEvent.COMMAND):
+            self._last_selection = selection or ""
             if self.state is not FileTransferMenuState.READY:
                 self._render_intro()
                 self.state = FileTransferMenuState.READY
@@ -394,7 +398,7 @@ class FileTransfersModule:
         )
         try:
             if spec.direction == "upload":
-                payload = self._upload_payload_for(state, command)
+                payload = self._upload_payload_for(kernel, state, command)
                 driver.upload(
                     transport,
                     payload,
@@ -484,14 +488,172 @@ class FileTransfersModule:
         if defaults is not None:
             object.__setattr__(defaults, "last_file_transfer_protocol", protocol)
 
-    # Why: load staged upload data without tying tests to disk image plumbing.
+    # Why: source upload payloads from host-backed drives before falling back to staged buffers.
     def _upload_payload_for(
-        self, state: TransferSessionState, command: str
+        self, kernel: SessionKernel, state: TransferSessionState, command: str
     ) -> bytes:
+        try:
+            resolved = self._resolve_upload_source(kernel, command)
+        except FileTransferError:
+            raise
+        if resolved is not None:
+            return resolved
+
         payload = state.upload_payloads.get(command)
         if payload is None:
             payload = state.upload_payloads.get("*", b"")
         return bytes(payload or b"")
+
+    # Why: map upload commands onto the active drive slot so host files can seed protocol streams when staging is absent.
+    def _resolve_upload_source(
+        self, kernel: SessionKernel, command: str
+    ) -> bytes | None:
+        selection = getattr(self, "_last_selection", "")
+        if not selection:
+            return None
+        trimmed = selection.strip()
+        if not trimmed:
+            return None
+        if not trimmed.upper().startswith(command):
+            return None
+        remainder = trimmed[len(command) :].strip()
+        if not remainder:
+            return None
+
+        token = remainder
+        filename = ""
+        if token.startswith("\""):
+            closing = token.find("\"", 1)
+            if closing == -1:
+                filename = token[1:]
+                suffix = ""
+            else:
+                filename = token[1:closing]
+                suffix = token[closing + 1 :]
+        else:
+            parts = token.split(None, 1)
+            filename = parts[0]
+            suffix = parts[1] if len(parts) > 1 else ""
+        filename = filename.strip()
+        if not filename and suffix:
+            filename = suffix.strip().split(None, 1)[0]
+        if not filename:
+            return None
+        if "," in filename:
+            filename = filename.split(",", 1)[0]
+        drive_override = None
+        if ":" in filename:
+            prefix, remainder_token = filename.split(":", 1)
+            prefix = prefix.strip()
+            if prefix:
+                try:
+                    drive_override = int(prefix, 10)
+                except ValueError:
+                    drive_override = None
+            filename = remainder_token
+        filename = filename.strip()
+        if not filename:
+            return None
+
+        defaults = getattr(kernel, "defaults", None)
+        if defaults is None:
+            return None
+        storage = getattr(defaults, "storage_config", None)
+        if storage is None:
+            return None
+
+        available_slots = self._available_drive_slots(kernel)
+        if available_slots and self.active_drive_slot not in available_slots:
+            return None
+
+        drive_number: int | None = None
+        drive_slots_map = getattr(defaults, "filesystem_drive_slots", None)
+        if isinstance(drive_slots_map, Mapping):
+            for raw_drive, raw_slot in drive_slots_map.items():
+                try:
+                    slot_number = int(raw_slot)
+                except (TypeError, ValueError):
+                    continue
+                if slot_number != self.active_drive_slot:
+                    continue
+                try:
+                    drive_number = int(raw_drive)
+                except (TypeError, ValueError):
+                    drive_number = None
+                break
+        if drive_override is not None:
+            drive_number = drive_override
+        if drive_number is None:
+            default_drive = getattr(defaults, "default_filesystem_drive", None)
+            default_slot = getattr(defaults, "default_filesystem_drive_slot", None)
+            if (
+                isinstance(default_drive, int)
+                and isinstance(default_slot, int)
+                and default_slot == self.active_drive_slot
+            ):
+                drive_number = default_drive
+        if drive_number is None:
+            candidate_drive = getattr(storage, "default_drive", None)
+            if isinstance(candidate_drive, int):
+                drive_number = candidate_drive
+        if drive_number is None:
+            return None
+
+        if isinstance(drive_slots_map, Mapping):
+            slot_for_drive: Optional[int] = None
+            for raw_drive, raw_slot in drive_slots_map.items():
+                try:
+                    drive_candidate = int(raw_drive)
+                except (TypeError, ValueError):
+                    continue
+                if drive_candidate != drive_number:
+                    continue
+                try:
+                    slot_for_drive = int(raw_slot)
+                except (TypeError, ValueError):
+                    slot_for_drive = None
+                break
+            if (
+                slot_for_drive is not None
+                and slot_for_drive != self.active_drive_slot
+            ):
+                return None
+
+        try:
+            mapping = storage.require_drive(drive_number)
+        except KeyError:
+            return None
+
+        if getattr(mapping, "read_only", False):
+            raise FileTransferError(f"drive {drive_number} is read-only")
+
+        context = getattr(kernel, "context", None)
+        if context is None:
+            return None
+        devices = getattr(context, "devices", None)
+        if not isinstance(devices, Mapping):
+            return None
+        device_name = context.drive_device_name(self.active_drive_slot)
+        device = devices.get(device_name)
+        if device is None:
+            return None
+        if bool(getattr(device, "read_only", False)):
+            raise FileTransferError(f"drive {drive_number} is read-only")
+
+        try:
+            path = mapping.resolve_path(filename)
+        except StorageConfigError as exc:
+            raise FileTransferError(str(exc)) from exc
+        if not path.exists() or not path.is_file():
+            raise FileTransferError(
+                f"drive {drive_number}: '{filename}' not found"
+            )
+        try:
+            return path.read_bytes()
+        except OSError as exc:
+            raise FileTransferError(
+                f"drive {drive_number}: failed to read '{filename}'"
+            ) from exc
 
     # Why: track progress for console feedback and unit tests.
     def _report_progress(
