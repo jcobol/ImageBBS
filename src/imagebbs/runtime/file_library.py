@@ -1,9 +1,11 @@
 """Runtime approximation of the ImageBBS upload/download libraries."""
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Dict, Optional
+from pathlib import Path
+from typing import Dict, Mapping, Optional
 
 from ..ampersand_registry import AmpersandRegistry
 from ..device_context import ConsoleService
@@ -45,6 +47,18 @@ class FileLibraryModule:
     _active_identifier: str = field(init=False, default="")
     _macro_name: str | None = field(init=False, default=None)
     _defaults: object | None = field(init=False, default=None)
+    _storage_config: object | None = field(init=False, default=None)
+    _filesystem_drive_roots: Dict[int, Path] = field(
+        init=False, default_factory=dict
+    )
+    _filesystem_drive_slots: Dict[int, int] = field(
+        init=False, default_factory=dict
+    )
+    _host_directories: Dict[str, "HostLibraryDirectory"] = field(
+        init=False, default_factory=dict
+    )
+
+    _BLOCK_PAYLOAD_SIZE: int = 254
 
     # Why: wire runtime services and seed cached metadata so commands can execute deterministically.
     def start(self, kernel: SessionKernel) -> SessionState:
@@ -55,6 +69,13 @@ class FileLibraryModule:
         self.registry = kernel.dispatcher.registry
         defaults = kernel.defaults
         self._defaults = defaults
+        self._storage_config = getattr(defaults, "storage_config", None)
+        self._filesystem_drive_roots = self._coerce_drive_roots(
+            getattr(defaults, "filesystem_drive_roots", None)
+        )
+        self._filesystem_drive_slots = self._coerce_drive_slots(
+            getattr(defaults, "filesystem_drive_slots", None)
+        )
         code = (self.library_code or "UD").upper()
         self._libraries = defaults.libraries_for_code(code)
         if not self._libraries:
@@ -81,6 +102,7 @@ class FileLibraryModule:
             }
         self._active_identifier = self._libraries[0].identifier
         self._macro_name = self._libraries[0].macro
+        self._initialise_host_directories()
         self.state = FileLibraryState.INTRO
         self.last_command = ""
         self._render_intro()
@@ -236,6 +258,10 @@ class FileLibraryModule:
             self._write_line("?BLOCK COUNT MUST BE NUMERIC")
             return
         description = parts[3].strip() if len(parts) > 3 else ""
+        host_directory = self._host_directories.get(self._active_identifier)
+        if host_directory and host_directory.read_only:
+            self._write_line("?DRIVE IS READ-ONLY")
+            return
         entries = self._entries_for_library(self._active_identifier)
         next_number = max((entry.number for entry in entries), default=0) + 1
         uploader = self._default_uploader()
@@ -252,6 +278,9 @@ class FileLibraryModule:
         stats = self._stats_by_id.setdefault(self._active_identifier, {})
         stats["total_files"] = stats.get("total_files", len(entries) - 1) + 1
         stats["new_files"] = stats.get("new_files", 0) + 1
+        if host_directory is not None:
+            host_directory.entries = entries
+            host_directory.stats = stats
         self._write_line(f"Added {filename} as entry #{next_number}.")
 
     # Why: emulate the BASIC delete command for integration testing.
@@ -271,6 +300,12 @@ class FileLibraryModule:
                 entries.pop(index)
                 stats = self._stats_by_id.setdefault(self._active_identifier, {})
                 stats["total_files"] = max(stats.get("total_files", len(entries) + 1) - 1, 0)
+                host_directory = self._host_directories.get(
+                    self._active_identifier
+                )
+                if host_directory is not None:
+                    host_directory.entries = entries
+                    host_directory.stats = stats
                 self._write_line(f"Removed entry #{target}.")
                 return
         self._write_line("?NO SUCH ENTRY")
@@ -307,6 +342,156 @@ class FileLibraryModule:
             raise RuntimeError("console service is unavailable")
         payload = text if end else text.rstrip("\r")
         self._console.device.write(f"{payload}{end}")
+
+    # Why: normalise kernel annotations so host-backed directories can be resolved safely.
+    def _coerce_drive_roots(self, raw: object) -> Dict[int, Path]:
+        roots: Dict[int, Path] = {}
+        if isinstance(raw, Mapping):
+            for drive, path in raw.items():
+                try:
+                    drive_number = int(drive)
+                except (TypeError, ValueError):
+                    continue
+                roots[drive_number] = Path(path)
+        return roots
+
+    # Why: capture drive-slot mappings even when storage configuration is partially defined.
+    def _coerce_drive_slots(self, raw: object) -> Dict[int, int]:
+        slots: Dict[int, int] = {}
+        if isinstance(raw, Mapping):
+            for drive, slot in raw.items():
+                try:
+                    drive_number = int(drive)
+                    slot_number = int(slot)
+                except (TypeError, ValueError):
+                    continue
+                slots[drive_number] = slot_number
+        return slots
+
+    # Why: seed host metadata so listings reflect live filesystem state when available.
+    def _initialise_host_directories(self) -> None:
+        self._host_directories = {}
+        defaults = self._defaults
+        if defaults is None:
+            return
+        views = self._build_host_library_views(defaults)
+        for identifier, view in views.items():
+            self._host_directories[identifier] = view
+            self._entries_by_id[identifier] = view.entries
+            self._stats_by_id[identifier] = view.stats
+
+    # Why: merge storage configuration details with stub metadata for each library.
+    def _build_host_library_views(
+        self, defaults: object
+    ) -> Dict[str, "HostLibraryDirectory"]:
+        views: Dict[str, HostLibraryDirectory] = {}
+        storage = getattr(defaults, "storage_config", None)
+        storage_drives: Mapping[int, object] | None = None
+        if storage is not None and hasattr(storage, "drives"):
+            potential = getattr(storage, "drives")
+            if isinstance(potential, Mapping):
+                storage_drives = potential
+        for descriptor in self._libraries:
+            drive_number = descriptor.drive_slot
+            root_path = self._filesystem_drive_roots.get(drive_number)
+            read_only = False
+            if storage_drives and drive_number in storage_drives:
+                mapping = storage_drives[drive_number]
+                if hasattr(mapping, "root"):
+                    root_path = Path(getattr(mapping, "root"))
+                read_only = bool(getattr(mapping, "read_only", False))
+            if root_path is None:
+                continue
+            directory_path = self._resolve_library_path(
+                root_path, descriptor.directory
+            )
+            if directory_path is None:
+                continue
+            stub_entries = list(self._entries_by_id.get(descriptor.identifier, []))
+            entries = self._enumerate_host_entries(directory_path, stub_entries)
+            stats = dict(self._stats_by_id.get(descriptor.identifier, {}))
+            stats["total_files"] = len(entries)
+            stats.setdefault("new_files", 0)
+            view = HostLibraryDirectory(
+                path=directory_path,
+                read_only=read_only,
+                entries=entries,
+                stats=stats,
+            )
+            views[descriptor.identifier] = view
+        return views
+
+    # Why: guard against path escapes while tolerating legacy directory tokens.
+    def _resolve_library_path(self, root: Path, directory: str) -> Path | None:
+        base = Path(directory) if directory else Path()
+        candidate = (root / base).resolve() if not base.is_absolute() else base
+        try:
+            candidate.relative_to(root)
+        except ValueError:
+            return None
+        if not candidate.exists() or not candidate.is_dir():
+            return None
+        return candidate
+
+    # Why: derive FileLibraryEntry records from host filesystem data.
+    def _enumerate_host_entries(
+        self, directory: Path, stub_entries: list[FileLibraryEntry]
+    ) -> list[FileLibraryEntry]:
+        entries: list[FileLibraryEntry] = []
+        stub_lookup = {entry.filename.upper(): entry for entry in stub_entries}
+        try:
+            candidates = sorted(directory.iterdir())
+        except OSError:
+            return entries
+        number = 1
+        for path in candidates:
+            if not path.is_file():
+                continue
+            stub_entry = stub_lookup.get(path.name.upper())
+            entry = self._entry_from_path(number, path, stub_entry)
+            entries.append(entry)
+            number += 1
+        return entries
+
+    # Why: convert host file statistics into Commodore-style directory metadata.
+    def _entry_from_path(
+        self, number: int, path: Path, stub_entry: FileLibraryEntry | None
+    ) -> FileLibraryEntry:
+        try:
+            size = path.stat().st_size
+        except OSError:
+            size = 0
+        blocks = max(1, math.ceil(size / self._BLOCK_PAYLOAD_SIZE))
+        filename = path.name.upper()
+        description = (
+            stub_entry.description
+            if stub_entry is not None and stub_entry.description
+            else "Host file"
+        )
+        uploader = (
+            stub_entry.uploader if stub_entry is not None else self._default_uploader()
+        )
+        downloads = stub_entry.downloads if stub_entry is not None else 0
+        validated = stub_entry.validated if stub_entry is not None else True
+        return FileLibraryEntry(
+            number=number,
+            filename=filename,
+            blocks=blocks,
+            downloads=downloads,
+            description=description,
+            uploader=uploader,
+            validated=validated,
+        )
+
+
+@dataclass
+class HostLibraryDirectory:
+    """Snapshot of a host-backed library directory."""
+
+    path: Path
+    read_only: bool
+    entries: list[FileLibraryEntry]
+    stats: Dict[str, int]
 
 
 __all__ = [
