@@ -117,6 +117,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "(default: CRLF translation)"
         ),
     )
+    # Why: allow Telnet bridges to adjust asyncio polling cadence for latency-sensitive sessions.
+    parser.add_argument(
+        "--telnet-poll-interval",
+        type=float,
+        default=0.02,
+        help=(
+            "Seconds between Telnet modem polls when servicing streams "
+            "(default: 0.02 seconds)"
+        ),
+    )
     parser.add_argument(
         "--editor-submit-command",
         default=DEFAULT_EDITOR_SUBMIT_COMMAND,
@@ -342,6 +352,7 @@ async def run_stream_session(
                     reader,
                     writer,
                     instrumentation=instrumentation,
+                    poll_interval=args.telnet_poll_interval,
                     idle_tick_interval=args.idle_tick_interval,
                     editor_submit_command=args.editor_submit_command,
                     editor_abort_command=args.editor_abort_command,

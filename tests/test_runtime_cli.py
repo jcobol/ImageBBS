@@ -189,6 +189,17 @@ def test_parse_args_rejects_invalid_telnet_newline() -> None:
         parse_args(["--telnet-newline", "cr"])
 
 
+# Why: confirm operators can tune Telnet polling cadence and observe defaults.
+def test_parse_args_telnet_poll_interval_default_and_override() -> None:
+    args = parse_args([])
+
+    assert args.telnet_poll_interval == pytest.approx(0.02)
+
+    custom = parse_args(["--telnet-poll-interval", "0.1"])
+
+    assert custom.telnet_poll_interval == pytest.approx(0.1)
+
+
 def test_run_stream_session_honours_telnet_newline_setting() -> None:
     args = parse_args(["--telnet-newline", "lf"])
 
@@ -226,6 +237,7 @@ def test_run_stream_session_honours_telnet_newline_setting() -> None:
             writer: asyncio.StreamWriter,
             *,
             instrumentation: StubInstrumentation,
+            poll_interval: float = 0.02,
             idle_timer_scheduler_cls: type[IdleTimerScheduler] | None = None,
             idle_tick_interval: float = 1.0,
             editor_submit_command: str,
@@ -237,6 +249,7 @@ def test_run_stream_session_honours_telnet_newline_setting() -> None:
             self.reader = reader
             self.writer = writer
             self.instrumentation = instrumentation
+            self.poll_interval = poll_interval
             self.idle_timer_scheduler_cls = idle_timer_scheduler_cls
             self.idle_tick_interval = idle_tick_interval
             self.editor_submit_command = editor_submit_command
@@ -306,6 +319,7 @@ def test_run_stream_session_honours_telnet_newline_setting() -> None:
     assert RecordingTelnetTransport.instances
     telnet = RecordingTelnetTransport.instances[0]
     assert telnet.newline_translation == "\n"
+    assert telnet.poll_interval == args.telnet_poll_interval
 
 
 
