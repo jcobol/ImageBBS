@@ -58,7 +58,7 @@ def handle_chkflags(context: AmpersandDispatchContext) -> AmpersandResult:
     if console is not None:
         flag_index = context.invocation.argument_x
         operation = context.invocation.argument_y
-        _update_indicator(console, flag_index, operation)
+        _update_indicator(console, services, flag_index, operation)
         _sync_indicator_controller(console, services)
 
     return result
@@ -325,27 +325,67 @@ def _masked_pane_has_payload(
     return False
 
 
+# Honour indicator toggles during chkflags so the sysop console mirrors overlay state.
 def _update_indicator(
-    console: ConsoleService, flag_index: int, operation: int
+    console: ConsoleService,
+    services: Mapping[str, object],
+    flag_index: int,
+    operation: int,
 ) -> None:
+    controller = services.get("indicator_controller")
+    if not isinstance(controller, IndicatorController):
+        controller = None
+
     if flag_index == 0x02:  # spinner indicator bit
-        _update_spinner(console, operation)
+        _update_spinner(console, services, operation)
         return
     if flag_index == 0x04:  # carrier indicator bit
-        _update_carrier(console, operation)
+        _update_carrier(console, services, operation)
         return
 
     enabled = bool(operation)
     if flag_index == 0x10:  # pause indicator
         glyph = _PAUSE_GLYPH if enabled else _SPACE_GLYPH
-        console.set_pause_indicator(glyph, colour=0x01)
+        if controller is not None:
+            controller.sync_from_console()
+            controller.set_pause(enabled)
+        else:
+            console.set_pause_indicator(glyph, colour=0x01)
     elif flag_index == 0x11:  # abort indicator
         glyph = _ABORT_GLYPH if enabled else _SPACE_GLYPH
-        console.set_abort_indicator(glyph, colour=0x02)
+        if controller is not None:
+            controller.sync_from_console()
+            controller.set_abort(enabled)
+        else:
+            console.set_abort_indicator(glyph, colour=0x02)
 
 
-def _update_spinner(console: ConsoleService, operation: int) -> None:
+# Toggle the spinner glyph so transfer updates animate or clear correctly.
+def _update_spinner(
+    console: ConsoleService, services: Mapping[str, object], operation: int
+) -> None:
     if operation not in (0, 1, 2):
+        return
+
+    controller = services.get("indicator_controller")
+    if isinstance(controller, IndicatorController):
+        current = console.screen.peek_screen_address(
+            ConsoleService._SPINNER_SCREEN_ADDRESS
+        )
+        current_enabled = bool(
+            current is not None and current != _SPACE_GLYPH
+        )
+        controller.sync_from_console(
+            spinner_enabled=current_enabled, spinner_glyph=current
+        )
+        if operation == 0:  # clear
+            controller.set_spinner_enabled(False)
+        elif operation == 1:  # set
+            if current_enabled:
+                controller.set_spinner_enabled(False)
+            controller.set_spinner_enabled(True)
+        else:  # toggle
+            controller.set_spinner_enabled(not current_enabled)
         return
 
     current = console.screen.peek_screen_address(ConsoleService._SPINNER_SCREEN_ADDRESS)
@@ -359,8 +399,32 @@ def _update_spinner(console: ConsoleService, operation: int) -> None:
     console.set_spinner_glyph(glyph)
 
 
-def _update_carrier(console: ConsoleService, operation: int) -> None:
+# Reflect carrier activity so the sysop lightbar matches modem state changes.
+def _update_carrier(
+    console: ConsoleService, services: Mapping[str, object], operation: int
+) -> None:
     if operation not in (0, 1, 2):
+        return
+
+    controller = services.get("indicator_controller")
+    if isinstance(controller, IndicatorController):
+        leading = console.screen.peek_screen_address(
+            ConsoleService._CARRIER_LEADING_SCREEN_ADDRESS
+        )
+        indicator = console.screen.peek_screen_address(
+            ConsoleService._CARRIER_INDICATOR_SCREEN_ADDRESS
+        )
+        carrier_active = bool(
+            (leading is not None and leading != _SPACE_GLYPH)
+            or (indicator is not None and indicator != _SPACE_GLYPH)
+        )
+        controller.sync_from_console(carrier_active=carrier_active)
+        if operation == 0:  # clear
+            controller.set_carrier(False)
+        elif operation == 1:  # set
+            controller.set_carrier(True)
+        else:  # toggle
+            controller.set_carrier(not carrier_active)
         return
 
     leading = console.screen.peek_screen_address(
