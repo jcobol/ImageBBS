@@ -16,6 +16,7 @@ runtime = ["windows-curses; platform_system == 'Windows'"]
 
 [project.scripts]
 imagebbs-runtime = "imagebbs.runtime.cli:main"
+ml-extra-refresh = "imagebbs.ml_extra_refresh_pipeline:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
