@@ -101,6 +101,112 @@ def test_chkflags_syncs_indicator_controller_with_session_runtime() -> None:
     assert console.screen.peek_screen_address(pause_address) == 0x20
 
 
+# Ensure chkflags delegates indicator toggles into the controller so overrides observe them.
+def test_chkflags_routes_updates_through_indicator_controller() -> None:
+    dispatcher = _build_dispatcher()
+    registry = dispatcher.registry
+    console_service = registry.services["console"]
+    assert isinstance(console_service, ConsoleService)
+
+    controller = _register_indicator_controller(registry)
+
+    original_sync = IndicatorController.sync_from_console
+    original_set_pause = IndicatorController.set_pause
+    original_set_abort = IndicatorController.set_abort
+    original_set_spinner = IndicatorController.set_spinner_enabled
+    original_set_carrier = IndicatorController.set_carrier
+
+    with (
+        mock.patch.object(
+            IndicatorController,
+            "sync_from_console",
+            autospec=True,
+            side_effect=lambda self, *a, **kw: original_sync(self, *a, **kw),
+        ) as sync_mock,
+        mock.patch.object(
+            IndicatorController,
+            "set_pause",
+            autospec=True,
+            side_effect=lambda self, *a, **kw: original_set_pause(
+                self, *a, **kw
+            ),
+        ) as set_pause,
+        mock.patch.object(
+            IndicatorController,
+            "set_abort",
+            autospec=True,
+            side_effect=lambda self, *a, **kw: original_set_abort(
+                self, *a, **kw
+            ),
+        ) as set_abort,
+        mock.patch.object(
+            IndicatorController,
+            "set_spinner_enabled",
+            autospec=True,
+            side_effect=lambda self, *a, **kw: original_set_spinner(
+                self, *a, **kw
+            ),
+        ) as set_spinner,
+        mock.patch.object(
+            IndicatorController,
+            "set_carrier",
+            autospec=True,
+            side_effect=lambda self, *a, **kw: original_set_carrier(
+                self, *a, **kw
+            ),
+        ) as set_carrier,
+    ):
+        dispatcher.dispatch("&,52,16,1")
+        set_pause.assert_called_once()
+        assert set_pause.call_args[0][0] is controller
+        assert set_pause.call_args[0][1] is True
+        assert sync_mock.call_count >= 1
+
+        sync_mock.reset_mock()
+        set_pause.reset_mock()
+        dispatcher.dispatch("&,52,17,1")
+        set_abort.assert_called_once()
+        assert set_abort.call_args[0][0] is controller
+        assert set_abort.call_args[0][1] is True
+        assert sync_mock.call_count >= 1
+
+        console_service.set_spinner_glyph(0x20)
+        sync_mock.reset_mock()
+        set_abort.reset_mock()
+        dispatcher.dispatch("&,52,2,1")
+        set_spinner.assert_called()
+        assert set_spinner.call_args[0][0] is controller
+        assert set_spinner.call_args[0][1] is True
+        assert sync_mock.call_count >= 1
+
+        sync_mock.reset_mock()
+        set_spinner.reset_mock()
+        dispatcher.dispatch("&,52,2,2")
+        set_spinner.assert_called_once()
+        assert set_spinner.call_args[0][0] is controller
+        assert set_spinner.call_args[0][1] is False
+        assert sync_mock.call_count >= 1
+
+        console_service.set_carrier_indicator(
+            leading_cell=0x20, indicator_cell=0x20
+        )
+        sync_mock.reset_mock()
+        set_spinner.reset_mock()
+        dispatcher.dispatch("&,52,4,1")
+        set_carrier.assert_called_once()
+        assert set_carrier.call_args[0][0] is controller
+        assert set_carrier.call_args[0][1] is True
+        assert sync_mock.call_count >= 1
+
+        sync_mock.reset_mock()
+        set_carrier.reset_mock()
+        dispatcher.dispatch("&,52,4,2")
+        set_carrier.assert_called_once()
+        assert set_carrier.call_args[0][0] is controller
+        assert set_carrier.call_args[0][1] is False
+        assert sync_mock.call_count >= 1
+
+
 @pytest.fixture()
 def dispatcher_with_temp_drive(tmp_path: Path) -> AmpersandDispatcher:
     drive_root = tmp_path / "drive8"
@@ -139,11 +245,87 @@ def test_chkflags_updates_pause_indicator() -> None:
     colour = console_service.device.screen.peek_colour_address(colour_address)
     assert after != before
     assert after == 0xD0
-    assert colour != before_colour
+    assert colour == before_colour
 
     controller.set_pause(False)
     cleared = console_service.device.screen.peek_screen_address(pause_address)
     assert cleared == 0x20
+
+
+# Prove chkflags manipulates indicator glyphs when no controller service is available.
+def test_chkflags_updates_indicators_without_controller() -> None:
+    dispatcher = _build_dispatcher()
+    registry = dispatcher.registry
+    console_service = registry.services["console"]
+    assert isinstance(console_service, ConsoleService)
+
+    assert "indicator_controller" not in registry.services
+
+    dispatcher.dispatch("&,52,16,1")
+    assert (
+        console_service.screen.peek_screen_address(ConsoleService._PAUSE_SCREEN_ADDRESS)
+        == 0xD0
+    )
+    dispatcher.dispatch("&,52,16,0")
+    assert (
+        console_service.screen.peek_screen_address(ConsoleService._PAUSE_SCREEN_ADDRESS)
+        == 0x20
+    )
+
+    dispatcher.dispatch("&,52,17,1")
+    assert (
+        console_service.screen.peek_screen_address(ConsoleService._ABORT_SCREEN_ADDRESS)
+        == 0xC1
+    )
+    dispatcher.dispatch("&,52,17,0")
+    assert (
+        console_service.screen.peek_screen_address(ConsoleService._ABORT_SCREEN_ADDRESS)
+        == 0x20
+    )
+
+    console_service.set_spinner_glyph(0x20)
+    dispatcher.dispatch("&,52,2,1")
+    assert (
+        console_service.screen.peek_screen_address(
+            ConsoleService._SPINNER_SCREEN_ADDRESS
+        )
+        == 0xB0
+    )
+    dispatcher.dispatch("&,52,2,2")
+    assert (
+        console_service.screen.peek_screen_address(
+            ConsoleService._SPINNER_SCREEN_ADDRESS
+        )
+        == 0x20
+    )
+
+    console_service.set_carrier_indicator(leading_cell=0x20, indicator_cell=0x20)
+    dispatcher.dispatch("&,52,4,1")
+    assert (
+        console_service.screen.peek_screen_address(
+            ConsoleService._CARRIER_LEADING_SCREEN_ADDRESS
+        )
+        == 0xA0
+    )
+    assert (
+        console_service.screen.peek_screen_address(
+            ConsoleService._CARRIER_INDICATOR_SCREEN_ADDRESS
+        )
+        == 0xFA
+    )
+    dispatcher.dispatch("&,52,4,2")
+    assert (
+        console_service.screen.peek_screen_address(
+            ConsoleService._CARRIER_LEADING_SCREEN_ADDRESS
+        )
+        == 0x20
+    )
+    assert (
+        console_service.screen.peek_screen_address(
+            ConsoleService._CARRIER_INDICATOR_SCREEN_ADDRESS
+        )
+        == 0x20
+    )
 
 
 @pytest.mark.parametrize(
@@ -289,7 +471,7 @@ def test_dispatcher_injects_registry_and_services_into_payload() -> None:
     after = console_service.device.screen.peek_screen_address(pause_address)
     colour = console_service.device.screen.peek_colour_address(colour_address)
     assert after != before
-    assert colour != before_colour
+    assert colour == before_colour
 
     controller.set_pause(False)
     cleared = console_service.device.screen.peek_screen_address(pause_address)
