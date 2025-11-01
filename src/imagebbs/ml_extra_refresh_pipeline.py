@@ -6,9 +6,9 @@ import argparse
 from pathlib import Path
 from typing import List
 
-from . import ml_extra_sanity
-from . import ml_extra_snapshot_guard
-from . import ml_extra_metadata_io
+from . import ml_extra_metadata_io, ml_extra_snapshot_guard
+from .ml_extra.sanity import core as sanity_core
+from .ml_extra.sanity import reporting as sanity_reporting
 
 # Why: Expose defaults and entry points so automation can discover the refresh pipeline helpers programmatically.
 __all__ = ["DEFAULT_BASELINE", "parse_args", "main"]
@@ -58,9 +58,9 @@ def main(argv: List[str] | None = None) -> int:
     """Entry point for the ``ml_extra_refresh_pipeline`` CLI."""
 
     args = parse_args(argv)
-    report = ml_extra_sanity.run_checks(args.overlay)
-    metadata_snapshot = report.get("metadata_snapshot")
-    if metadata_snapshot is None:
+    report = sanity_core.run_checks(args.overlay)
+    metadata_snapshot = report.metadata_snapshot
+    if not metadata_snapshot:
         raise SystemExit("metadata snapshot unavailable from ml_extra_sanity.run_checks")
 
     baseline_path: Path = args.baseline
@@ -82,9 +82,9 @@ def main(argv: List[str] | None = None) -> int:
     else:
         print(f"Metadata snapshot written to: {metadata_path}")
 
-    diff = ml_extra_sanity.diff_metadata_snapshots(baseline_snapshot, metadata_snapshot)
-    print(ml_extra_snapshot_guard.render_diff_summary(baseline_path, diff))
-    matches = bool(diff.get("matches", False))
+    diff = sanity_core.diff_metadata_snapshots(baseline_snapshot, metadata_snapshot)
+    print(sanity_reporting.render_diff_summary(baseline_path, diff))
+    matches = diff.matches
     return 0 if matches else 1
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import types
 from pathlib import Path
 
 from imagebbs import (
@@ -8,6 +9,7 @@ from imagebbs import (
     ml_extra_refresh_pipeline,
     ml_extra_snapshot_guard,
 )
+from imagebbs.ml_extra.sanity import core as sanity_core
 
 
 def _read_raw(path: Path) -> str:
@@ -69,10 +71,17 @@ def test_refresh_pipeline_if_changed_uses_conditional_write(monkeypatch, tmp_pat
     write_calls: list[dict[str, object]] = []
 
     def fake_run_checks(_overlay):
-        return {"metadata_snapshot": {"value": 2}}
+        return types.SimpleNamespace(metadata_snapshot={"value": 2})
 
-    def fake_diff(_baseline, _snapshot):
-        return {"matches": True}
+    def fake_diff(baseline, snapshot):
+        return sanity_core.MetadataDiff(
+            matches=True,
+            added=(),
+            removed=(),
+            changed=(),
+            baseline_snapshot=baseline,
+            current_snapshot=snapshot,
+        )
 
     def fake_write(path: Path, payload, *, only_if_changed: bool, indent: int | None = 2):
         write_calls.append(
@@ -85,10 +94,10 @@ def test_refresh_pipeline_if_changed_uses_conditional_write(monkeypatch, tmp_pat
         return True
 
     monkeypatch.setattr(
-        "imagebbs.ml_extra_refresh_pipeline.ml_extra_sanity.run_checks", fake_run_checks
+        "imagebbs.ml_extra_refresh_pipeline.sanity_core.run_checks", fake_run_checks
     )
     monkeypatch.setattr(
-        "imagebbs.ml_extra_refresh_pipeline.ml_extra_sanity.diff_metadata_snapshots",
+        "imagebbs.ml_extra_refresh_pipeline.sanity_core.diff_metadata_snapshots",
         fake_diff,
     )
     monkeypatch.setattr(
@@ -117,10 +126,17 @@ def test_snapshot_guard_update_baseline_uses_conditional_write(monkeypatch, tmp_
     write_calls: list[dict[str, object]] = []
 
     def fake_run_checks(_overlay):
-        return {"metadata_snapshot": {"value": 2}}
+        return types.SimpleNamespace(metadata_snapshot={"value": 2})
 
-    def fake_diff(_baseline, _snapshot):
-        return {"matches": True}
+    def fake_diff(baseline, snapshot):
+        return sanity_core.MetadataDiff(
+            matches=True,
+            added=(),
+            removed=(),
+            changed=(),
+            baseline_snapshot=baseline,
+            current_snapshot=snapshot,
+        )
 
     def fake_write(path: Path, payload, *, only_if_changed: bool, indent: int | None = 2):
         write_calls.append(
@@ -133,10 +149,10 @@ def test_snapshot_guard_update_baseline_uses_conditional_write(monkeypatch, tmp_
         return True
 
     monkeypatch.setattr(
-        "imagebbs.ml_extra_snapshot_guard.ml_extra_sanity.run_checks", fake_run_checks
+        "imagebbs.ml_extra_snapshot_guard.sanity_core.run_checks", fake_run_checks
     )
     monkeypatch.setattr(
-        "imagebbs.ml_extra_snapshot_guard.ml_extra_sanity.diff_metadata_snapshots",
+        "imagebbs.ml_extra_snapshot_guard.sanity_core.diff_metadata_snapshots",
         fake_diff,
     )
     monkeypatch.setattr(

@@ -7,8 +7,9 @@ import json
 from pathlib import Path
 from typing import List
 
-from . import ml_extra_sanity
 from . import ml_extra_metadata_io
+from .ml_extra.sanity import core as sanity_core
+from .ml_extra.sanity import reporting as sanity_reporting
 
 __all__ = [
     "DEFAULT_BASELINE",
@@ -60,36 +61,13 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def render_diff_summary(baseline: Path, diff: dict[str, object]) -> str:
+def render_diff_summary(baseline: Path, diff: sanity_core.MetadataDiff) -> str:
     """Return a human-readable summary for ``diff`` results."""
 
-    lines: list[str] = []
-    if diff.get("matches", False):
-        lines.append(f"Baseline snapshot matches {baseline}")
-        return "\n".join(lines)
-
-    lines.append(f"Drift detected relative to {baseline}:")
-    report_lines = diff.get("report_lines")
-    if isinstance(report_lines, list) and report_lines:
-        lines.extend(f"  {entry}" for entry in report_lines)
-        return "\n".join(lines)
-
-    for label in ("added", "removed", "changed"):
-        entries = diff.get(label)
-        if not isinstance(entries, list) or not entries:
-            continue
-        lines.append(f"  {label}:")
-        for entry in entries:
-            if not isinstance(entry, dict):
-                lines.append(f"    {entry}")
-                continue
-            path = entry.get("path", "<unknown>")
-            value = entry.get("value")
-            lines.append(f"    {path}: {value}")
-    return "\n".join(lines)
+    return sanity_reporting.render_diff_summary(baseline, diff)
 
 
-def _render_diff_summary(baseline: Path, diff: dict[str, object]) -> str:
+def _render_diff_summary(baseline: Path, diff: sanity_core.MetadataDiff) -> str:
     return render_diff_summary(baseline, diff)
 
 
@@ -97,9 +75,9 @@ def main(argv: List[str] | None = None) -> int:
     """Entry point for ``ml_extra_snapshot_guard`` CLI commands."""
 
     args = parse_args(argv)
-    report = ml_extra_sanity.run_checks(args.overlay)
-    metadata_snapshot = report.get("metadata_snapshot")
-    if metadata_snapshot is None:
+    report = sanity_core.run_checks(args.overlay)
+    metadata_snapshot = report.metadata_snapshot
+    if not metadata_snapshot:
         raise SystemExit("metadata snapshot unavailable from ml_extra_sanity.run_checks")
 
     baseline_path: Path = args.baseline
@@ -107,10 +85,10 @@ def main(argv: List[str] | None = None) -> int:
         raise SystemExit(f"baseline metadata not found: {baseline_path}")
 
     baseline_snapshot = ml_extra_metadata_io.read_metadata_snapshot(baseline_path)
-    diff = ml_extra_sanity.diff_metadata_snapshots(baseline_snapshot, metadata_snapshot)
+    diff = sanity_core.diff_metadata_snapshots(baseline_snapshot, metadata_snapshot)
 
     if args.json:
-        print(json.dumps(diff, indent=2, sort_keys=True))
+        print(json.dumps(diff.to_dict(), indent=2, sort_keys=True))
     else:
         print(render_diff_summary(baseline_path, diff))
 
@@ -125,7 +103,7 @@ def main(argv: List[str] | None = None) -> int:
                 print(f"Baseline snapshot already up to date: {baseline_path}")
         return 0
 
-    return 0 if diff.get("matches", False) else 1
+    return 0 if diff.matches else 1
 
 
 if __name__ == "__main__":  # pragma: no cover - exercised via python -m

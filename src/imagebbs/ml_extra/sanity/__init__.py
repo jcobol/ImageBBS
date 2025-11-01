@@ -1,8 +1,6 @@
-"""Compatibility wrapper for ``imagebbs.ml_extra.sanity``."""
+"""Sanity-check utilities for the recovered ``ml.extra`` overlay."""
 
-from __future__ import annotations
-
-from .ml_extra.sanity import (  # noqa: F401
+from .core import (
     MacroComparison,
     MacroDirectoryRow,
     MacroHashEntry,
@@ -16,11 +14,10 @@ from .ml_extra.sanity import (  # noqa: F401
     StubMacroSummary,
     StubStaticDiff,
     diff_metadata_snapshots,
-    format_report,
-    main,
-    parse_args,
     run_checks,
 )
+from .reporting import format_report
+from .cli import main, parse_args
 
 __all__ = [
     "MacroComparison",
