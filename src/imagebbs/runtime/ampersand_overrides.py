@@ -325,7 +325,8 @@ def _masked_pane_has_payload(
     return False
 
 
-# Honour indicator toggles during chkflags so the sysop console mirrors overlay state.
+# Honour indicator toggles during chkflags so the sysop console mirrors overlay state
+# without discarding palette customisations.
 def _update_indicator(
     console: ConsoleService,
     services: Mapping[str, object],
@@ -350,14 +351,34 @@ def _update_indicator(
             controller.sync_from_console()
             controller.set_pause(enabled)
         else:
-            console.set_pause_indicator(glyph, colour=0x01)
+            pause_colour = _peek_indicator_colour(
+                console, ConsoleService._PAUSE_SCREEN_ADDRESS
+            )
+            console.set_pause_indicator(glyph, colour=pause_colour)
     elif flag_index == 0x11:  # abort indicator
         glyph = _ABORT_GLYPH if enabled else _SPACE_GLYPH
         if controller is not None:
             controller.sync_from_console()
             controller.set_abort(enabled)
         else:
-            console.set_abort_indicator(glyph, colour=0x02)
+            abort_colour = _peek_indicator_colour(
+                console, ConsoleService._ABORT_SCREEN_ADDRESS
+            )
+            console.set_abort_indicator(glyph, colour=abort_colour)
+
+
+# Preserve indicator palette values while toggling fallback glyphs.
+def _peek_indicator_colour(
+    console: ConsoleService, screen_address: int
+) -> int | None:
+    colour_address = console._colour_address_for(screen_address)
+    _, colour_span = console.peek_block(
+        colour_address=colour_address,
+        colour_length=1,
+    )
+    if colour_span:
+        return colour_span[0]
+    return None
 
 
 # Toggle the spinner glyph so transfer updates animate or clear correctly.

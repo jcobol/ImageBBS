@@ -328,6 +328,74 @@ def test_chkflags_updates_indicators_without_controller() -> None:
     )
 
 
+def test_chkflags_preserves_indicator_palette_without_controller() -> None:
+    dispatcher = _build_dispatcher()
+    registry = dispatcher.registry
+    registry.register_handler(0x34, handle_chkflags)
+
+    console_service = registry.services["console"]
+    assert isinstance(console_service, ConsoleService)
+    assert "indicator_controller" not in registry.services
+
+    pause_colour_address = console_service._colour_address_for(
+        ConsoleService._PAUSE_SCREEN_ADDRESS
+    )
+    abort_colour_address = console_service._colour_address_for(
+        ConsoleService._ABORT_SCREEN_ADDRESS
+    )
+
+    console_service.set_pause_indicator(0x20, colour=0x07)
+    console_service.set_abort_indicator(0x20, colour=0x0C)
+
+    # Capture palette bytes so assertions confirm toggles keep customised colours.
+    def _peek_colour(address: int) -> int:
+        _, colour_span = console_service.peek_block(
+            colour_address=address,
+            colour_length=1,
+        )
+        assert colour_span is not None
+        return colour_span[0]
+
+    pause_colour_value = _peek_colour(pause_colour_address)
+    abort_colour_value = _peek_colour(abort_colour_address)
+
+    dispatcher.dispatch("&,52,16,1")
+    assert (
+        console_service.screen.peek_screen_address(
+            ConsoleService._PAUSE_SCREEN_ADDRESS
+        )
+        == 0xD0
+    )
+    assert _peek_colour(pause_colour_address) == pause_colour_value
+
+    dispatcher.dispatch("&,52,16,0")
+    assert (
+        console_service.screen.peek_screen_address(
+            ConsoleService._PAUSE_SCREEN_ADDRESS
+        )
+        == 0x20
+    )
+    assert _peek_colour(pause_colour_address) == pause_colour_value
+
+    dispatcher.dispatch("&,52,17,1")
+    assert (
+        console_service.screen.peek_screen_address(
+            ConsoleService._ABORT_SCREEN_ADDRESS
+        )
+        == 0xC1
+    )
+    assert _peek_colour(abort_colour_address) == abort_colour_value
+
+    dispatcher.dispatch("&,52,17,0")
+    assert (
+        console_service.screen.peek_screen_address(
+            ConsoleService._ABORT_SCREEN_ADDRESS
+        )
+        == 0x20
+    )
+    assert _peek_colour(abort_colour_address) == abort_colour_value
+
+
 @pytest.mark.parametrize(
     "operation,prepare_spinner,prepare_carrier",
     [
