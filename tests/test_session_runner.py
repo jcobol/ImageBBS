@@ -16,6 +16,54 @@ def runner() -> SessionRunner:
     return SessionRunner()
 
 
+class DummyIndicatorController:
+    def __init__(self) -> None:
+        # Why: record controller interactions so the tests can assert runtime wiring behaviour.
+        self.sync_invocations = 0
+        self.pause_updates: list[bool] = []
+        self.abort_updates: list[bool] = []
+
+    # Why: surface the synchronisation hook expected by SessionRunner during indicator registration.
+    def sync_from_console(self) -> None:
+        self.sync_invocations += 1
+
+    # Why: capture pause toggles forwarded by the session runner for assertions.
+    def set_pause(self, active: bool) -> None:
+        self.pause_updates.append(active)
+
+    # Why: capture abort toggles forwarded by the session runner for assertions.
+    def set_abort(self, active: bool) -> None:
+        self.abort_updates.append(active)
+
+
+# Why: validate that indicator controllers are synchronised and exposed via the kernel context when registered.
+def test_session_runner_registers_indicator_controller(runner: SessionRunner) -> None:
+    controller = DummyIndicatorController()
+
+    runner.set_indicator_controller(controller)
+
+    assert controller.sync_invocations == 1
+    context = runner.kernel.context
+    assert context.get_service("indicator_controller") is controller
+
+    runner.set_pause_indicator_state(True)
+    runner.set_abort_indicator_state(True)
+
+    assert controller.pause_updates == [True]
+    assert controller.abort_updates == [True]
+
+    runner.set_indicator_controller(controller)
+
+    assert controller.sync_invocations == 2
+    assert context.get_service("indicator_controller") is controller
+
+    runner.set_pause_indicator_state(False)
+    runner.set_abort_indicator_state(False)
+
+    assert controller.pause_updates == [True, False]
+    assert controller.abort_updates == [True, False]
+
+
 def test_session_runner_initialises_and_emits_enter(runner: SessionRunner) -> None:
     kernel = runner.kernel
     assert runner.state is SessionState.MAIN_MENU
