@@ -1,3 +1,4 @@
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -12,13 +13,18 @@ from imagebbs.runtime.file_transfers import (
 )
 from imagebbs.runtime.indicator_controller import IndicatorController
 from imagebbs.storage_config import DriveMapping, StorageConfig
+from imagebbs.setup_defaults import IndicatorDefaults, SetupDefaults
 
 
+# Why: centralise kernel bootstrap so tests can override defaults and reuse consistent module wiring.
 def _bootstrap_kernel(
     module: FileTransfersModule | None = None,
+    *,
+    defaults: SetupDefaults | None = None,
 ) -> tuple[SessionKernel, FileTransfersModule]:
     module = module or FileTransfersModule()
-    kernel = SessionKernel(module=module)
+    defaults = defaults or SetupDefaults.stub()
+    kernel = SessionKernel(module=module, defaults=defaults)
     return kernel, module
 
 
@@ -565,7 +571,10 @@ class RecordingIndicatorController(IndicatorController):
 
 # Why: ensure indicator controllers receive transfer toggles and colour overrides.
 def test_file_transfers_prefers_indicator_controller_when_available() -> None:
-    kernel, module = _bootstrap_kernel()
+    defaults = SetupDefaults.stub()
+    overrides = IndicatorDefaults(pause_colour=0x0E, abort_colour=0x05)
+    defaults = replace(defaults, indicator=overrides)
+    kernel, module = _bootstrap_kernel(defaults=defaults)
     console_service = kernel.services["console"]
     assert isinstance(console_service, ConsoleService)
 
@@ -584,8 +593,10 @@ def test_file_transfers_prefers_indicator_controller_when_available() -> None:
 
     assert controller.pause_states == [True, False]
     assert controller.abort_states == [True, False]
-    assert controller.pause_colours == [2, None]
-    assert controller.abort_colours == [2, None]
+    assert controller.pause_colours == [0x0E, None]
+    assert controller.abort_colours == [0x05, None]
+    assert controller.pause_colour is None
+    assert controller.abort_colour is None
 
 
 # Why: confirm console writes remain the fallback when no controller is registered.
@@ -594,35 +605,119 @@ def test_file_transfers_falls_back_to_console_when_controller_absent() -> None:
     console_service = kernel.services["console"]
     assert isinstance(console_service, ConsoleService)
 
+    pause_address = ConsoleService._PAUSE_SCREEN_ADDRESS
+    abort_address = ConsoleService._ABORT_SCREEN_ADDRESS
+    pause_colour_address = ConsoleService._colour_address_for(pause_address)
+    abort_colour_address = ConsoleService._colour_address_for(abort_address)
+    baseline_pause_glyph = console_service.device.screen.peek_screen_address(
+        pause_address
+    )
+    baseline_abort_glyph = console_service.device.screen.peek_screen_address(
+        abort_address
+    )
+    baseline_pause_colour = console_service.device.screen.peek_colour_address(
+        pause_colour_address
+    )
+    baseline_abort_colour = console_service.device.screen.peek_colour_address(
+        abort_colour_address
+    )
+
     module._set_transfer_indicators(True)
 
-    pause_value = console_service.device.screen.peek_screen_address(
-        ConsoleService._PAUSE_SCREEN_ADDRESS
-    )
-    abort_value = console_service.device.screen.peek_screen_address(
-        ConsoleService._ABORT_SCREEN_ADDRESS
-    )
+    pause_value = console_service.device.screen.peek_screen_address(pause_address)
+    abort_value = console_service.device.screen.peek_screen_address(abort_address)
     pause_colour = console_service.device.screen.peek_colour_address(
-        ConsoleService._colour_address_for(ConsoleService._PAUSE_SCREEN_ADDRESS)
+        pause_colour_address
     )
     abort_colour = console_service.device.screen.peek_colour_address(
-        ConsoleService._colour_address_for(ConsoleService._ABORT_SCREEN_ADDRESS)
+        abort_colour_address
     )
 
     assert pause_value == ord("P")
     assert abort_value == ord("A")
-    assert pause_colour == 0x02
-    assert abort_colour == 0x02
+    assert pause_colour == baseline_pause_colour
+    assert abort_colour == baseline_abort_colour
 
     module._set_transfer_indicators(False)
 
-    cleared_pause = console_service.device.screen.peek_screen_address(
-        ConsoleService._PAUSE_SCREEN_ADDRESS
+    cleared_pause = console_service.device.screen.peek_screen_address(pause_address)
+    cleared_abort = console_service.device.screen.peek_screen_address(abort_address)
+    restored_pause_colour = console_service.device.screen.peek_colour_address(
+        pause_colour_address
     )
-    cleared_abort = console_service.device.screen.peek_screen_address(
-        ConsoleService._ABORT_SCREEN_ADDRESS
+    restored_abort_colour = console_service.device.screen.peek_colour_address(
+        abort_colour_address
     )
 
-    assert cleared_pause == 0x20
-    assert cleared_abort == 0x20
+    assert cleared_pause == baseline_pause_glyph
+    assert cleared_abort == baseline_abort_glyph
+    assert restored_pause_colour == baseline_pause_colour
+    assert restored_abort_colour == baseline_abort_colour
+
+
+# Why: confirm configured indicator overrides propagate when toggling without a controller.
+def test_file_transfers_console_respects_indicator_overrides() -> None:
+    defaults = SetupDefaults.stub()
+    overrides = IndicatorDefaults(pause_colour=0x0E, abort_colour=0x05)
+    defaults = replace(defaults, indicator=overrides)
+    kernel, module = _bootstrap_kernel(defaults=defaults)
+    console_service = kernel.services["console"]
+    assert isinstance(console_service, ConsoleService)
+
+    pause_address = ConsoleService._PAUSE_SCREEN_ADDRESS
+    abort_address = ConsoleService._ABORT_SCREEN_ADDRESS
+    pause_colour_address = ConsoleService._colour_address_for(pause_address)
+    abort_colour_address = ConsoleService._colour_address_for(abort_address)
+
+    baseline_pause_colour = console_service.device.screen.peek_colour_address(
+        pause_colour_address
+    )
+    baseline_abort_colour = console_service.device.screen.peek_colour_address(
+        abort_colour_address
+    )
+
+    pause_calls: list[int | None] = []
+    abort_calls: list[int | None] = []
+    original_pause = console_service.set_pause_indicator
+    original_abort = console_service.set_abort_indicator
+
+    def recording_pause(glyph: int, *, colour: int | None = None) -> None:
+        pause_calls.append(colour)
+        original_pause(glyph, colour=colour)
+
+    def recording_abort(glyph: int, *, colour: int | None = None) -> None:
+        abort_calls.append(colour)
+        original_abort(glyph, colour=colour)
+
+    console_service.set_pause_indicator = recording_pause  # type: ignore[assignment]
+    console_service.set_abort_indicator = recording_abort  # type: ignore[assignment]
+
+    module._set_transfer_indicators(True)
+
+    active_pause_colour = console_service.device.screen.peek_colour_address(
+        pause_colour_address
+    )
+    active_abort_colour = console_service.device.screen.peek_colour_address(
+        abort_colour_address
+    )
+
+    assert pause_calls[0] == 0x0E
+    assert abort_calls[0] == 0x05
+
+    module._set_transfer_indicators(False)
+
+    restored_pause_colour = console_service.device.screen.peek_colour_address(
+        pause_colour_address
+    )
+    restored_abort_colour = console_service.device.screen.peek_colour_address(
+        abort_colour_address
+    )
+
+    assert restored_pause_colour == baseline_pause_colour
+    assert restored_abort_colour == baseline_abort_colour
+    assert pause_calls[-1] == baseline_pause_colour
+    assert abort_calls[-1] == baseline_abort_colour
+
+    console_service.set_pause_indicator = original_pause  # type: ignore[assignment]
+    console_service.set_abort_indicator = original_abort  # type: ignore[assignment]
 

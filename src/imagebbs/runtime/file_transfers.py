@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from pathlib import Path
-from typing import ClassVar, Iterable, Mapping, Optional, Literal
+from typing import ClassVar, Iterable, Mapping, Optional, Literal, TYPE_CHECKING
 
 from ..ampersand_dispatcher import AmpersandDispatcher
 from ..ampersand_registry import AmpersandRegistry
@@ -20,6 +20,9 @@ from .file_transfer_protocols import (
 from .macro_rendering import render_macro_with_overlay_commit
 from .masked_pane_staging import MaskedPaneMacro
 from .indicator_controller import IndicatorController
+
+if TYPE_CHECKING:  # pragma: no cover - only imported when type checking
+    from ..setup_defaults import SetupDefaults
 
 class FileTransferMenuState(Enum):
     """Internal states exposed by :class:`FileTransfersModule`."""
@@ -83,11 +86,39 @@ class FileTransfersModule:
     _indicator_controller: IndicatorController | None = field(
         init=False, default=None
     )
+    _defaults: "SetupDefaults | None" = field(init=False, default=None)
     library_module_factory: type[FileLibraryModule] = FileLibraryModule
     transfer_state_factory: type[TransferSessionState] = TransferSessionState
     _transfer_state: TransferSessionState | None = field(init=False, default=None)
     _active_protocol: str | None = field(init=False, default=None)
     _abort_service: TransferAbortService | None = field(init=False, default=None)
+    _indicator_pause_override: int | None = field(init=False, default=None)
+    _indicator_abort_override: int | None = field(init=False, default=None)
+    _indicator_pause_baseline_colour: int | None = field(
+        init=False, default=None
+    )
+    _indicator_abort_baseline_colour: int | None = field(
+        init=False, default=None
+    )
+    _indicator_pause_baseline_glyph: int | None = field(
+        init=False, default=None
+    )
+    _indicator_abort_baseline_glyph: int | None = field(
+        init=False, default=None
+    )
+    _indicator_pause_controller_restore: int | None = field(
+        init=False, default=None
+    )
+    _indicator_abort_controller_restore: int | None = field(
+        init=False, default=None
+    )
+    _indicator_pause_controller_restore_set: bool = field(
+        init=False, default=False
+    )
+    _indicator_abort_controller_restore_set: bool = field(
+        init=False, default=False
+    )
+    _indicator_preferences_resolved: bool = field(init=False, default=False)
 
     MENU_HEADER_MACRO = MaskedPaneMacro.FILE_TRANSFERS_HEADER
     MENU_PROMPT_MACRO = MaskedPaneMacro.FILE_TRANSFERS_PROMPT
@@ -219,6 +250,7 @@ class FileTransfersModule:
             if isinstance(candidate, IndicatorController):
                 controller = candidate
         self._indicator_controller = controller
+        self._defaults = getattr(kernel, "defaults", None)
         self.rendered_slots.clear()
         self.last_command = ""
         self.state = FileTransferMenuState.INTRO
@@ -230,6 +262,17 @@ class FileTransfersModule:
         if callable(register_service):
             register_service("file_transfer_abort", self._abort_service)
         self._active_protocol = self._resolve_initial_protocol(kernel)
+        self._indicator_pause_override = None
+        self._indicator_abort_override = None
+        self._indicator_pause_baseline_colour = None
+        self._indicator_abort_baseline_colour = None
+        self._indicator_pause_baseline_glyph = None
+        self._indicator_abort_baseline_glyph = None
+        self._indicator_pause_controller_restore = None
+        self._indicator_abort_controller_restore = None
+        self._indicator_pause_controller_restore_set = False
+        self._indicator_abort_controller_restore_set = False
+        self._indicator_preferences_resolved = False
         self._render_intro()
         return SessionState.FILE_TRANSFERS
 
@@ -648,25 +691,138 @@ class FileTransfersModule:
 
     # Why: toggle pause/abort indicators while a transfer is active, preferring indicator controllers when available.
     def _set_transfer_indicators(self, active: bool) -> None:
+        self._ensure_indicator_preferences()
+        controller = self._indicator_controller
+        pause_colour = self._resolved_indicator_colour(
+            self._indicator_pause_override, self._indicator_pause_baseline_colour
+        )
+        abort_colour = self._resolved_indicator_colour(
+            self._indicator_abort_override, self._indicator_abort_baseline_colour
+        )
         controller = self._indicator_controller
         if isinstance(controller, IndicatorController):
             if active:
-                controller.pause_colour = 2
-                controller.abort_colour = 2
+                if not self._indicator_pause_controller_restore_set:
+                    self._indicator_pause_controller_restore = controller.pause_colour
+                    self._indicator_pause_controller_restore_set = True
+                if not self._indicator_abort_controller_restore_set:
+                    self._indicator_abort_controller_restore = controller.abort_colour
+                    self._indicator_abort_controller_restore_set = True
+                if pause_colour is not None:
+                    controller.pause_colour = pause_colour
+                if abort_colour is not None:
+                    controller.abort_colour = abort_colour
             else:
-                controller.pause_colour = None
-                controller.abort_colour = None
+                if self._indicator_pause_controller_restore_set:
+                    controller.pause_colour = self._indicator_pause_controller_restore
+                if self._indicator_abort_controller_restore_set:
+                    controller.abort_colour = self._indicator_abort_controller_restore
+                self._indicator_pause_controller_restore = None
+                self._indicator_abort_controller_restore = None
+                self._indicator_pause_controller_restore_set = False
+                self._indicator_abort_controller_restore_set = False
             controller.set_pause(active)
             controller.set_abort(active)
             return
         if not isinstance(self._console, ConsoleService):
             return
         if active:
-            self._console.set_pause_indicator(ord("P"), colour=2)
-            self._console.set_abort_indicator(ord("A"), colour=2)
+            self._console.set_pause_indicator(ord("P"), colour=pause_colour)
+            self._console.set_abort_indicator(ord("A"), colour=abort_colour)
         else:
-            self._console.set_pause_indicator(0x20)
-            self._console.set_abort_indicator(0x20)
+            pause_glyph = (
+                self._indicator_pause_baseline_glyph
+                if self._indicator_pause_baseline_glyph is not None
+                else 0x20
+            )
+            abort_glyph = (
+                self._indicator_abort_baseline_glyph
+                if self._indicator_abort_baseline_glyph is not None
+                else 0x20
+            )
+            self._console.set_pause_indicator(
+                pause_glyph, colour=self._indicator_pause_baseline_colour
+            )
+            self._console.set_abort_indicator(
+                abort_glyph, colour=self._indicator_abort_baseline_colour
+            )
+
+    # Why: capture console indicator baselines and resolve configured colour overrides before toggling state.
+    def _ensure_indicator_preferences(self) -> None:
+        console = self._console
+        if isinstance(console, ConsoleService):
+            if (
+                self._indicator_pause_baseline_glyph is None
+                or self._indicator_pause_baseline_colour is None
+            ):
+                glyph, colour = self._peek_indicator_cell(
+                    console, console._PAUSE_SCREEN_ADDRESS
+                )
+                if self._indicator_pause_baseline_glyph is None:
+                    self._indicator_pause_baseline_glyph = glyph
+                if self._indicator_pause_baseline_colour is None:
+                    self._indicator_pause_baseline_colour = colour
+            if (
+                self._indicator_abort_baseline_glyph is None
+                or self._indicator_abort_baseline_colour is None
+            ):
+                glyph, colour = self._peek_indicator_cell(
+                    console, console._ABORT_SCREEN_ADDRESS
+                )
+                if self._indicator_abort_baseline_glyph is None:
+                    self._indicator_abort_baseline_glyph = glyph
+                if self._indicator_abort_baseline_colour is None:
+                    self._indicator_abort_baseline_colour = colour
+        if not self._indicator_preferences_resolved:
+            self._indicator_pause_override = self._resolve_indicator_override("pause")
+            self._indicator_abort_override = self._resolve_indicator_override("abort")
+            self._indicator_preferences_resolved = True
+
+    # Why: prefer configured overrides but reuse console palette values when none are defined.
+    def _resolved_indicator_colour(
+        self, override: int | None, baseline: int | None
+    ) -> int | None:
+        if override is not None:
+            return int(override) & 0xFF
+        if baseline is not None:
+            return int(baseline) & 0xFF
+        return None
+
+    # Why: sample the console screen and colour RAM backing a specific indicator cell.
+    def _peek_indicator_cell(
+        self, console: ConsoleService, screen_address: int
+    ) -> tuple[int | None, int | None]:
+        screen_bytes, colour_bytes = console.peek_block(
+            screen_address=screen_address,
+            screen_length=1,
+            colour_address=console._colour_address_for(screen_address),
+            colour_length=1,
+        )
+        glyph = screen_bytes[0] if screen_bytes else None
+        colour = colour_bytes[0] if colour_bytes else None
+        return glyph, colour
+
+    # Why: surface indicator colour overrides sourced from console defaults or session configuration.
+    def _resolve_indicator_override(
+        self, indicator: Literal["pause", "abort"]
+    ) -> int | None:
+        console = self._console
+        if isinstance(console, ConsoleService):
+            defaults = getattr(console, "defaults", None)
+            if defaults is not None:
+                console_attribute = f"indicator_{indicator}_colour"
+                value = getattr(defaults, console_attribute, None)
+                if value is None:
+                    value = getattr(defaults, f"{indicator}_colour", None)
+                if value is not None:
+                    return int(value) & 0xFF
+        defaults = self._defaults
+        indicator_defaults = getattr(defaults, "indicator", None)
+        if indicator_defaults is not None:
+            value = getattr(indicator_defaults, f"{indicator}_colour", None)
+            if value is not None:
+                return int(value) & 0xFF
+        return None
 
     # Why: announce the chosen protocol before bytes begin streaming.
     def _show_transfer_banner(
