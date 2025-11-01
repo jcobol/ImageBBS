@@ -326,6 +326,7 @@ def test_listen_session_serves_banner_and_exits_cleanly() -> None:
     args = parse_args([])
 
     async def _exercise() -> None:
+        # Why: coordinate the telnet negotiation and banner readback for a served session.
         expected_runner = create_runner(args)
         banner_text = expected_runner.read_output()
         translation_map = {"crlf": "\r\n", "lf": "\n", "none": None}
@@ -336,6 +337,15 @@ def test_listen_session_serves_banner_and_exits_cleanly() -> None:
             normalized = banner_text.replace("\r\n", "\n")
             expected_banner = normalized.replace("\n", translation).encode("latin-1")
 
+        negotiation_frames = [
+            bytes([0xFF, 0xFB, 0x01]),
+            bytes([0xFF, 0xFB, 0x03]),
+            bytes([0xFF, 0xFD, 0x03]),
+            bytes([0xFF, 0xFD, 0x00]),
+            bytes([0xFF, 0xFB, 0x00]),
+        ]
+        expected_negotiation = b"".join(negotiation_frames)
+
         server = await start_session_server(args, "127.0.0.1", 0)
         sockets = server.sockets or []
         assert sockets
@@ -343,6 +353,11 @@ def test_listen_session_serves_banner_and_exits_cleanly() -> None:
 
         reader, writer = await asyncio.open_connection(host, port)
         try:
+            negotiation = await asyncio.wait_for(
+                reader.readexactly(len(expected_negotiation)), timeout=1.0
+            )
+            assert negotiation == expected_negotiation
+
             received = await asyncio.wait_for(
                 reader.readexactly(len(expected_banner)), timeout=1.0
             )

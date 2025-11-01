@@ -345,6 +345,7 @@ class TelnetModemTransport(_IndicatorAwareTransportMixin, ModemTransport):
         editor_abort_command: str = DEFAULT_EDITOR_ABORT_COMMAND,
         newline_translation: str | None = None,
     ) -> None:
+        # Why: prepare the transport with the dependencies and defaults required to bridge telnet streams to session state.
         _IndicatorAwareTransportMixin.__init__(
             self,
             indicator_controller=indicator_controller,
@@ -379,6 +380,7 @@ class TelnetModemTransport(_IndicatorAwareTransportMixin, ModemTransport):
         self._binary_mode = False
         self._binary_decode_encoding = "latin-1"
         self._binary_read_size = 4096
+        self._expected_telnet_responses: dict[int, set[int]] = {}
 
     _IAC = 0xFF
     _WILL = 0xFB
@@ -387,6 +389,9 @@ class TelnetModemTransport(_IndicatorAwareTransportMixin, ModemTransport):
     _DONT = 0xFE
     _SB = 0xFA
     _SE = 0xF0
+    _BINARY = 0x00
+    _ECHO = 0x01
+    _SUPPRESS_GO_AHEAD = 0x03
 
     # ModemTransport API -------------------------------------------------
 
@@ -416,12 +421,36 @@ class TelnetModemTransport(_IndicatorAwareTransportMixin, ModemTransport):
             normalized = normalized.replace("\r\n", "\n")
         return normalized
 
+    def _write_telnet_negotiation(self) -> None:
+        # Why: inform the remote telnet client about the runtime's expected terminal capabilities.
+        frames: list[tuple[int, int]] = [
+            (self._WILL, self._ECHO),
+            (self._WILL, self._SUPPRESS_GO_AHEAD),
+            (self._DO, self._SUPPRESS_GO_AHEAD),
+            (self._DO, self._BINARY),
+            (self._WILL, self._BINARY),
+        ]
+        expected = self._expected_telnet_responses
+        expected.clear()
+        for command, option in frames:
+            self.writer.write(bytes([self._IAC, command, option]))
+            if command in (self._WILL, self._WONT):
+                expected.setdefault(option, set()).update({self._DO, self._DONT})
+            else:
+                expected.setdefault(option, set()).update({self._WILL, self._WONT})
+        if self._loop is not None:
+            task = self._loop.create_task(self.writer.drain())
+            self._track_task(task)
+
     def open(self) -> None:
         if self._loop is not None:
             return
         self._loop = asyncio.get_running_loop()
 
+        # Why: establish the telnet handshake and attach runtime pumps when a client connects.
         self._indicator_on_open(self.runner)
+
+        self._write_telnet_negotiation()
 
         initial = self.runner.read_output()
         if initial:
@@ -632,6 +661,7 @@ class TelnetModemTransport(_IndicatorAwareTransportMixin, ModemTransport):
             return True
 
     def _filter_telnet_negotiations(self, payload: bytes) -> tuple[bytes, list[bytes]]:
+        # Why: remove telnet control traffic from the payload stream while maintaining protocol replies.
         if not payload:
             return payload, []
 
@@ -686,6 +716,10 @@ class TelnetModemTransport(_IndicatorAwareTransportMixin, ModemTransport):
                     break
                 option = buffer[2]
                 del buffer[:3]
+                expected = self._expected_telnet_responses.get(option)
+                if expected and command in expected:
+                    del self._expected_telnet_responses[option]
+                    continue
                 if command in (self._WILL, self._WONT):
                     replies.append(bytes([self._IAC, self._DONT, option]))
                 else:

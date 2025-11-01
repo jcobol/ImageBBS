@@ -73,6 +73,15 @@ class FakeWriter:
         await asyncio.sleep(0)
 
 
+NEGOTIATION_FRAMES = [
+    bytes([0xFF, 0xFB, 0x01]),
+    bytes([0xFF, 0xFB, 0x03]),
+    bytes([0xFF, 0xFD, 0x03]),
+    bytes([0xFF, 0xFD, 0x00]),
+    bytes([0xFF, 0xFB, 0x00]),
+]
+
+
 class RecordingTelnetTransport(TelnetModemTransport):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -196,7 +205,8 @@ def test_telnet_transport_bootstrap_writes_board_banner() -> None:
         await asyncio.sleep(0)
         transport.close()
         await transport.wait_closed()
-        transcript = b"".join(writer.buffer).decode("latin-1", errors="ignore")
+        payload = writer.buffer[len(NEGOTIATION_FRAMES) :]
+        transcript = b"".join(payload).decode("latin-1", errors="ignore")
         return transcript, runner
 
     transcript, runner = asyncio.run(_exercise())
@@ -206,6 +216,29 @@ def test_telnet_transport_bootstrap_writes_board_banner() -> None:
     assert len(segments) >= 3
     assert segments[1] == defaults.prompt
     assert segments[2] == defaults.copyright_notice
+
+
+# Why: confirm the telnet negotiation frames precede the initial transcript and only emit once per session.
+def test_telnet_transport_writes_telnet_negotiation_on_open() -> None:
+    # Why: capture the writer buffer immediately after the transport opens.
+    async def _exercise() -> list[bytes]:
+        runner = SessionRunner()
+        reader = asyncio.StreamReader()
+        writer = FakeWriter()
+        transport = TelnetModemTransport(
+            runner,
+            reader,
+            writer,  # type: ignore[arg-type]
+            poll_interval=0.0,
+        )
+        transport.open()
+        return list(writer.buffer)
+
+    buffer = asyncio.run(_exercise())
+    assert buffer[: len(NEGOTIATION_FRAMES)] == NEGOTIATION_FRAMES
+    remainder = buffer[len(NEGOTIATION_FRAMES) :]
+    for frame in NEGOTIATION_FRAMES:
+        assert frame not in remainder
 
 
 def test_telnet_transport_updates_idle_timer_via_instrumentation() -> None:
@@ -591,10 +624,10 @@ def test_telnet_transport_handles_negotiation_sequences() -> None:
 
     runner, writer = asyncio.run(_exercise())
     assert runner.commands == ["HELLO", "BYE"]
-    assert writer.buffer == [
+    assert writer.buffer[: len(NEGOTIATION_FRAMES)] == NEGOTIATION_FRAMES
+    assert writer.buffer[len(NEGOTIATION_FRAMES) :] == [
         b"\xff\xfe\x01",
-        b"\xff\xfc\x03",
-        b"\xff\xfc\x23",
+        b"\xff\xfc#",
         b"\xff\xfe\x05",
     ]
 
@@ -651,7 +684,8 @@ def test_telnet_transport_discards_subnegotiation_sequences() -> None:
 
     runner, writer = asyncio.run(_exercise())
     assert runner.commands == ["HELLO"]
-    assert writer.buffer == [b"\xff\xfe\x01"]
+    assert writer.buffer[: len(NEGOTIATION_FRAMES)] == NEGOTIATION_FRAMES
+    assert writer.buffer[len(NEGOTIATION_FRAMES) :] == [b"\xff\xfe\x01"]
 
 
 def test_telnet_transport_discards_split_subnegotiation_sequences() -> None:
@@ -707,7 +741,8 @@ def test_telnet_transport_discards_split_subnegotiation_sequences() -> None:
 
     runner, writer = asyncio.run(_exercise())
     assert runner.commands == ["BYE"]
-    assert writer.buffer == [b"\xff\xfc\x07"]
+    assert writer.buffer[: len(NEGOTIATION_FRAMES)] == NEGOTIATION_FRAMES
+    assert writer.buffer[len(NEGOTIATION_FRAMES) :] == [b"\xff\xfc\x07"]
 
 
 def test_telnet_transport_binary_mode_preserves_payload() -> None:
