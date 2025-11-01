@@ -98,8 +98,28 @@ class MessageStoreLock(contextlib.AbstractContextManager["MessageStoreLock"]):
                     )
             time.sleep(_LOCK_RETRY_DELAY)
 
+        remaining: float | None = None
+        if start_time is not None and timeout is not None:
+            elapsed = time.monotonic() - start_time
+            if elapsed >= timeout:
+                handle.close()
+                raise TimeoutError(
+                    f"Timed out acquiring message store lock at {self._lock_path} "
+                    f"after {elapsed:.2f}s"
+                )
+            remaining = timeout - elapsed
         try:
-            self._acquire_os_lock(handle)
+            self._acquire_os_lock(handle, timeout=remaining)
+        except TimeoutError:
+            handle.close()
+            if start_time is not None and timeout is not None:
+                elapsed = time.monotonic() - start_time
+            else:
+                elapsed = 0.0
+            raise TimeoutError(
+                f"Timed out acquiring message store lock at {self._lock_path} "
+                f"after {elapsed:.2f}s"
+            )
         except Exception:
             handle.close()
             raise
@@ -140,18 +160,33 @@ class MessageStoreLock(contextlib.AbstractContextManager["MessageStoreLock"]):
         self._owner_id = None
 
     @staticmethod
-    def _acquire_os_lock(handle: IO[bytes]) -> None:
+    def _acquire_os_lock(handle: IO[bytes], *, timeout: float | None) -> None:
+        # Why: enforce OS-level mutual exclusion while honoring acquisition deadlines across supported platforms.
+        deadline = None
+        if timeout is not None:
+            deadline = time.monotonic() + max(timeout, 0.0)
         if os.name == "nt":  # pragma: no cover - Windows only
             while True:
                 try:
-                    msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
                     break
                 except OSError as exc:
                     if exc.errno not in {errno.EACCES, errno.EDEADLK}:
                         raise
+                    if deadline is not None and time.monotonic() >= deadline:
+                        raise TimeoutError from None
                     time.sleep(_LOCK_RETRY_DELAY)
         else:  # pragma: no cover - Unix only
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            while True:
+                try:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except OSError as exc:
+                    if exc.errno not in {errno.EACCES, errno.EAGAIN}:
+                        raise
+                    if deadline is not None and time.monotonic() >= deadline:
+                        raise TimeoutError from None
+                    time.sleep(_LOCK_RETRY_DELAY)
 
     @staticmethod
     def _release_os_lock(handle: IO[bytes]) -> None:
