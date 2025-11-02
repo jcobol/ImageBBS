@@ -63,6 +63,29 @@ def test_ml_extra_refresh_console_script(console_script: Path, project_root: Pat
     assert output_path.exists()
     assert "Metadata snapshot" in success.stdout
 
+    success_json = subprocess.run(
+        [
+            str(console_script),
+            "--baseline",
+            str(baseline_path),
+            "--metadata-json",
+            str(output_path),
+            "--if-changed",
+            "--json",
+        ],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+
+    assert success_json.returncode == 0
+    json_lines = success_json.stdout.splitlines()
+    assert json_lines
+    assert json_lines[0].startswith("Metadata snapshot")
+    diff_payload = json.loads("\n".join(json_lines[1:]))
+    assert diff_payload["matches"] is True
+
     mismatch_payload = json.loads(baseline_path.read_text(encoding="utf-8"))
     mismatch_payload["load_address"] = "$ffff"
     mismatch_baseline = tmp_path / "mismatch.json"
