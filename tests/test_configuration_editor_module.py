@@ -6,6 +6,7 @@ from imagebbs.runtime.configuration_editor import (
     ConfigurationEditorModule,
     ConfigurationEditorState,
 )
+from imagebbs.runtime.configuration_editor_modules import MacrosEditorHandler
 from imagebbs.session_kernel import SessionKernel, SessionState
 
 
@@ -24,6 +25,17 @@ def _read_row(console: ConsoleService, row: int) -> str:
         code = console.screen.peek_screen_address(base + offset) & 0x7F
         chars.append(chr(code))
     return "".join(chars)
+
+
+# Why: capture raw glyph bytes for a menu entry so reverse-video checks stay simple.
+def _read_entry_glyphs(
+    console: ConsoleService, module: ConfigurationEditorModule, code: str
+) -> bytes:
+    layout = module._entry_layouts[code]
+    screen_bytes, _ = console.peek_block(
+        screen_address=layout.address, screen_length=len(layout.glyphs)
+    )
+    return screen_bytes or b""
 
 
 # Why: ensure initial renders mirror the documented layout and prompt behaviour.
@@ -65,8 +77,37 @@ def test_configuration_editor_valid_command_records_selection() -> None:
 
     status_row = _read_row(console, module._STATUS_ROW)
     prompt_row = _read_row(console, module._PROMPT_ROW)
-    assert status_row.strip().startswith("Macros Editor module is not yet imple")
+    assert status_row.strip().startswith("Overlay order:")
     assert prompt_row.startswith(module._PROMPT)
+
+
+# Why: confirm handler dispatch updates defaults and preserves highlight/prompt behaviour.
+def test_configuration_editor_handler_dispatch_and_commits() -> None:
+    kernel, module = _bootstrap_kernel()
+    console = kernel.services["console"]
+    assert isinstance(console, ConsoleService)
+
+    kernel.step(ConfigurationEditorEvent.ENTER)
+
+    kernel.step(ConfigurationEditorEvent.COMMAND, "a")
+
+    assert isinstance(module._active_handler, MacrosEditorHandler)
+
+    state = kernel.step(
+        ConfigurationEditorEvent.COMMAND, "a ml.one,ml.two"
+    )
+
+    assert state is SessionState.CONFIGURATION_EDITOR
+    assert kernel.defaults.macro_modules == ("ML.ONE", "ML.TWO")
+
+    status_row = _read_row(console, module._STATUS_ROW)
+    prompt_row = _read_row(console, module._PROMPT_ROW)
+    highlight_bytes = _read_entry_glyphs(console, module, "A")
+
+    assert status_row.strip().startswith("Overlay order updated:")
+    assert prompt_row.startswith(module._PROMPT)
+    assert highlight_bytes and (highlight_bytes[0] & 0x80)
+    assert isinstance(module._active_handler, MacrosEditorHandler)
 
 
 # Why: verify the quit command returns callers to the main menu state.
