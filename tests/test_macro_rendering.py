@@ -1,11 +1,15 @@
-"""Tests for ``render_macro_with_overlay_commit`` helper."""
+"""Tests for macro rendering helpers."""
 from __future__ import annotations
 
 from typing import Any, Iterable, Sequence
 
 import pytest
 
-from imagebbs.runtime.macro_rendering import render_macro_with_overlay_commit
+from imagebbs.runtime.macro_rendering import (
+    render_macro_with_overlay_commit,
+    render_masked_macro,
+)
+from imagebbs.runtime.masked_pane_staging import MaskedPaneMacro, MaskedPaneMacroSpec
 
 
 class FakeConsoleService:
@@ -69,6 +73,36 @@ class FakeAmpersandDispatcher:
 
     def dispatch(self, command: str) -> None:
         self.commands.append(command)
+
+
+class FakeStagingMap:
+    """Minimal staging map stub exposing spec and fallback lookups."""
+
+    def __init__(
+        self,
+        *,
+        specs: dict[MaskedPaneMacro, MaskedPaneMacroSpec] | None = None,
+        fallbacks: dict[int, tuple[Sequence[int], Sequence[int]]] | None = None,
+    ) -> None:
+        # Why: capture stub configuration for predictable staging behaviour.
+        self._specs = specs or {}
+        self._fallbacks = fallbacks or {}
+        self.spec_calls: list[MaskedPaneMacro] = []
+        self.fallback_calls: list[int] = []
+
+    def spec(self, macro: MaskedPaneMacro) -> MaskedPaneMacroSpec:
+        # Why: emulate staging-map resolution so helpers receive slot metadata.
+        self.spec_calls.append(macro)
+        if macro not in self._specs:
+            raise KeyError(macro)
+        return self._specs[macro]
+
+    def fallback_overlay_for_slot(
+        self, slot: int
+    ) -> tuple[Sequence[int], Sequence[int]] | None:
+        # Why: provide overlay data when staging falls back to a direct slot.
+        self.fallback_calls.append(slot)
+        return self._fallbacks.get(slot)
 
 
 @pytest.mark.parametrize("use_dispatcher", [False, True])
@@ -137,3 +171,51 @@ def test_render_macro_with_overlay_commit_uses_fallback_overlay_when_stage_fails
         ("stage_masked_pane_overlay", glyphs, colours, 7, 0x42),
         ("push_macro_slot", 0x42),
     ]
+
+
+def test_render_masked_macro_uses_spec_slot_when_available() -> None:
+    # Why: ensure macros registered in the staging map reuse their mapped slot.
+    """The helper routes through the staging-map spec when the macro is mapped."""
+
+    spec = MaskedPaneMacroSpec(
+        macro=MaskedPaneMacro.MAIN_MENU_HEADER,
+        slot=0x11,
+        fallback_overlay=((1, 2), (3, 4)),
+    )
+    staging_map = FakeStagingMap(specs={MaskedPaneMacro.MAIN_MENU_HEADER: spec})
+    console = FakeConsoleService(stage_macro_slot_results=[object(), object()])
+    console.masked_pane_staging_map = staging_map
+
+    slot = render_masked_macro(
+        console=console,
+        dispatcher=None,
+        macro=MaskedPaneMacro.MAIN_MENU_HEADER,
+    )
+
+    assert slot == 0x11
+    assert staging_map.spec_calls == [MaskedPaneMacro.MAIN_MENU_HEADER]
+    assert staging_map.fallback_calls == []
+    assert [call["slot"] for call in console.stage_macro_slot_calls] == [0x11, 0x11]
+
+
+def test_render_masked_macro_falls_back_to_default_slot() -> None:
+    # Why: confirm macros outside the staging map render with the default slot fallback.
+    """Macros missing from the staging map use the provided default slot and fallback."""
+
+    fallback_overlay = ([5, 6], [7, 8])
+    staging_map = FakeStagingMap(fallbacks={0x22: fallback_overlay})
+    console = FakeConsoleService(stage_macro_slot_results=[])
+    console.masked_pane_staging_map = staging_map
+
+    slot = render_masked_macro(
+        console=console,
+        dispatcher=None,
+        macro=MaskedPaneMacro.MAIN_MENU_PROMPT,
+        default_slot=0x22,
+    )
+
+    assert slot == 0x22
+    assert staging_map.spec_calls == [MaskedPaneMacro.MAIN_MENU_PROMPT]
+    assert staging_map.fallback_calls == [0x22]
+    assert console.stage_masked_pane_overlay_calls[0]["glyphs"] == fallback_overlay[0]
+    assert console.stage_masked_pane_overlay_calls[0]["colours"] == fallback_overlay[1]
