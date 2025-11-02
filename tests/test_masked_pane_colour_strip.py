@@ -100,3 +100,41 @@ def test_session_instrumentation_tick_advances_colour_strip() -> None:
     instrumentation.on_idle_cycle()
     expected_second = _resolve_palette_colour(sequence[1], palette)
     assert _colour_strip_payload(service) == (expected_second,) * service._MASKED_PANE_COLOUR_STRIP_LENGTH
+
+
+def test_session_instrumentation_colour_strip_override_freezes_palette() -> None:
+    console = Console()
+    service = ConsoleService(console)
+    service.set_masked_pane_buffers(MaskedPaneBuffers())
+
+    class _Runner:
+        def __init__(self, console_service: ConsoleService) -> None:
+            self.console = console_service
+            self.defaults = SimpleNamespace(indicator=None)
+
+    runner = _Runner(service)
+    instrumentation = SessionInstrumentation(
+        runner,
+        indicator_controller_cls=None,
+        idle_timer_scheduler_cls=None,
+    )
+
+    sequence = service.masked_pane_colour_strip_sequence()
+    palette = service.screen.palette
+
+    instrumentation.set_colour_strip_override(4)
+    instrumentation.on_idle_cycle()
+    expected_override = _resolve_palette_colour(sequence[4], palette)
+    assert _colour_strip_payload(service) == (expected_override,) * service._MASKED_PANE_COLOUR_STRIP_LENGTH
+
+    instrumentation.on_idle_cycle()
+    assert _colour_strip_payload(service) == (expected_override,) * service._MASKED_PANE_COLOUR_STRIP_LENGTH
+
+    instrumentation.set_colour_strip_override(None)
+    instrumentation.on_idle_cycle()
+    expected_first = _resolve_palette_colour(sequence[0], palette)
+    assert _colour_strip_payload(service) == (expected_first,) * service._MASKED_PANE_COLOUR_STRIP_LENGTH
+
+    instrumentation.on_idle_cycle()
+    expected_second = _resolve_palette_colour(sequence[1], palette)
+    assert _colour_strip_payload(service) == (expected_second,) * service._MASKED_PANE_COLOUR_STRIP_LENGTH
