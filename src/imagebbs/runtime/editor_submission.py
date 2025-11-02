@@ -5,12 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Generator, Protocol
 
-from ..message_editor import EditorState
+from ..message_editor import EditorState, MessageEditor
 from ..session_kernel import SessionState
 from .session_runner import SessionRunner
 
-DEFAULT_EDITOR_ABORT_COMMAND = "/abort"
-DEFAULT_EDITOR_SUBMIT_COMMAND = "/send"
+DEFAULT_EDITOR_ABORT_COMMAND = ".A"
+DEFAULT_EDITOR_SUBMIT_COMMAND = ".S"
+DOT_HELP_COMMAND = ".H"
+DOT_LINE_NUMBER_COMMAND = ".O"
 
 
 class SyncEditorIO(Protocol):
@@ -118,27 +120,79 @@ class EditorSubmissionHandler:
         editor_state = runner.get_editor_state()
         existing_subject = context.current_message if editor_state is not None else ""
         existing_lines = list(context.draft_buffer)
+        submit_aliases = {
+            DEFAULT_EDITOR_SUBMIT_COMMAND.upper(),
+            self._submit_command.upper(),
+            *MessageEditor.DOT_SAVE_COMMANDS,
+        }
+        abort_aliases = {
+            DEFAULT_EDITOR_ABORT_COMMAND.upper(),
+            self._abort_command.upper(),
+            *MessageEditor.DOT_ABORT_COMMANDS,
+        }
+        help_aliases = {
+            DOT_HELP_COMMAND.upper(),
+            *MessageEditor.DOT_HELP_COMMANDS,
+        }
+        line_aliases = {
+            DOT_LINE_NUMBER_COMMAND.upper(),
+            *MessageEditor.DOT_LINE_NUMBER_COMMANDS,
+        }
+        submit_aliases = {alias.upper() for alias in submit_aliases}
+        abort_aliases = {alias.upper() for alias in abort_aliases}
+        help_aliases = {alias.upper() for alias in help_aliases}
+        line_aliases = {alias.upper() for alias in line_aliases}
+        output_cursor = len(context.modem_buffer)
 
         yield _WriteLine("")
         yield _WriteLine("-- Message Editor --")
-        yield _WriteLine(
-            f"Type {self._submit_command} to save or {self._abort_command} to cancel."
+        instructions = (
+            "Type .S to save, .A to abort, .H for help, .O toggles line numbers."
         )
+        extra_aliases: list[str] = []
+        if self._submit_command.upper() not in MessageEditor.DOT_SAVE_COMMANDS:
+            extra_aliases.append(f"{self._submit_command} also saves")
+        if self._abort_command.upper() not in MessageEditor.DOT_ABORT_COMMANDS:
+            extra_aliases.append(f"{self._abort_command} also aborts")
+        if extra_aliases:
+            instructions += " (" + ", ".join(extra_aliases) + ".)"
+        yield _WriteLine(instructions)
 
         subject_text = existing_subject
         if editor_state is EditorState.POST_MESSAGE:
-            prompt = "Subject"
-            if existing_subject:
-                prompt += f" [{existing_subject}]"
-            prompt += ": "
-            yield _WritePrompt(prompt)
-            subject_line = yield _ReadLine()
-            if subject_line is None:
-                return _SubmissionResult("abort", None, None)
-            if subject_line.strip().lower() == self._abort_command:
-                return _SubmissionResult("abort", None, None)
-            if subject_line:
-                subject_text = subject_line
+            while True:
+                prompt = "Subject"
+                if existing_subject:
+                    prompt += f" [{existing_subject}]"
+                prompt += ": "
+                yield _WritePrompt(prompt)
+                subject_line = yield _ReadLine()
+                if subject_line is None:
+                    return _SubmissionResult("abort", None, None)
+                stripped_subject = subject_line.strip()
+                upper_subject = stripped_subject.upper()
+                if upper_subject in help_aliases:
+                    output_cursor, feedback = self._invoke_editor_inline(
+                        DOT_HELP_COMMAND, output_cursor
+                    )
+                    for message in feedback:
+                        yield _WriteLine(message)
+                    continue
+                if upper_subject in line_aliases:
+                    output_cursor, feedback = self._invoke_editor_inline(
+                        DOT_LINE_NUMBER_COMMAND, output_cursor
+                    )
+                    for message in feedback:
+                        yield _WriteLine(message)
+                    continue
+                if upper_subject in abort_aliases:
+                    return _SubmissionResult("abort", None, None)
+                if upper_subject in submit_aliases:
+                    final_lines = list(existing_lines)
+                    return _SubmissionResult("submit", subject_text, final_lines)
+                if subject_line:
+                    subject_text = subject_line
+                break
 
         if editor_state is EditorState.EDIT_DRAFT and existing_lines:
             yield _WriteLine("Current message lines:")
@@ -152,10 +206,25 @@ class EditorSubmissionHandler:
             line = yield _ReadLine()
             if line is None:
                 return _SubmissionResult("abort", None, None)
-            command = line.strip().lower()
-            if command == self._abort_command:
+            stripped = line.strip()
+            upper = stripped.upper()
+            if upper in help_aliases:
+                output_cursor, feedback = self._invoke_editor_inline(
+                    DOT_HELP_COMMAND, output_cursor
+                )
+                for message in feedback:
+                    yield _WriteLine(message)
+                continue
+            if upper in line_aliases:
+                output_cursor, feedback = self._invoke_editor_inline(
+                    DOT_LINE_NUMBER_COMMAND, output_cursor
+                )
+                for message in feedback:
+                    yield _WriteLine(message)
+                continue
+            if upper in abort_aliases:
                 return _SubmissionResult("abort", None, None)
-            if command == self._submit_command:
+            if upper in submit_aliases:
                 final_lines = list(lines) if lines else list(existing_lines)
                 subject: str | None
                 if editor_state is EditorState.POST_MESSAGE:
@@ -172,6 +241,35 @@ class EditorSubmissionHandler:
             runner.submit_editor_draft(subject=result.subject, lines=result.lines)
             return
         runner.abort_editor()
+
+    # Why: relay inline dot commands to the editor module and expose any resulting feedback to the caller.
+    def _invoke_editor_inline(
+        self, command: str, cursor: int
+    ) -> tuple[int, list[str]]:
+        runner = self._runner
+        state = runner.send_command(command)
+        context = runner.editor_context
+        if context is None:
+            return cursor, []
+        buffer = getattr(context, "modem_buffer", None)
+        if buffer is None:
+            buffer = []
+            setattr(context, "modem_buffer", buffer)
+        if cursor > len(buffer):
+            cursor = len(buffer)
+        new_segments = list(buffer[cursor:])
+        cursor = len(buffer)
+        feedback: list[str] = []
+        for segment in new_segments:
+            pieces = segment.split("\r")
+            for piece in pieces:
+                text = piece.rstrip()
+                if not text:
+                    continue
+                feedback.append(text)
+        if state is not SessionState.MESSAGE_EDITOR:
+            return cursor, feedback
+        return cursor, feedback
 
     @staticmethod
     def _drive_flow(
@@ -218,6 +316,8 @@ __all__ = [
     "AsyncEditorIO",
     "DEFAULT_EDITOR_ABORT_COMMAND",
     "DEFAULT_EDITOR_SUBMIT_COMMAND",
+    "DOT_HELP_COMMAND",
+    "DOT_LINE_NUMBER_COMMAND",
     "EditorSubmissionHandler",
     "SyncEditorIO",
 ]

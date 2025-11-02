@@ -19,6 +19,14 @@ from .message_store import MessageStore
 from .message_store_repository import save_message_store
 from .sysop_options import SysopOptionsEvent
 
+
+# Why: capture parsed dot-command submissions so message composition inputs can be normalised before dispatching events.
+@dataclass(slots=True)
+class _CompositionInput:
+    command: str | None
+    subject: str
+    lines: list[str]
+
 # Why: mirror overlay glyphs so console fallbacks preserve ImageBBS indicator semantics.
 from .indicator_controller import (
     IndicatorController,
@@ -408,6 +416,7 @@ class SessionRunner:
         event = self._resolve_editor_event(editor, context, text)
         return self._dispatch(event, context)
 
+    # Why: translate textual submissions into editor events while preserving the legacy dot-command controls.
     def _resolve_editor_event(
         self, editor: MessageEditor, context: SessionContext, text: str
     ) -> MessageEditorEvent:
@@ -416,33 +425,76 @@ class SessionRunner:
             context.current_message = text
             return MessageEditorEvent.MESSAGE_SELECTED
         if state is EditorState.POST_MESSAGE:
-            subject, lines = self._partition_editor_submission(text, include_subject=True)
-            context.current_message = subject
-            context.draft_buffer = lines
+            parsed = self._parse_composition_input(
+                text, include_subject=True, context=context
+            )
+            command = parsed.command
+            if command and command in MessageEditor.DOT_ABORT_COMMANDS:
+                context.command_buffer = command
+                return MessageEditorEvent.ABORT
+            if command and command in (
+                MessageEditor.DOT_HELP_COMMANDS
+                | MessageEditor.DOT_LINE_NUMBER_COMMANDS
+            ):
+                context.command_buffer = command
+                return MessageEditorEvent.COMMAND_SELECTED
+            context.current_message = parsed.subject
+            context.draft_buffer = parsed.lines
             return MessageEditorEvent.DRAFT_SUBMITTED
         if state is EditorState.EDIT_DRAFT:
             if context.selected_message_id is None:
                 context.current_message = text
                 context.draft_buffer.clear()
                 return MessageEditorEvent.ENTER
-            _, lines = self._partition_editor_submission(
-                text, include_subject=False
+            parsed = self._parse_composition_input(
+                text, include_subject=False, context=context
             )
-            context.draft_buffer = lines
+            command = parsed.command
+            if command and command in MessageEditor.DOT_ABORT_COMMANDS:
+                context.command_buffer = command
+                return MessageEditorEvent.ABORT
+            if command and command in (
+                MessageEditor.DOT_HELP_COMMANDS
+                | MessageEditor.DOT_LINE_NUMBER_COMMANDS
+            ):
+                context.command_buffer = command
+                return MessageEditorEvent.COMMAND_SELECTED
+            context.draft_buffer = parsed.lines
+            context.current_message = parsed.subject
             return MessageEditorEvent.DRAFT_SUBMITTED
 
         context.current_message = text
         return MessageEditorEvent.COMMAND_SELECTED
 
-    def _partition_editor_submission(
-        self, text: str, *, include_subject: bool
-    ) -> tuple[str, list[str]]:
+    # Why: normalise subject/body text and trailing commands emitted by the editor front-ends.
+    def _parse_composition_input(
+        self,
+        text: str,
+        *,
+        include_subject: bool,
+        context: SessionContext,
+    ) -> _CompositionInput:
         lines = list(self._split_editor_lines(text))
+        while lines and not lines[-1].strip():
+            lines.pop()
+        command: str | None = None
+        if lines:
+            candidate = lines[-1].strip()
+            if candidate.startswith(".") or candidate.startswith("/"):
+                command = candidate.upper()
+                lines.pop()
         if include_subject:
-            subject = lines[0] if lines else ""
-            body = lines[1:] if lines else []
-            return subject, body
-        return "", lines
+            if lines:
+                subject = lines[0]
+                body = lines[1:]
+            else:
+                subject = context.current_message
+                body: list[str] = []
+        else:
+            subject = context.current_message
+            body = lines
+        subject = subject or context.current_message
+        return _CompositionInput(command=command, subject=subject, lines=body)
 
     def _split_editor_lines(self, text: str) -> Iterable[str]:
         if not text:

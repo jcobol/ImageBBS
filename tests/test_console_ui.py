@@ -873,6 +873,8 @@ class FakeEditorContext:
         self.current_message = ""
         self.draft_buffer: list[str] = []
         self.selected_message_id: int | None = None
+        self.modem_buffer: list[str] = []
+        self.line_numbers_enabled = False
 
 
 class FakeEditorRunner:

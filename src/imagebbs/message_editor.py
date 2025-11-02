@@ -47,6 +47,7 @@ class SessionContext:
     command_buffer: str = ""
     selected_message_id: Optional[int] = None
     draft_buffer: List[str] = field(default_factory=list)
+    line_numbers_enabled: bool = False
     _pending_state: SessionState | None = field(init=False, default=None, repr=False)
 
     def __post_init__(self) -> None:
@@ -115,6 +116,17 @@ class MessageEditor:
     POST_MESSAGE_MACRO_INDEX = 0x14
     EDIT_DRAFT_MACRO_INDEX = 0x15
     MAIN_MENU_PROMPT = "(R)ead, (P)ost, (E)dit Draft, (Q)uit? "
+    DOT_COMMAND_PROMPT = "COMMAND: .S=Save .A=Abort .H=Help .O=Line#\r"
+    DOT_COMMAND_HELP_TEXT = (
+        "\r.S save message\r"
+        ".A aborts without saving\r"
+        ".H shows this help again\r"
+        ".O toggles line numbers on/off\r"
+    )
+    DOT_SAVE_COMMANDS = frozenset({".S", "/SEND"})
+    DOT_ABORT_COMMANDS = frozenset({".A", "/ABORT"})
+    DOT_HELP_COMMANDS = frozenset({".H", ".?"})
+    DOT_LINE_NUMBER_COMMANDS = frozenset({".O"})
 
     def __init__(
         self,
@@ -235,6 +247,7 @@ class MessageEditor:
             return EditorState.MAIN_MENU
         raise TransitionError("Read messages requires MESSAGE_SELECTED or ABORT")
 
+    # Why: orchestrate composition events for new message postings while reflecting the legacy dot-command UX.
     def _handle_post_message(self, event: Event, ctx: SessionContext) -> EditorState:
         store = self._resolve_store(ctx)
         if event is Event.ENTER:
@@ -245,6 +258,7 @@ class MessageEditor:
                 event,
             )
             ctx.clear_draft()
+            ctx.push_output(self.DOT_COMMAND_PROMPT)
             return EditorState.POST_MESSAGE
         if event is Event.DRAFT_SUBMITTED:
             subject = ctx.command_buffer or "Untitled"
@@ -265,6 +279,8 @@ class MessageEditor:
                 event,
             )
             return EditorState.MAIN_MENU
+        if event is Event.COMMAND_SELECTED:
+            return self._handle_composition_command(EditorState.POST_MESSAGE, ctx)
         if event is Event.ABORT:
             self._ampersand_dispatch(
                 self.POST_MESSAGE_MACRO_INDEX,
@@ -276,6 +292,7 @@ class MessageEditor:
             return EditorState.MAIN_MENU
         raise TransitionError("Post message requires ENTER, DRAFT_SUBMITTED, or ABORT")
 
+    # Why: manage draft edits while preserving legacy control commands for the composition loop.
     def _handle_edit_draft(self, event: Event, ctx: SessionContext) -> EditorState:
         store = self._resolve_store(ctx)
         if event is Event.ENTER:
@@ -297,6 +314,7 @@ class MessageEditor:
                 "EDIT DRAFT MODE\r",
                 event,
             )
+            ctx.push_output(self.DOT_COMMAND_PROMPT)
             return EditorState.EDIT_DRAFT
         if event is Event.DRAFT_SUBMITTED:
             message_id = self._resolve_message_id(ctx)
@@ -318,6 +336,8 @@ class MessageEditor:
                 event,
             )
             return EditorState.MAIN_MENU
+        if event is Event.COMMAND_SELECTED:
+            return self._handle_composition_command(EditorState.EDIT_DRAFT, ctx)
         if event is Event.ABORT:
             ctx.clear_draft()
             ctx.reset_selection()
@@ -379,6 +399,29 @@ class MessageEditor:
         return session.consume_state(SessionState.MESSAGE_EDITOR)
 
     # Internal helpers -------------------------------------------------
+
+    # Why: service composition commands that keep the editor active, such as help and line-number toggles.
+    def _handle_composition_command(
+        self, state: EditorState, session: SessionContext
+    ) -> EditorState:
+        command = (session.command_buffer or "").strip().upper()
+        if not command:
+            session.push_output("?NO COMMAND ENTERED\r")
+            session.push_output(self.DOT_COMMAND_PROMPT)
+            return state
+        if command in self.DOT_HELP_COMMANDS:
+            session.push_output(self.DOT_COMMAND_HELP_TEXT)
+            session.push_output(self.DOT_COMMAND_PROMPT)
+            return state
+        if command in self.DOT_LINE_NUMBER_COMMANDS:
+            session.line_numbers_enabled = not session.line_numbers_enabled
+            status = " LINE NUMBERS ON.\r" if session.line_numbers_enabled else " LINE NUMBERS OFF.\r"
+            session.push_output(status)
+            session.push_output(self.DOT_COMMAND_PROMPT)
+            return state
+        session.push_output("?UNRECOGNIZED COMMAND\r")
+        session.push_output(self.DOT_COMMAND_PROMPT)
+        return state
 
     def _prepare_session(self, session: SessionContext) -> None:
         store = session.store or self.store
