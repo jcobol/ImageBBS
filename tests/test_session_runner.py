@@ -10,6 +10,11 @@ from imagebbs.runtime.file_transfers import FileTransfersModule
 from imagebbs.runtime.main_menu import MainMenuModule
 from imagebbs.runtime.message_store import MessageStore
 from imagebbs.runtime.sysop_options import SysopOptionsModule
+from imagebbs.runtime.indicator_controller import (
+    _ABORT_GLYPH,
+    _PAUSE_GLYPH,
+    _SPACE_GLYPH,
+)
 
 
 @pytest.fixture()
@@ -69,6 +74,44 @@ def test_session_runner_registers_indicator_controller(runner: SessionRunner) ->
     service_registry = context.service_registry
     assert "indicator_controller" not in service_registry
     assert "console" in service_registry
+
+
+# Why: confirm pause toggles update the console directly when no controller is registered.
+def test_session_runner_sets_pause_indicator_without_controller(
+    runner: SessionRunner,
+) -> None:
+    baseline_snapshot = runner.console.indicator_snapshot()
+
+    runner.set_pause_indicator_state(True)
+    active_snapshot = runner.console.indicator_snapshot()
+
+    assert active_snapshot.pause.glyph == _PAUSE_GLYPH
+    assert active_snapshot.pause.colour == baseline_snapshot.pause.colour
+
+    runner.set_pause_indicator_state(False)
+    cleared_snapshot = runner.console.indicator_snapshot()
+
+    assert cleared_snapshot.pause.glyph == _SPACE_GLYPH
+    assert cleared_snapshot.pause.colour == baseline_snapshot.pause.colour
+
+
+# Why: confirm abort toggles update the console directly when no controller is registered.
+def test_session_runner_sets_abort_indicator_without_controller(
+    runner: SessionRunner,
+) -> None:
+    baseline_snapshot = runner.console.indicator_snapshot()
+
+    runner.set_abort_indicator_state(True)
+    active_snapshot = runner.console.indicator_snapshot()
+
+    assert active_snapshot.abort.glyph == _ABORT_GLYPH
+    assert active_snapshot.abort.colour == baseline_snapshot.abort.colour
+
+    runner.set_abort_indicator_state(False)
+    cleared_snapshot = runner.console.indicator_snapshot()
+
+    assert cleared_snapshot.abort.glyph == _SPACE_GLYPH
+    assert cleared_snapshot.abort.colour == baseline_snapshot.abort.colour
 
 
 def test_session_runner_initialises_and_emits_enter(runner: SessionRunner) -> None:
