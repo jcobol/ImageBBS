@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 from typing import List
 
@@ -57,6 +58,16 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Only overwrite the metadata JSON when the contents change.",
     )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit the diff payload as JSON instead of a text summary",
+    )
+    parser.add_argument(
+        "--update-baseline",
+        action="store_true",
+        help="Overwrite the baseline with the freshly generated snapshot",
+    )
     namespace = parser.parse_args(argv)
     if not namespace.metadata_only and namespace.baseline is None:
         namespace.baseline = DEFAULT_BASELINE
@@ -68,6 +79,8 @@ def main(argv: List[str] | None = None) -> int:
     """Entry point for the ``ml_extra_refresh_pipeline`` CLI."""
 
     args = parse_args(argv)
+    if args.metadata_only and args.update_baseline:
+        raise SystemExit("--update-baseline requires a baseline comparison")
     baseline_path = None if args.metadata_only else args.baseline
     try:
         result = run_baseline_workflow(
@@ -75,6 +88,7 @@ def main(argv: List[str] | None = None) -> int:
             baseline_path=baseline_path,
             metadata_path=args.metadata_json,
             metadata_only_if_changed=args.if_changed,
+            update_baseline=args.update_baseline if not args.metadata_only else False,
         )
     except (FileNotFoundError, RuntimeError, ValueError) as error:
         raise SystemExit(str(error)) from error
@@ -98,7 +112,19 @@ def main(argv: List[str] | None = None) -> int:
             "baseline comparison requested but metadata snapshot is unavailable"
         )
 
-    print(sanity_reporting.render_diff_summary(baseline_path, diff))
+    if args.json:
+        print(json.dumps(diff.to_dict(), indent=2, sort_keys=True))
+    else:
+        print(sanity_reporting.render_diff_summary(baseline_path, diff))
+
+    if args.update_baseline:
+        if not args.json:
+            if result.baseline_updated:
+                print(f"Refreshed baseline snapshot at {baseline_path}")
+            else:
+                print(f"Baseline snapshot already up to date: {baseline_path}")
+        return 0
+
     matches = diff.matches
     return 0 if matches else 1
 
