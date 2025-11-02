@@ -12,7 +12,7 @@ from ..message_editor import MessageEditor
 from ..session_kernel import SessionKernel, SessionModule, SessionState
 from .configuration_editor import ConfigurationEditorModule
 from .file_transfers import FileTransfersModule
-from .macro_rendering import render_macro_with_overlay_commit
+from .macro_rendering import render_masked_macro
 from .masked_pane_staging import MaskedPaneMacro
 from .sysop_options import SysopOptionsModule
 
@@ -216,32 +216,21 @@ class MainMenuModule:
             return MenuCommand.CONFIGURATION_EDITOR
         return MenuCommand.UNKNOWN
 
+    # Why: centralise masked-pane rendering so intro and errors reuse shared staging.
     def _render_macro(self, macro: MaskedPaneMacro) -> None:
         if self.registry is None:
             raise RuntimeError("ampersand registry has not been initialised")
         if not isinstance(self._console, ConsoleService):  # pragma: no cover - guard
             raise RuntimeError("console service is unavailable")
         staging_map = self._console.masked_pane_staging_map
-        try:
-            spec = staging_map.spec(macro)
-        except KeyError:
-            slot = self._DEFAULT_MACRO_SLOTS[macro]
-            fallback_overlay = staging_map.fallback_overlay_for_slot(slot)
-            render_macro_with_overlay_commit(
-                console=self._console,
-                dispatcher=self._dispatcher,
-                slot=slot,
-                fallback_overlay=fallback_overlay,
-            )
-            self.rendered_slots.append(slot)
-            return
-        render_macro_with_overlay_commit(
+        slot = render_masked_macro(
             console=self._console,
             dispatcher=self._dispatcher,
-            slot=spec.slot,
-            fallback_overlay=spec.fallback_overlay,
+            macro=macro,
+            staging_map=staging_map,
+            default_slot=self._DEFAULT_MACRO_SLOTS[macro],
         )
-        self.rendered_slots.append(spec.slot)
+        self.rendered_slots.append(slot)
 
     def _render_intro(self) -> None:
         self._render_macro(self.MENU_HEADER_MACRO)

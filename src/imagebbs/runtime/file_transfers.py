@@ -17,7 +17,7 @@ from .file_transfer_protocols import (
     FileTransferProtocolDriver,
     build_protocol_driver,
 )
-from .macro_rendering import render_macro_with_overlay_commit
+from .macro_rendering import render_masked_macro
 from .masked_pane_staging import MaskedPaneMacro
 from .indicator_controller import IndicatorController
 
@@ -399,26 +399,19 @@ class FileTransfersModule:
     def _render_prompt(self) -> None:
         self._render_macro(self.MENU_PROMPT_MACRO)
 
+    # Why: reuse shared macro rendering so prompts and errors stay synchronised.
     def _render_macro(self, macro: MaskedPaneMacro) -> None:
         if self.registry is None:
             raise RuntimeError("ampersand registry has not been initialised")
         if not isinstance(self._console, ConsoleService):  # pragma: no cover - guard
             raise RuntimeError("console service is unavailable")
         staging_map = self._console.masked_pane_staging_map
-        try:
-            spec = staging_map.spec(macro)
-        except KeyError:
-            slot = self._DEFAULT_MACRO_SLOTS[macro]
-            fallback_overlay = staging_map.fallback_overlay_for_slot(slot)
-        else:
-            slot = spec.slot
-            fallback_overlay = spec.fallback_overlay
-
-        render_macro_with_overlay_commit(
+        slot = render_masked_macro(
             console=self._console,
             dispatcher=self._dispatcher,
-            slot=slot,
-            fallback_overlay=fallback_overlay,
+            macro=macro,
+            staging_map=staging_map,
+            default_slot=self._DEFAULT_MACRO_SLOTS[macro],
         )
         self.rendered_slots.append(slot)
 

@@ -6,6 +6,38 @@ from typing import Iterable, Optional
 
 from ..ampersand_dispatcher import AmpersandDispatcher
 from ..device_context import ConsoleService
+from .masked_pane_staging import MaskedPaneMacro, MaskedPaneStagingMap
+# Why: consolidate masked-pane staging so callers reuse consistent macro lookups.
+def render_masked_macro(
+    *,
+    console: ConsoleService,
+    dispatcher: Optional[AmpersandDispatcher],
+    macro: MaskedPaneMacro,
+    staging_map: Optional[MaskedPaneStagingMap] = None,
+    default_slot: int | None = None,
+) -> int:
+    """Resolve ``macro`` staging metadata and render via ``render_macro_with_overlay_commit``."""
+
+    if staging_map is None:
+        staging_map = console.masked_pane_staging_map
+    try:
+        spec = staging_map.spec(macro)
+    except KeyError:
+        if default_slot is None:
+            raise
+        slot = default_slot
+        fallback_overlay = staging_map.fallback_overlay_for_slot(slot)
+    else:
+        slot = spec.slot
+        fallback_overlay = spec.fallback_overlay
+
+    render_macro_with_overlay_commit(
+        console=console,
+        dispatcher=dispatcher,
+        slot=slot,
+        fallback_overlay=fallback_overlay,
+    )
+    return slot
 
 
 def render_macro_with_overlay_commit(
@@ -43,4 +75,4 @@ def render_macro_with_overlay_commit(
     console.push_macro_slot(slot)
 
 
-__all__ = ["render_macro_with_overlay_commit"]
+__all__ = ["render_masked_macro", "render_macro_with_overlay_commit"]
