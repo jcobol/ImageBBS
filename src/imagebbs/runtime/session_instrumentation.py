@@ -173,6 +173,18 @@ class SessionInstrumentation:
         self._colour_strip_animator = animator
         return animator
 
+    def set_colour_strip_override(self, index: int | None) -> None:
+        """Force a palette index for the colour strip animator or release it."""
+
+        # Why: Chat panes can temporarily pin the masked strip so the animation resumes cleanly once the override ends.
+        animator = self.ensure_colour_strip_animator()
+        if animator is None:
+            return
+        was_overridden = getattr(animator, "_override_index", None) is not None
+        animator.set_override_index(index)
+        if index is None and was_overridden:
+            animator.reset()
+
     def on_idle_cycle(self) -> None:
         """Advance indicator and idle timer state for an idle loop iteration."""
 
