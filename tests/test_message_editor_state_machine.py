@@ -134,6 +134,7 @@ def test_read_flow_quit_returns_to_main_menu() -> None:
     assert all("?INVALID MESSAGE SELECTION" not in line for line in session.modem_buffer)
 
 
+# Why: drive the posting state and confirm dot-command prompts preserve persistence and macro dispatch.
 def test_post_flow_appends_message_and_records_macro() -> None:
     editor, session, registry, store = _bootstrap_editor()
 
@@ -145,6 +146,9 @@ def test_post_flow_appends_message_and_records_macro() -> None:
 
     session.modem_buffer.clear()
     editor.dispatch(Event.ENTER, session)
+
+    assert session.modem_buffer[0] == f"MACRO:{editor.POST_MESSAGE_MACRO_INDEX}"
+    assert session.modem_buffer[1] == editor.DOT_COMMAND_PROMPT
 
     session.command_buffer = "My Subject"
     session.draft_buffer = ["New post line"]
@@ -160,6 +164,7 @@ def test_post_flow_appends_message_and_records_macro() -> None:
     assert stored.lines == ("New post line",)
 
 
+# Why: ensure editing operations respect the shared dot-command prompt and continue to cache drafts.
 def test_edit_flow_updates_existing_message() -> None:
     editor, session, registry, store = _bootstrap_editor()
     original = store.append(
@@ -181,7 +186,10 @@ def test_edit_flow_updates_existing_message() -> None:
 
     assert session.draft_buffer == ["Original line"]
     assert session.selected_message_id == original.message_id
-    assert session.modem_buffer == [f"MACRO:{editor.EDIT_DRAFT_MACRO_INDEX}"]
+    assert session.modem_buffer == [
+        f"MACRO:{editor.EDIT_DRAFT_MACRO_INDEX}",
+        editor.DOT_COMMAND_PROMPT,
+    ]
 
     session.draft_buffer = ["Updated text"]
     session.modem_buffer.clear()
@@ -193,4 +201,50 @@ def test_edit_flow_updates_existing_message() -> None:
     updated = store.fetch("mb1", original.message_id)
     assert updated.lines == ("Updated text",)
     assert session.drafts[original.message_id] == ["Updated text"]
+
+
+# Why: surface inline help so the dispatcher emits the modernised cheat sheet without exiting the editor.
+def test_post_flow_help_command_emits_help_prompt() -> None:
+    editor, session, registry, _store = _bootstrap_editor()
+
+    _advance_to_main_menu(editor, session)
+
+    session.command_buffer = "P"
+    state = editor.dispatch(Event.COMMAND_SELECTED, session)
+    assert state is EditorState.POST_MESSAGE
+
+    session.modem_buffer.clear()
+    editor.dispatch(Event.ENTER, session)
+
+    session.modem_buffer.clear()
+    session.command_buffer = ".H"
+    state = editor.dispatch(Event.COMMAND_SELECTED, session)
+
+    assert state is EditorState.POST_MESSAGE
+    assert session.modem_buffer == [
+        editor.DOT_COMMAND_HELP_TEXT,
+        editor.DOT_COMMAND_PROMPT,
+    ]
+
+
+# Why: verify line-number toggles flip the context flag and echo the status back to the caller.
+def test_line_number_toggle_updates_context_flag() -> None:
+    editor, session, registry, _store = _bootstrap_editor()
+
+    _advance_to_main_menu(editor, session)
+
+    session.command_buffer = "P"
+    editor.dispatch(Event.COMMAND_SELECTED, session)
+    session.modem_buffer.clear()
+    editor.dispatch(Event.ENTER, session)
+
+    assert session.line_numbers_enabled is False
+
+    session.modem_buffer.clear()
+    session.command_buffer = ".O"
+    state = editor.dispatch(Event.COMMAND_SELECTED, session)
+
+    assert state is EditorState.POST_MESSAGE
+    assert session.line_numbers_enabled is True
+    assert session.modem_buffer == [" LINE NUMBERS ON.\r", editor.DOT_COMMAND_PROMPT]
 

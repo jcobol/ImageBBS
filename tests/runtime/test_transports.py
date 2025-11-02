@@ -47,6 +47,80 @@ class FakeConsole:
             self.screen[address] = value
 
 
+# Why: exercise Telnet editor submissions without bootstrapping the full session runner.
+class _TelnetEditorRunner:
+    def __init__(self) -> None:
+        self.console = object()
+        self.state = SessionState.MESSAGE_EDITOR
+        self.editor_context = SimpleNamespace(
+            current_message="",
+            draft_buffer=[],
+            selected_message_id=None,
+            modem_buffer=[],
+            line_numbers_enabled=False,
+        )
+        self._requires_submission = True
+        self.submissions: list[tuple[str | None, list[str] | None]] = []
+        self.abort_states: list[bool] = []
+        self.commands: list[str] = []
+        self.indicator_controller = None
+
+    # Why: trigger the handler once so the test can observe subject/body capture.
+    def requires_editor_submission(self) -> bool:
+        if self._requires_submission and self.state is SessionState.MESSAGE_EDITOR:
+            self._requires_submission = False
+            return True
+        return False
+
+    # Why: advertise the posting state so the handler gathers both subject and body text.
+    def get_editor_state(self) -> EditorState | None:
+        return EditorState.POST_MESSAGE
+
+    # Why: capture the saved payload and transition back to the menu state.
+    def submit_editor_draft(
+        self, *, subject: str | None, lines: list[str] | None
+    ) -> None:
+        self.submissions.append((subject, list(lines) if lines else None))
+        self.state = SessionState.MAIN_MENU
+
+    # Why: simulate abort cycles invoked by the submission handler.
+    def abort_editor(self) -> None:
+        self.state = SessionState.MAIN_MENU
+
+    # Why: record abort indicator toggles raised during the submission workflow.
+    def set_abort_indicator_state(self, active: bool) -> None:
+        self.abort_states.append(active)
+
+    # Why: accept instrumentation-provided indicator controllers without exercising their behaviour.
+    def set_indicator_controller(self, controller) -> None:
+        self.indicator_controller = controller
+        self._indicator_controller = controller
+
+    # Why: the transport drains screen output, so the stub exposes an empty buffer.
+    def read_output(self) -> str:
+        return ""
+
+    # Why: record commands forwarded by the transport, exiting when "EX" is encountered.
+    def send_command(self, command: str) -> SessionState:
+        self.commands.append(command)
+        if command == "EX":
+            self.state = SessionState.EXIT
+        return self.state
+
+
+# Why: feed scripted payloads into the Telnet transport coroutine.
+class _TelnetEditorReader:
+    def __init__(self, payloads: list[bytes]) -> None:
+        self._payloads = deque(payloads)
+
+    # Why: present queued modem lines to the transport while yielding control to the event loop.
+    async def readline(self) -> bytes:
+        await asyncio.sleep(0)
+        if self._payloads:
+            return self._payloads.popleft()
+        return b""
+
+
 def test_telnet_transport_applies_custom_idle_interval() -> None:
     # Why: ensure the asynchronous Telnet entry point propagates idle cadence overrides.
 
@@ -178,74 +252,14 @@ class RecordingTelnetTransport(TelnetModemTransport):
 
 
 def test_telnet_transport_collects_editor_submission_with_custom_tokens() -> None:
-    class EditorRunner:
-        def __init__(self) -> None:
-            self.console = object()
-            self.state = SessionState.MESSAGE_EDITOR
-            self.editor_context = SimpleNamespace(
-                current_message="",
-                draft_buffer=[],
-                selected_message_id=None,
-            )
-            self._requires_submission = True
-            self.submissions: list[tuple[str | None, list[str] | None]] = []
-            self.abort_states: list[bool] = []
-            self.commands: list[str] = []
-            self.indicator_controller = None
-
-        def requires_editor_submission(self) -> bool:
-            if self._requires_submission and self.state is SessionState.MESSAGE_EDITOR:
-                self._requires_submission = False
-                return True
-            return False
-
-        def get_editor_state(self) -> EditorState | None:
-            return EditorState.POST_MESSAGE
-
-        def submit_editor_draft(
-            self, *, subject: str | None, lines: list[str] | None
-        ) -> None:
-            self.submissions.append((subject, list(lines) if lines else None))
-            self.state = SessionState.MAIN_MENU
-
-        def abort_editor(self) -> None:
-            self.state = SessionState.MAIN_MENU
-
-        def set_abort_indicator_state(self, active: bool) -> None:
-            self.abort_states.append(active)
-
-        def set_indicator_controller(self, controller) -> None:
-            # Why: capture instrumentation-supplied controllers so editor prompts reflect pause state.
-            self.indicator_controller = controller
-            self._indicator_controller = controller
-
-        def read_output(self) -> str:
-            return ""
-
-        def send_command(self, command: str) -> SessionState:
-            self.commands.append(command)
-            if command == "EX":
-                self.state = SessionState.EXIT
-            return self.state
-
-    class EditorReader:
-        def __init__(self, payloads: list[bytes]) -> None:
-            self._payloads = deque(payloads)
-
-        async def readline(self) -> bytes:
-            await asyncio.sleep(0)
-            if self._payloads:
-                return self._payloads.popleft()
-            return b""
-
-    async def _exercise() -> tuple[EditorRunner, str]:
-        runner = EditorRunner()
+    async def _exercise() -> tuple[_TelnetEditorRunner, str]:
+        runner = _TelnetEditorRunner()
         instrumentation = SessionInstrumentation(
             runner,
             indicator_controller_cls=StubIndicatorController,
             idle_timer_scheduler_cls=None,
         )
-        reader = EditorReader(
+        reader = _TelnetEditorReader(
             [
                 b"Custom Subject\r\n",
                 b"Body line\r\n",
@@ -273,7 +287,10 @@ def test_telnet_transport_collects_editor_submission_with_custom_tokens() -> Non
     assert runner.submissions == [("Custom Subject", ["Body line"])], runner.submissions
     assert runner.commands == ["EX"]
     assert runner.abort_states == [True, False]
-    assert "Type /save to save or /cancel to cancel." in transcript
+    assert (
+        "Type .S to save, .A to abort, .H for help, .O toggles line numbers. (/save also saves, /cancel also aborts.)"
+        in transcript
+    )
 
 
 # Why: ensures Telnet sessions expose the board banner as soon as the transport opens.

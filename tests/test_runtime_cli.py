@@ -637,7 +637,7 @@ def test_run_session_posts_message_via_editor() -> None:
     args = parse_args([])
     runner = create_runner(args)
 
-    script = "MB\nP\nHello World\nThis is the body\n/send\nQ\nEX\n"
+    script = "MB\nP\nHello World\nThis is the body\n.S\nQ\nEX\n"
     input_stream = io.StringIO(script)
     output_stream = io.StringIO()
 
@@ -647,7 +647,9 @@ def test_run_session_posts_message_via_editor() -> None:
 
     assert final_state is SessionState.EXIT
     transcript = output_stream.getvalue()
-    assert "Type /send to save or /abort to cancel." in transcript
+    assert (
+        "Type .S to save, .A to abort, .H for help, .O toggles line numbers." in transcript
+    )
 
     records = list(runner.message_store.iter_records())
     assert len(records) == 1
@@ -681,7 +683,10 @@ def test_drive_session_uses_custom_editor_commands() -> None:
 
     assert final_state is SessionState.EXIT
     transcript = output_stream.getvalue()
-    assert "Type /save to save or /cancel to cancel." in transcript
+    assert (
+        "Type .S to save, .A to abort, .H for help, .O toggles line numbers. (/save also saves, /cancel also aborts.)"
+        in transcript
+    )
 
     records = list(runner.message_store.iter_records())
     assert len(records) == 1
@@ -1271,7 +1276,10 @@ def test_run_stream_session_bridges_telnet_and_persists_messages(tmp_path: Path)
         transcript = asyncio.run(_exercise())
 
     assert transcript
-    assert "Type /save to save or /cancel to cancel." in transcript
+    assert (
+        "Type .S to save, .A to abort, .H for help, .O toggles line numbers. (/save also saves, /cancel also aborts.)"
+        in transcript
+    )
 
     runners = recording_factory.runners
     assert len(runners) == 1
@@ -1321,7 +1329,7 @@ def test_run_session_edits_existing_message_via_editor() -> None:
         lines=["old line"],
     )
 
-    script = "MB\nE\n1\nUpdated line\n/send\nQ\nEX\n"
+    script = "MB\nE\n1\nUpdated line\n.S\nQ\nEX\n"
     input_stream = io.StringIO(script)
     output_stream = io.StringIO()
 
@@ -1340,7 +1348,7 @@ def test_run_session_abort_editor_discards_draft() -> None:
     args = parse_args([])
     runner = create_runner(args)
 
-    script = "MB\nP\nMy Subject\nLine 1\n/abort\nQ\nEX\n"
+    script = "MB\nP\nMy Subject\nLine 1\n.A\nQ\nEX\n"
     input_stream = io.StringIO(script)
     output_stream = io.StringIO()
 
@@ -1374,7 +1382,7 @@ def test_run_stream_session_concurrent_persistence(tmp_path: Path) -> None:
                             "P",
                             subject,
                             body,
-                            "/send",
+                            ".S",
                             "Q",
                             "EX",
                             "",
@@ -1445,7 +1453,7 @@ def test_run_stream_session_overlapping_tasks_persist_outputs(
                             "P",
                             subject,
                             body,
-                            "/send",
+                            ".S",
                             "Q",
                             "EX",
                             "",
