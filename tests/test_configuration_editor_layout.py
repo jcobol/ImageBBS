@@ -94,4 +94,4 @@ def test_selection_moves_between_entries_and_updates_status() -> None:
     assert c_code & 0x80
 
     status_text = _read_row(console, module._STATUS_ROW).strip()
-    assert "Payroll Editor module" in status_text
+    assert status_text.startswith("Credits")

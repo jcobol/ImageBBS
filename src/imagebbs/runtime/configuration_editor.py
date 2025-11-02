@@ -3,10 +3,26 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import ClassVar, Mapping, Optional
+from typing import ClassVar, Mapping, Optional, Type
 
 from ..device_context import ConsoleService
 from ..session_kernel import SessionKernel, SessionState
+from .configuration_editor_modules import (
+    AccessGroupsHandler,
+    CommandSetHandler,
+    ConfigurationEditorHandler,
+    FileListsHandler,
+    FunctionKeysHandler,
+    LightbarAlarmHandler,
+    LogonEditorHandler,
+    MacrosEditorHandler,
+    MiscFeaturesHandler,
+    ModemConfigHandler,
+    NetmailConfigHandler,
+    PayrollEditorHandler,
+    SetTimeHandler,
+    SystemDrivesHandler,
+)
 
 
 @dataclass(frozen=True)
@@ -40,6 +56,9 @@ class ConfigurationEditorModule:
     last_selection: str = field(init=False, default="")
     _console: ConsoleService | None = field(init=False, default=None)
     _entry_layouts: dict[str, "_EntryLayout"] = field(init=False, default_factory=dict)
+    _active_handler: ConfigurationEditorHandler | None = field(
+        init=False, default=None
+    )
 
     MENU_ENTRIES: ClassVar[tuple[tuple[str, str], ...]] = (
         ("A", "Macros Editor"),
@@ -60,6 +79,21 @@ class ConfigurationEditorModule:
 
     _ENTRY_LOOKUP: ClassVar[Mapping[str, str]] = {code: name for code, name in MENU_ENTRIES}
     _PROMPT: ClassVar[str] = "CONFIG> "
+    _HANDLER_DISPATCH: ClassVar[Mapping[str, Type[ConfigurationEditorHandler]]] = {
+        "A": MacrosEditorHandler,
+        "B": CommandSetHandler,
+        "C": PayrollEditorHandler,
+        "D": LogonEditorHandler,
+        "E": AccessGroupsHandler,
+        "F": FileListsHandler,
+        "G": FunctionKeysHandler,
+        "H": LightbarAlarmHandler,
+        "I": MiscFeaturesHandler,
+        "J": ModemConfigHandler,
+        "K": SetTimeHandler,
+        "L": SystemDrivesHandler,
+        "M": NetmailConfigHandler,
+    }
 
     # Why: bind console access and draw the dual-column menu before accepting commands.
     def start(self, kernel: SessionKernel) -> SessionState:
@@ -69,6 +103,7 @@ class ConfigurationEditorModule:
         self._console = console
         self.state = ConfigurationEditorState.INTRO
         self.last_selection = ""
+        self._active_handler = None
         self._render_intro()
         self._render_prompt()
         return SessionState.CONFIGURATION_EDITOR
@@ -92,7 +127,7 @@ class ConfigurationEditorModule:
                 self.state = ConfigurationEditorState.READY
                 self._render_prompt()
                 return SessionState.CONFIGURATION_EDITOR
-            return self._handle_command(selection)
+            return self._handle_command(kernel, selection)
 
         raise ValueError(f"unsupported configuration-editor event: {event!r}")
 
@@ -111,8 +146,10 @@ class ConfigurationEditorModule:
         console.set_cursor(self._PROMPT_COLUMN, self._PROMPT_ROW)
         console.write(self._PROMPT)
 
-    # Why: normalise selection text and trigger command side effects.
-    def _handle_command(self, selection: Optional[str]) -> SessionState:
+    # Why: normalise selection text and trigger command handler dispatches.
+    def _handle_command(
+        self, kernel: SessionKernel, selection: Optional[str]
+    ) -> SessionState:
         command = self._normalise_command(selection)
         if not command:
             self._render_prompt()
@@ -120,16 +157,39 @@ class ConfigurationEditorModule:
         if command == "N":
             self._set_selection(command)
             self._show_status("Leaving configuration editor...")
+            self._active_handler = None
             return SessionState.MAIN_MENU
-        name = self._ENTRY_LOOKUP.get(command)
-        if name is not None:
-            self._set_selection(command)
-            self._show_status(f"{name} module is not yet implemented.")
-            self._render_prompt()
+        argument = self._extract_argument(selection)
+        self._set_selection(command)
+        return self._dispatch_handler(kernel, command, argument)
+
+    # Why: split command arguments from their menu code so handlers receive contextual payloads.
+    def _extract_argument(self, selection: Optional[str]) -> Optional[str]:
+        if not selection:
+            return None
+        text = selection.strip()
+        if len(text) <= 1:
+            return None
+        return text[1:].lstrip()
+
+    # Why: centralise handler instantiation so the Commodore dispatcher remains testable.
+    def _dispatch_handler(
+        self, kernel: SessionKernel, command: str, argument: Optional[str]
+    ) -> SessionState:
+        handler_cls = self._HANDLER_DISPATCH.get(command)
+        if handler_cls is None:
+            self._active_handler = None
+            name = self._ENTRY_LOOKUP.get(command)
+            if name is not None:
+                self._show_status(f"{name} module is not yet available.")
+                self._render_prompt()
+            else:
+                self._show_status("?INVALID CONFIGURATION COMMAND")
+                self._render_prompt()
             return SessionState.CONFIGURATION_EDITOR
-        self._show_status("?INVALID CONFIGURATION COMMAND")
-        self._render_prompt()
-        return SessionState.CONFIGURATION_EDITOR
+        handler = handler_cls(kernel, self)
+        self._active_handler = handler
+        return handler.handle(argument)
 
     # Why: derive the canonical command token from arbitrary input text.
     def _normalise_command(self, selection: Optional[str]) -> str:
