@@ -4,18 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable, Mapping, TYPE_CHECKING
+from typing import Iterable, Mapping
 
 from ..device_context import ConsoleService
 from ..message_editor import EditorState, Event as MessageEditorEvent
 from ..message_editor import MessageEditor, SessionContext
 from ..session_kernel import SessionKernel, SessionState
 from ..setup_defaults import IndicatorDefaults, SetupDefaults
-
-# Why: mirror overlay glyphs so console fallbacks preserve ImageBBS indicator semantics.
-_SPACE_GLYPH = 0x20
-_PAUSE_GLYPH = 0xD0
-_ABORT_GLYPH = 0xC1
 from .configuration_editor import ConfigurationEditorEvent
 from .file_library import FileLibraryEvent
 from .file_transfers import FileTransferEvent
@@ -24,8 +19,13 @@ from .message_store import MessageStore
 from .message_store_repository import save_message_store
 from .sysop_options import SysopOptionsEvent
 
-if TYPE_CHECKING:  # pragma: no cover - imported for type checking only
-    from .indicator_controller import IndicatorController
+# Why: mirror overlay glyphs so console fallbacks preserve ImageBBS indicator semantics.
+from .indicator_controller import (
+    IndicatorController,
+    _ABORT_GLYPH,
+    _PAUSE_GLYPH,
+    _SPACE_GLYPH,
+)
 
 
 @dataclass(slots=True)
@@ -230,6 +230,7 @@ class SessionRunner:
     def set_pause_indicator_state(self, active: bool) -> None:
         """Forward pause state to the registered indicator controller."""
 
+        # Why: drive pause toggles directly through the console when controllers are absent so the overlay palette stays intact.
         controller = self._indicator_controller
         if controller is not None:
             controller.set_pause(active)
@@ -240,6 +241,10 @@ class SessionRunner:
             return
         glyph = _PAUSE_GLYPH if active else _SPACE_GLYPH
         colour = self._indicator_colour_override("pause_colour")
+        if colour is None:
+            snapshot = getattr(console, "indicator_snapshot", None)
+            if callable(snapshot):
+                colour = snapshot().pause.colour
         if colour is not None:
             setter(glyph, colour=colour)
         else:
@@ -249,6 +254,7 @@ class SessionRunner:
     def set_abort_indicator_state(self, active: bool) -> None:
         """Forward abort state to the registered indicator controller."""
 
+        # Why: fall back to console writes that reuse the current palette so abort toggles match overlay rendering without a controller.
         controller = self._indicator_controller
         if controller is not None:
             controller.set_abort(active)
@@ -259,6 +265,10 @@ class SessionRunner:
             return
         glyph = _ABORT_GLYPH if active else _SPACE_GLYPH
         colour = self._indicator_colour_override("abort_colour")
+        if colour is None:
+            snapshot = getattr(console, "indicator_snapshot", None)
+            if callable(snapshot):
+                colour = snapshot().abort.colour
         if colour is not None:
             setter(glyph, colour=colour)
         else:
