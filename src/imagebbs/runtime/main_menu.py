@@ -40,6 +40,7 @@ class MenuCommand(Enum):
     SYSOP = auto()
     CONFIGURATION_EDITOR = auto()
     EXIT = auto()
+    CHAT = auto()
     UNKNOWN = auto()
 
 
@@ -129,6 +130,7 @@ class MainMenuModule:
     _SYSOP_CODES: Iterable[str] = frozenset({"SY"})
     _CONFIGURATION_CODES: Iterable[str] = frozenset({"CF"})
     _EXIT_CODES: Iterable[str] = frozenset({"EX", "LG", "AT", "Q"})
+    _CHAT_CODES: Iterable[str] = frozenset({"C", "CHAT"})
 
     # Why: attach supporting modules so menu selections transition to their handlers.
     def start(self, kernel: SessionKernel) -> SessionState:
@@ -184,6 +186,9 @@ class MainMenuModule:
             if command is MenuCommand.UNKNOWN:
                 self._render_macro(self.INVALID_SELECTION_MACRO)
                 return SessionState.MAIN_MENU
+            if command is MenuCommand.CHAT:
+                self._handle_chat_request(kernel, selection)
+                return SessionState.MAIN_MENU
 
             next_state = self._COMMAND_TRANSITIONS.get(command, SessionState.MAIN_MENU)
             if next_state is SessionState.EXIT:
@@ -203,8 +208,15 @@ class MainMenuModule:
         text = selection.strip().upper()
         if not text:
             return MenuCommand.NONE
-        prefix = text[:2]
-        if prefix in self._EXIT_CODES or text in self._EXIT_CODES:
+        uppercase = text.upper()
+        token = uppercase
+        for delimiter in (" ", ":"):
+            if delimiter in token:
+                token = token.split(delimiter, 1)[0]
+        if token in self._CHAT_CODES:
+            return MenuCommand.CHAT
+        prefix = uppercase[:2]
+        if prefix in self._EXIT_CODES or uppercase in self._EXIT_CODES:
             return MenuCommand.EXIT
         if prefix in self._MESSAGE_CODES:
             return MenuCommand.MESSAGE_BASE
@@ -215,6 +227,64 @@ class MainMenuModule:
         if prefix in self._CONFIGURATION_CODES:
             return MenuCommand.CONFIGURATION_EDITOR
         return MenuCommand.UNKNOWN
+
+    # Why: handle chat dispatch so console prompts mirror the BASIC runtime guard behaviour.
+    def _handle_chat_request(
+        self,
+        kernel: SessionKernel,
+        selection: Optional[str],
+    ) -> None:
+        if not isinstance(self._console, ConsoleService):  # pragma: no cover - guard
+            raise RuntimeError("console service is unavailable")
+        tracker = kernel.services.get("chat")
+        if tracker is None:
+            tracker = kernel.service_map.get("chat")
+        is_page_active_attr = getattr(tracker, "is_page_active", None)
+        if callable(is_page_active_attr):
+            page_active = bool(is_page_active_attr())
+        elif is_page_active_attr is not None:
+            page_active = bool(is_page_active_attr)
+        else:
+            page_active = False
+        device = self._console.device
+        if page_active:
+            device.write("Page is On.\r")
+            self._restage_prompt_overlay()
+            return
+
+        raw_selection = (selection or "").strip()
+        reason = ""
+        if raw_selection:
+            upper_selection = raw_selection.upper()
+            resolved_alias = ""
+            for candidate in sorted(self._CHAT_CODES, key=len, reverse=True):
+                if upper_selection.startswith(candidate):
+                    resolved_alias = candidate
+                    break
+            if resolved_alias:
+                reason = raw_selection[len(resolved_alias) :].lstrip(" :")
+            else:
+                reason = raw_selection
+        device.write(f"C: {reason}\r" if reason else "C: \r")
+        request_chat = getattr(tracker, "request_chat", None)
+        if callable(request_chat):
+            request_chat(reason)
+        self._restage_prompt_overlay()
+
+    # Why: keep the menu prompt macro in sync after console chat interactions.
+    def _restage_prompt_overlay(self) -> None:
+        if not isinstance(self._console, ConsoleService):  # pragma: no cover - guard
+            raise RuntimeError("console service is unavailable")
+        staging_map = self._console.masked_pane_staging_map
+        slot = render_masked_macro(
+            console=self._console,
+            dispatcher=self._dispatcher,
+            macro=self.MENU_PROMPT_MACRO,
+            staging_map=staging_map,
+            default_slot=self._DEFAULT_MACRO_SLOTS[self.MENU_PROMPT_MACRO],
+        )
+        self.rendered_slots.append(slot)
+        staging_map.stage_flag_index(self._console, 0)
 
     # Why: centralise masked-pane rendering so intro and errors reuse shared staging.
     def _render_macro(self, macro: MaskedPaneMacro) -> None:

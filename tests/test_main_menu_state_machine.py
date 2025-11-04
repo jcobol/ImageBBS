@@ -3,6 +3,7 @@ from imagebbs import MessageEditor
 from imagebbs.device_context import ConsoleService
 from imagebbs.runtime.configuration_editor import ConfigurationEditorModule
 from imagebbs.runtime.main_menu import MainMenuEvent, MainMenuModule
+from imagebbs.runtime.session_runner import SessionRunner
 from imagebbs.runtime.sysop_options import SysopOptionsModule
 from imagebbs.session_kernel import SessionKernel, SessionState
 
@@ -198,3 +199,39 @@ def test_main_menu_invalid_selection_renders_error_macro() -> None:
 
     assert state is SessionState.MAIN_MENU
     assert module.rendered_slots == [module.INVALID_SELECTION_SLOT]
+
+
+def test_main_menu_chat_request_tracks_page_state() -> None:
+    runner = SessionRunner()
+    kernel = runner.kernel
+    module = runner.main_menu_module
+    console_service = kernel.services["console"]
+    assert isinstance(console_service, ConsoleService)
+    tracker = kernel.services.get("chat") or kernel.service_map.get("chat")
+    assert tracker is not None
+
+    kernel.step(MainMenuEvent.ENTER)
+    console_service.device.output.clear()
+
+    state = kernel.step(MainMenuEvent.SELECTION, "C Need help")
+
+    assert state is SessionState.MAIN_MENU
+    first_output = "".join(console_service.device.output)
+    assert "C: Need help\r" in first_output
+    is_page_active = getattr(tracker, "is_page_active")
+    if callable(is_page_active):
+        assert is_page_active() is True
+    else:
+        assert bool(is_page_active) is True
+    reasons = getattr(tracker, "reasons", None)
+    assert isinstance(reasons, list)
+    assert reasons == ["Need help"]
+
+    console_service.device.output.clear()
+
+    state = kernel.step(MainMenuEvent.SELECTION, "CHAT another reason")
+
+    assert state is SessionState.MAIN_MENU
+    second_output = "".join(console_service.device.output)
+    assert "Page is On" in second_output
+    assert getattr(tracker, "reasons", None) == ["Need help"]
