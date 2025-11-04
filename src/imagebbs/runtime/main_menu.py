@@ -41,6 +41,7 @@ class MenuCommand(Enum):
     CONFIGURATION_EDITOR = auto()
     EXIT = auto()
     CHAT = auto()
+    TIME = auto()
     UNKNOWN = auto()
 
 
@@ -131,6 +132,7 @@ class MainMenuModule:
     _CONFIGURATION_CODES: Iterable[str] = frozenset({"CF"})
     _EXIT_CODES: Iterable[str] = frozenset({"EX", "LG", "AT", "Q"})
     _CHAT_CODES: Iterable[str] = frozenset({"C", "CHAT"})
+    _TIME_CODES: Iterable[str] = frozenset({"T", "TIME"})
 
     # Why: attach supporting modules so menu selections transition to their handlers.
     def start(self, kernel: SessionKernel) -> SessionState:
@@ -189,6 +191,9 @@ class MainMenuModule:
             if command is MenuCommand.CHAT:
                 self._handle_chat_request(kernel, selection)
                 return SessionState.MAIN_MENU
+            if command is MenuCommand.TIME:
+                self._handle_time_request(kernel)
+                return SessionState.MAIN_MENU
 
             next_state = self._COMMAND_TRANSITIONS.get(command, SessionState.MAIN_MENU)
             if next_state is SessionState.EXIT:
@@ -215,6 +220,8 @@ class MainMenuModule:
                 token = token.split(delimiter, 1)[0]
         if token in self._CHAT_CODES:
             return MenuCommand.CHAT
+        if token in self._TIME_CODES:
+            return MenuCommand.TIME
         prefix = uppercase[:2]
         if prefix in self._EXIT_CODES or uppercase in self._EXIT_CODES:
             return MenuCommand.EXIT
@@ -285,6 +292,37 @@ class MainMenuModule:
         )
         self.rendered_slots.append(slot)
         staging_map.stage_flag_index(self._console, 0)
+
+    # Why: surface session timing details so the BASIC T command has a modern analogue.
+    def _handle_time_request(self, kernel: SessionKernel) -> None:
+        if not isinstance(self._console, ConsoleService):  # pragma: no cover - guard
+            raise RuntimeError("console service is unavailable")
+
+        service_lookup = kernel.services.get("session_runner")
+        if service_lookup is None:
+            service_lookup = kernel.service_map.get("session_runner")
+
+        logon_text = "Unavailable"
+        current_text = "Unavailable"
+        remaining_text = "Infinite"
+
+        if service_lookup is not None:
+            logon_fn = getattr(service_lookup, "formatted_logon_time", None)
+            current_fn = getattr(service_lookup, "formatted_current_time", None)
+            remaining_fn = getattr(service_lookup, "formatted_minutes_remaining", None)
+
+            if callable(logon_fn):
+                logon_text = str(logon_fn())
+            if callable(current_fn):
+                current_text = str(current_fn())
+            if callable(remaining_fn):
+                remaining_text = str(remaining_fn())
+
+        device = self._console.device
+        device.write(f"Logon Time: {logon_text}\r")
+        device.write(f"Current Time: {current_text}\r")
+        device.write(f"Minutes Left: {remaining_text}\r")
+        self._restage_prompt_overlay()
 
     # Why: centralise masked-pane rendering so intro and errors reuse shared staging.
     def _render_macro(self, macro: MaskedPaneMacro) -> None:
