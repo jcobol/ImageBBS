@@ -27,6 +27,28 @@ class _CompositionInput:
     subject: str
     lines: list[str]
 
+
+@dataclass(slots=True)
+class _ChatTracker:
+    """Keep track of chat-page activation and caller rationales."""
+
+    active: bool = False
+    reasons: list[str] = field(default_factory=list)
+
+    # Why: record the first successful chat request so the BASIC guard can block duplicates while preserving the caller's reason.
+    def request_chat(self, reason: str) -> bool:
+        cleaned = reason.strip()
+        if not self.active:
+            self.active = True
+            self.reasons.append(cleaned)
+            return True
+        return False
+
+    # Why: expose the guard state so UI handlers can mirror the page-on overlay logic.
+    @property
+    def is_page_active(self) -> bool:
+        return self.active
+
 # Why: mirror overlay glyphs so console fallbacks preserve ImageBBS indicator semantics.
 from .indicator_controller import (
     IndicatorController,
@@ -57,6 +79,7 @@ class SessionRunner:
     )
     _initial_message_keys: set[tuple[str, int]] = field(init=False, repr=False)
     _dirty: bool = field(init=False, default=False, repr=False)
+    _chat_tracker: _ChatTracker = field(init=False, repr=False)
 
     _ENTER_EVENTS: Mapping[SessionState, object] = field(
         init=False,
@@ -95,6 +118,10 @@ class SessionRunner:
         if not isinstance(console, ConsoleService):
             raise TypeError("console service missing from session kernel")
         self.console = console
+        self._chat_tracker = _ChatTracker()
+        register_service = getattr(self.kernel.context, "register_service", None)
+        if callable(register_service):
+            register_service("chat", self._chat_tracker)
         self._editor_context = (
             self.session_context
             if isinstance(self.session_context, SessionContext)
@@ -198,6 +225,15 @@ class SessionRunner:
         while output:
             buffer.append(output.popleft())
         return "".join(buffer)
+
+    # Why: allow callers to trigger the chat guard programmatically so tests and drivers can mirror BASIC prompts.
+    def request_chat(self, reason: str) -> bool:
+        return self._chat_tracker.request_chat(reason)
+
+    # Why: expose the chat-page flag so tooling can observe whether the session is already paged.
+    @property
+    def is_page_active(self) -> bool:
+        return self._chat_tracker.is_page_active
 
     # Why: integrate indicator controllers with console state and keep the service registry aligned when controllers change.
     def set_indicator_controller(
