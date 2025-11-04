@@ -1,6 +1,9 @@
 from __future__ import annotations
+from datetime import datetime
+
 from imagebbs import MessageEditor
 from imagebbs.device_context import ConsoleService
+from imagebbs.message_editor import SessionContext
 from imagebbs.runtime.configuration_editor import ConfigurationEditorModule
 from imagebbs.runtime.main_menu import MainMenuEvent, MainMenuModule
 from imagebbs.runtime.session_runner import SessionRunner
@@ -48,6 +51,22 @@ def _masked_overlay(
     if screen_bytes is None or colour_bytes is None:  # pragma: no cover - guard
         raise AssertionError("masked overlay snapshot failed")
     return tuple(screen_bytes), tuple(colour_bytes)
+
+
+class _SequenceClock:
+    def __init__(self, values):
+        entries = list(values)
+        if not entries:
+            raise ValueError("time sequence requires at least one value")
+        self._values = entries
+        self._index = 0
+        self._last = entries[-1]
+
+    def __call__(self) -> datetime:
+        if self._index < len(self._values):
+            self._last = self._values[self._index]
+            self._index += 1
+        return self._last
 
 
 def test_main_menu_renders_macros_on_start_and_enter() -> None:
@@ -199,6 +218,52 @@ def test_main_menu_invalid_selection_renders_error_macro() -> None:
 
     assert state is SessionState.MAIN_MENU
     assert module.rendered_slots == [module.INVALID_SELECTION_SLOT]
+
+
+def test_main_menu_time_request_reports_session_clock() -> None:
+    start = datetime(1989, 1, 2, 3, 4)
+    current = datetime(1989, 1, 2, 3, 9)
+    clock = _SequenceClock([start, current, current])
+    context = SessionContext(board_id="board", user_id="user")
+    setattr(context, "call_minutes_limit", 30)
+    runner = SessionRunner(session_context=context, time_provider=clock)
+    kernel = runner.kernel
+    console_service = kernel.services["console"]
+    assert isinstance(console_service, ConsoleService)
+
+    console_service.device.output.clear()
+    kernel.step(MainMenuEvent.ENTER)
+    console_service.device.output.clear()
+
+    state = kernel.step(MainMenuEvent.SELECTION, "T")
+
+    assert state is SessionState.MAIN_MENU
+    payload = "".join(console_service.device.output)
+    assert "Logon Time: 01/02/89 03:04\r" in payload
+    assert "Current Time: 01/02/89 03:09\r" in payload
+    assert "Minutes Left: 25\r" in payload
+
+
+def test_main_menu_time_request_reports_infinite_when_unlimited() -> None:
+    start = datetime(1989, 1, 2, 3, 4)
+    current = datetime(1989, 1, 2, 3, 14)
+    clock = _SequenceClock([start, current, current])
+    runner = SessionRunner(time_provider=clock)
+    kernel = runner.kernel
+    console_service = kernel.services["console"]
+    assert isinstance(console_service, ConsoleService)
+
+    console_service.device.output.clear()
+    kernel.step(MainMenuEvent.ENTER)
+    console_service.device.output.clear()
+
+    state = kernel.step(MainMenuEvent.SELECTION, "T")
+
+    assert state is SessionState.MAIN_MENU
+    payload = "".join(console_service.device.output)
+    assert "Logon Time: 01/02/89 03:04\r" in payload
+    assert "Current Time: 01/02/89 03:14\r" in payload
+    assert "Minutes Left: Infinite\r" in payload
 
 
 def test_main_menu_chat_request_tracks_page_state() -> None:

@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
-from typing import Iterable, Mapping
+from typing import Callable, Iterable, Mapping
 
 from ..device_context import ConsoleService
 from ..message_editor import EditorState, Event as MessageEditorEvent
@@ -69,6 +70,7 @@ class SessionRunner:
     session_context: SessionContext | None = None
     message_store: MessageStore = field(default_factory=MessageStore)
     message_store_path: Path | None = None
+    time_provider: Callable[[], datetime] | None = None
 
     kernel: SessionKernel = field(init=False)
     console: ConsoleService = field(init=False)
@@ -80,6 +82,9 @@ class SessionRunner:
     _initial_message_keys: set[tuple[str, int]] = field(init=False, repr=False)
     _dirty: bool = field(init=False, default=False, repr=False)
     _chat_tracker: _ChatTracker = field(init=False, repr=False)
+    _session_start_timestamp: datetime = field(init=False, repr=False)
+    _call_minutes_limit: int | None = field(init=False, default=None, repr=False)
+    _time_provider: Callable[[], datetime] = field(init=False, repr=False)
 
     _ENTER_EVENTS: Mapping[SessionState, object] = field(
         init=False,
@@ -118,16 +123,26 @@ class SessionRunner:
         if not isinstance(console, ConsoleService):
             raise TypeError("console service missing from session kernel")
         self.console = console
+        provider = self.time_provider
+        if not callable(provider):
+            provider = getattr(self.console.device, "time_provider", None)
+        if not callable(provider):
+            provider = datetime.now
+        self.time_provider = provider
+        self._time_provider = provider
+        self._session_start_timestamp = provider()
         self._chat_tracker = _ChatTracker()
         register_service = getattr(self.kernel.context, "register_service", None)
         if callable(register_service):
             register_service("chat", self._chat_tracker)
+            register_service("session_runner", self)
         self._editor_context = (
             self.session_context
             if isinstance(self.session_context, SessionContext)
             else SessionContext(board_id=self.board_id, user_id=self.user_id)
         )
         self._editor_context.store = self.message_store
+        self._call_minutes_limit = self._resolve_call_minutes_limit()
         banner_strings: list[str] = [
             f"{line}\r"
             for line in (
@@ -226,6 +241,29 @@ class SessionRunner:
             buffer.append(output.popleft())
         return "".join(buffer)
 
+    # Why: expose the caller's logon timestamp so menu handlers can mirror the ImageBBS T command.
+    def formatted_logon_time(self) -> str:
+        return self._format_timestamp(self._session_start_timestamp)
+
+    # Why: present the current timestamp for menu diagnostics without duplicating formatting logic.
+    def formatted_current_time(self) -> str:
+        return self._format_timestamp(self._time_provider())
+
+    # Why: report minutes remaining on the call so unlimited sessions fall back to the legacy Infinite label.
+    def formatted_minutes_remaining(self) -> str:
+        limit = self._call_minutes_limit
+        if limit is None:
+            return "Infinite"
+        elapsed = self._time_provider() - self._session_start_timestamp
+        seconds = max(0, int(elapsed.total_seconds()))
+        minutes_used = seconds // 60
+        remaining = max(0, limit - minutes_used)
+        return str(remaining)
+
+    # Why: render menu timestamps consistently with ImageBBS' two-digit year presentation.
+    def _format_timestamp(self, stamp: datetime) -> str:
+        return stamp.strftime("%m/%d/%y %H:%M")
+
     # Why: allow callers to trigger the chat guard programmatically so tests and drivers can mirror BASIC prompts.
     def request_chat(self, reason: str) -> bool:
         return self._chat_tracker.request_chat(reason)
@@ -261,6 +299,48 @@ class SessionRunner:
 
         if not already_registered:
             self._indicator_controller = controller
+
+    # Why: derive per-call limits from available configuration surfaces so the T command reports accurate caps.
+    def _resolve_call_minutes_limit(self) -> int | None:
+        sources: list[object] = []
+        context = (
+            self.session_context
+            if isinstance(self.session_context, SessionContext)
+            else None
+        )
+        if context is not None:
+            sources.append(context)
+        editor_context = getattr(self, "_editor_context", None)
+        if isinstance(editor_context, SessionContext):
+            sources.append(editor_context)
+        sources.append(self.defaults)
+        statistics = getattr(self.defaults, "statistics", None)
+        if statistics is not None:
+            sources.append(statistics)
+        for source in sources:
+            for attribute in (
+                "call_minutes_limit",
+                "minutes_per_call",
+                "time_limit_minutes",
+                "minutes_remaining",
+            ):
+                value = getattr(source, attribute, None)
+                limit = self._coerce_optional_positive_int(value)
+                if limit is not None:
+                    return limit
+        return None
+
+    # Why: normalise optional numeric limits while ignoring zero or negative values that mean unlimited time.
+    def _coerce_optional_positive_int(self, value: object) -> int | None:
+        if value is None:
+            return None
+        try:
+            limit = int(value)
+        except (TypeError, ValueError):
+            return None
+        if limit <= 0:
+            return None
+        return limit
 
     # Why: reuse CLI palette overrides when console fallbacks paint indicator cells directly.
     def _indicator_colour_override(self, field: str) -> int | None:
