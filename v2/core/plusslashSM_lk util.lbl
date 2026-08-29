@@ -156,7 +156,7 @@
 	FOR i=1 TO kk:&"{f6}{rvrs on} "+tt$(i)+" {rvrs off}{f6}":a$=tt$(i)+",s,r":GOSUB 1011:IF e%THEN:&:GOTO {:4240}
 {:4236}
 	&,2,2:s=st:lp=-(LEN(a$)<>80):&:ON-(rc+s=.)GOTO {:4236}:GOSUB 1032
-	&"{f6:2} <Key...>{pound}g1
+	&"{f6:2} <Key...>{pound}g1"
 {:4240}
 	NEXT
 {:4242}

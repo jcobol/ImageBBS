@@ -353,7 +353,7 @@
 {:3522}
 	&"{f6}Out of Range!":a=q+1
 {:3524}
-	a=a+1:ON-(q>=a AND bn<z%)GOTO {:3508}:&"{f6:2}Press a Key {pound}g1":s=bn-9:q=0:GOTO {:3492}
+	a=a+1:ON-(q>=a AND bn<z%)GOTO {:3508}:&"{f6:2}Press A Key {pound}g1":s=bn-9:q=0:GOTO {:3492}
 {:3526}
 	a=2:GOSUB {:3062}:s=a:GOTO {:3492}
 {:3528}

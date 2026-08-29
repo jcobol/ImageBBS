@@ -24,8 +24,8 @@
 {:60030}
 	on abs(pw$=""or i%)goto 1603:&"{f6}Old Password?: ":&,6:on-(an$<>pw$)goto 1920
 {:60032}
-	&"{f6:2}Would you like to:{f6:2} (A) Enter a password{f6} (B) Generate a Random "
-	&"Password{f6} (C) Not change your password{f6:2}> {pound}g1"
+	&"{f6:2}Would You Like To:{f6:2} (A) Enter A Password{f6} (B) Generate a Random "
+	&"Password{f6} (C) Not Change Your Password{f6:2}> {pound}g1"
 	if tr%>.then on-(an$="A")-2*(an$="B")-3*(an$="C")goto {:60042},{:60052},{:60040}:goto {:60032}
 	&"C{f6:2}"
 {:60040}

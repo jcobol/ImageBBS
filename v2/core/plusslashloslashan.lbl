@@ -11,7 +11,7 @@
 {:4012}
 	&"{f6}{green}Writing News File...{f6}":dr=1:a$="n.$Welcome!":GOSUB 1023:ON x GOTO {:4026}
 	PRINT# 2,"{lt. red}{pound}vj{white}{pound}$q {rvrs on}{pound}{back arrow}06Please Welcome Our New Users:{rvrs off}{pound}{back arrow}39{f6}{lt. red}{pound}vj{f6}"
-	FOR i=1 TO b STEP 3:an$=tt$(i):&,15,1:tt$(i)=an$:PRINT# 2,"{pound}$q {yellow}{rvrs on}";tt$(i)
+	FOR i=1 TO b STEP 3:an$=tt$(i):&,15,1:tt$(i)=an$:PRINT# 2,"{pound}$q {yellow}{rvrs on}";tt$(i);"{rvrs off}"
 	an$=tt$(i+1):&,15,1:tt$(i+1)=an$:PRINT# 2,"{pound}$q     {gray3}From:{white} ";tt$(i+1);
 	PRINT# 2,", ";tt$(i+2):NEXT:PRINT# 2,"{f6:2}{lt. green}{pound}$qYou are invited to send them a";
 	PRINT# 2," message  of welcome!"

@@ -229,7 +229,7 @@
 	gosub {:sub.clear_2_lines}:an$=tt$(i):&,15,6,44:f$=a$:t$=an$:w$=f$
 ' prompt for new filename
 	a=16:gosub {:sub.input_length}:pl=.:p$="New Filename":&,1,32:if an$="" then an$=w$
-	&"TODO: check for unique filename in queue{f6}"
+	&"Checking for a unique filename...{f6}"
 ' unique
 	tt$(i)=an$+","+t$:goto {:3104}
 
@@ -245,7 +245,7 @@
 	close 2:close 3:next:if ok=t then:&"{f6:2}All {pound}!t Files Copied Successfully.":goto {:main_menu}
 ' skipped files, disk error:
 	a=ok:&"{pound}!a Files Left:":gosub {:sub.show_queue}
-	&"Finish this.":goto {:main_menu}
+	&"Re-run copy to finish these files.":goto {:main_menu}
 
 {:dnp}
 	&"{f6}Error: Device {pound}!a Not Present!{f6}":goto {:main_menu}

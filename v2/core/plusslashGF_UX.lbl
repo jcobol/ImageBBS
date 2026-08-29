@@ -20,7 +20,7 @@
 {:4030}
 	d%=.:POKE 53252,16:&"{f6}{pound}$j name: {pound}i0":f$=an$:a$=LEFT$(f$,1)
 	IF f$=""OR a$="$"OR a$="@"THEN f$="":d%=1:RETURN
-	&"S=SEQ (Text), P=PRG(Binary){f6}{pound}$j type: {pound}g1":a=1-(an$="P")
+	&"S=SEQ (Text), P=PRG (Binary){f6}{pound}$j type: {pound}g1":a=1-(an$="P")
 	t$=MID$("sp",a,1):a$=MID$("SeqPrg",a*3-2,3):&"{pound}$a{f6}"
 	dr=7:a$=f$+","+t$+",r":GOSUB 1011:CLOSE 2:b%=.:IF e%THEN f$="":&:RETURN
 	CLOSE 1:OPEN 1,dv%,0,"$"+dr$+f$:GET#1,a$,a$:&,8,1,1:&,8,1,1
@@ -76,7 +76,7 @@
 	&"{pound}%b {pound}$d Total, Transfer Time: {pound}#2{pound}%a:{pound}%c{f6}"
 	IF a%>tr%AND tr%<100 THEN lp=1:&"{pound}$vdon't have enough Time!":RETURN
 	a=7:GOSUB 1004:IF a=0 AND b%>l THEN lp=1:&"{pound}$vdon't have enough Credits!":RETURN
-	IF dc%>=da%AND da%<>0 THEN lp=1:&"{pound}$v have {backspace}downloaded your limit!":RETURN
+	IF dc%>=da%AND da%<>0 THEN lp=1:&"{pound}$v have downloaded your limit!":RETURN
 	fl=0:RETURN
 {number:5200}
 {:5200}
@@ -151,7 +151,7 @@
 	b=e%(i):bd=bd+b:cr=cr+b*(a=.):NEXT
 	GOSUB {:5012}:ON x GOTO {:5200}:ON jm GOTO {:6204}:GOTO {:5200}
 {:6152}
-	&"{f6:2}Kill Which?: {pound}i1":a=ABS(INT(VAL(an$)):IF tr%<1 THEN RETURN
+	&"{f6:2}Kill Which?: {pound}i1":a=ABS(INT(VAL(an$))):IF tr%<1 THEN RETURN
 	IF a<1 OR a>a%THEN{:6130}
 	f%=f%-1:a%=a%-1:ON a%+1 GOTO {:6100}:FOR i=a TO a%:tt$(i)=tt$(i+1):NEXT:GOTO {:6126}
 {number:6200}

@@ -15,7 +15,7 @@
 ' NOTE: Goal here is to fix console login (k%) line length
 ' FIXME: just a test if i% overrides Loc:
 ' 4008
-	poke 970,.:&,52,$22,val(mid$(uf$,2,1)):if i% then:&"i% skips!":qb=2400:goto {:4050}
+	poke 970,.:&,52,$22,val(mid$(uf$,2,1)):if i% then:qb=2400:goto {:4050}
 ' &,52,4: Local Mode login
 ' sysop console login (I think):
 ' TODO: get highest BPS rate from mt$ for qb?

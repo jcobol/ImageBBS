@@ -106,7 +106,7 @@
 	a%(br+1)=a:dt$(br+1)=d1$
 	&"Enter the text for the Topic:{f6}":GOSUB 1604:x=0:IF kk=.THEN RETURN
 {:3154}
-	POKE 53252,30:x=x+1:a%=x:&"Enter Choice #{pound}%a:{f6}: {pound}i0":ed$(x)=an$
+	POKE 53252,30:x=x+1:a%=x:&"Enter Choice #{pound}%a: {pound}i0":ed$(x)=an$
 	ON-(an$<>""AND x<9)GOTO {:3154}:IF x=1 THEN RETURN
 	IF an$=""THEN x=x-1
 	dr=3:b=br+1:GOSUB {:3008}:a$=o$+",s,w":GOSUB 1011:IF e%THEN CLOSE 2:RETURN

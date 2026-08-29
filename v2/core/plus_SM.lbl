@@ -28,7 +28,7 @@
 {:3044}
 	a$="find acs":GOSUB {:3046}:GOTO {:3006}
 {:3046}
-	&"{f6}Loading {pound}$a module.."
+	&"{f6}Loading {pound}$a module..."
 	IF lm$<>"SM."+a$THEN dr=5:GOSUB 1010:lm$="SM."+a$:a$=dr$+"+/"+lm$:LOAD a$,dv%
 	&"{f6}":GOTO 4000
 {:3052}

@@ -35,7 +35,7 @@
 {:3054}
 	a%=id:&"{clear}{f6}{pound}vj Your Login ID --> {pound}$f{pound}%a"
 	b$=pw$:&"{f6} Your Password --> {f5}{pound}$b{f5}{f6}{pound}vj"
-	&"{f6}{rvrs on} Write These Down! "
+	&"{f6}{rvrs on} Write These Down! {rvrs off}"
 	&"{f6:2}You Will Need Them To Sign Back Onto{f6}The System.{f6}"
 	&"{f6}Press RETURN To Continue.{f6:2}: {$07}{pound}i1"
 {:3064}
@@ -77,7 +77,7 @@
 	a%=i:&"{f6:2}That handle is now used by {pound}$f{pound}%a.{f6}":goto {:3106}
 {:3122}
 	&"{f6}Your handle must be at least 5 but no{f6}more than 20 characters long and"
-	&"begin{f6}with an alphabetic character.{f6}":goto {:3106}
+	&" begin{f6}with an alphabetic character.{f6}":goto {:3106}
 {:3126}
 	poke 53252,12:&"{f6}Enter Your Phone Number In The Form{f6}801-423-2734:{f6:2}: {pound}i1"
 	if tr%<1 then ph$="[XXX] XXX-XXXX":return

@@ -94,7 +94,7 @@
 	b=b*60+val(mid$(an$,4,2))-(right$(an$,1)="P")*720:if b=am%(x,a)then return
 	am%(x,a)=b:tz=1:return
 {:4258}
-	&"Forced [E]nabled, Forced [D]isabled,or{f6}[C]heckmark? {pound}g1":b=am%(0,a)
+	&"Forced [E]nabled, Forced [D]isabled, or{f6}[C]heckmark? {pound}g1":b=am%(0,a)
 	if an$="E"then b=257
 	if an$="D"then b=256
 	if an$="C"then:&"Which One? {pound}i1":b=val(an$)

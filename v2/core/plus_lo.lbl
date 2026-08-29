@@ -161,7 +161,7 @@
 ' restore saved linefeed status (lf%) for correct display on login attempt:
 	&,52,17,lf%:ac%=16:k=k+1:if k>4 then {:3266}
 ' immediate mode (i%):
-	on i% goto {:3144}:lp=1:&"{f6:2}Enter {f5}NEW{f5} If You Have No Login ID, or {f5}HELP{f5} If "
+	on i% goto {:3144}:lp=1:&"{f6:2}Enter {f5}NEW{f5} If You Have No Login ID,{f6}or {f5}HELP{f5} If "
 	lp=1:&"You Are Having Trouble{f6}Logging On.":goto {:3108}
 {:3142}
 	id=int(val(mid$(dd$,len(cc$)+1,4))):if id<1 or id>ur then id=.:goto {:3160}

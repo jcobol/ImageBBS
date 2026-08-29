@@ -7,7 +7,7 @@
 	FOR i=0 TO 9:x=i+1:GOSUB 1001:&,2,2:ac$(i,0)=a$:&,2,2:ac$(i,1)=a$:NEXT
 	CLOSE 2:IF r THEN an$="":x=r:GOTO {:3016}
 {:3010}
-	&"{clear}{f6}{pound}{back arrow}09{white}{rvrs on} IMAGE User Account Editor {f6}{cyan}":p$="User Edit"
+	&"{clear}{f6}{pound}{back arrow}09{white}{rvrs on} IMAGE User Account Editor {rvrs off}{f6}{cyan}":p$="User Edit"
 	a%=ur:&"{f6} Users: {pound}%a{f6:2}Enter Handle Or ID# Of User To Edit.{f6:2}":GOSUB 1006
 	ON-(an$="")GOTO 1811:x=ABS(INT(VAL(LEFT$(an$,4))))
 {:3016}

@@ -62,7 +62,7 @@
 	f$=" ":IF(f2 AND 8)=8 THEN f$="N"
 	RETURN
 {:4086}
-	p%=.:&"{f6}":FOR i=0 TO 9:a%=i:&"Group {pound}#0{pound}%a?:":GOSUB 1902:p%=p%+a*(2^i):NEXT:RETURN
+	p%=.:&"{f6}":FOR i=0 TO 9:a%=i:&"Group {pound}#0{pound}%a?: ":GOSUB 1902:p%=p%+a*(2^i):NEXT:RETURN
 {:4088}
 	&"{clear}{pound}q0{f6}":sh=.:rc=.:y=.:GOSUB {:4004}:IF e%THEN GOSUB {:4018}:CLOSE 2:s=0:e=0:RETURN
 	x=1:GOSUB 1001:&,2,2:e=VAL(a$):IF e=0 THEN s=0:CLOSE 2:RETURN
@@ -356,7 +356,7 @@
 {:4526}
 	&"{f6}Out of Range!":a=q+1
 {:4528}
-	a=a+1:ON-(q>=a AND bn<z%)GOTO {:4512}:&"{f6:2}Press a Key {pound}g1":s=bn-9:q=0:GOTO {:4496}
+	a=a+1:ON-(q>=a AND bn<z%)GOTO {:4512}:&"{f6:2}Press A Key {pound}g1":s=bn-9:q=0:GOTO {:4496}
 {:4530}
 	a=2:GOSUB {:4062}:s=a:GOTO {:4496}
 {:4532}

@@ -28,7 +28,7 @@
 {:3042}
 	&"{f6}{cyan}READING DIRECTORY...{f6:2} [Y]ES [N]O [S]TART [A]BORT":TZ=2
 	&"{f6} [1] SKIP 143 FILES
-	&"{f6} [8] SKIP EIGHT FILES{f6} [R]EMAINING FILES SAME AS LAST{f6:2}"
+	&"{f6} [8] SKIP  8  FILES{f6} [R]EMAINING FILES SAME AS LAST{f6:2}"
 	OPEN 1,F,0,"$"+F$+T$:GET#1,A$,A$:&,8,1,1:LP=1:&:&"{f6}"
 {:3050}
 	&,8,1,1:S=ST:IF MID$(A$,7,1)="B"THEN B$=A$:&"{f6}{pound}$B{f6}":GOTO{:3090}

@@ -84,10 +84,10 @@
 	print "If Necessary, Insert Your Etcetera Disk Into Any Drive.":print
 {:device}
 	print "Device   (7-31)  "dv%:print "{up}"tab(17):input a$:dv%=val(a$)
-	if dv%<7 and dv%>31 then print"{up}":goto {:device}
+	if dv%<7 or dv%>31 then print"{up}":goto {:device}
 {:drive}
 	print "Drive/LU (0-254)  0" :print "{up}"tab(17):input a$:a=val(a$)
-	if a<. and a>254 then print"{up}":goto {:drive}
+	if a<. or a>254 then print"{up}":goto {:drive}
 	open 15,dv%,15:open 2,dv%,2,a$+":e.data":input# 15,a,a$:if a then {:900}
 ' get Lt.Kernal config, return to record #1:
 	x=38:gosub {:1}:input# 2,a$:lk%=val(a$):x=1:gosub {:1}

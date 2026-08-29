@@ -27,7 +27,7 @@
 {:60016}
 	&"{f6}{yellow}Invalid Account Number.{f6}":x=.:goto {:60048}
 {:60018}
-	&"{f6}{lt. green}Handle: {rvrs on}":&nn$:&"{f6}{yellow}Is That Correct?: ":gosub 1907:if a=. then {:60002}
+	&"{f6}{lt. green}Handle: {rvrs on}":&nn$:&"{rvrs off}{f6}{yellow}Is That Correct?: ":gosub 1907:if a=. then {:60002}
 {:60020}
 	y=i:dr=2:gosub 1079:if a<20 then x=2:gosub 1980:goto {:60046}
 ' check for directory space:
@@ -91,8 +91,8 @@
 {:60094}
 	goto {:60082}
 {:60096}
-	&"{white}. {yellow}{rvrs on}List One {pound}$s{pound}{back arrow}37{f6}{white}. {yellow}{rvrs on}List A{$cc:2} {pound}$ss{pound}{back arrow}37{gray3} {f6}"
-	&"{white}. {yellow}{rvrs on}Create/Edit {pound}$s{pound}{back arrow}37{gray3} {f6}{white}. {yellow}{rvrs on}Quit{pound}{back arrow}37{gray3} {f6}   {gray3}{rvrs on}{pound}{back arrow}38"
+	&"{white}. {yellow}{rvrs on}List One {pound}$s{rvrs off}{pound}{back arrow}37{f6}{white}. {yellow}{rvrs on}List A{$cc:2} {pound}$ss{rvrs off}{pound}{back arrow}37{gray3} {f6}"
+	&"{white}. {yellow}{rvrs on}Create/Edit {pound}$s{rvrs off}{pound}{back arrow}37{gray3} {f6}{white}. {yellow}{rvrs on}Quit{rvrs off}{pound}{back arrow}37{gray3} {f6}   {gray3}{rvrs on}{pound}{back arrow}38"
 	gosub {:sub.msg_10_signatures}:return
 {:60102}
 ' exit PS editor

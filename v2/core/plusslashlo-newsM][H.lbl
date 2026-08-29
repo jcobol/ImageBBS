@@ -10,7 +10,7 @@
 	NEXT i
 	GOTO {:4028}
 {:4016}
-	&"{f6}{yellow}{pound}v5 News:{f6}{white}{rvrs on}{pound}$b{white}{f6:2}":dr=1:b$=a$:ON-(e1=1)GOTO {:4018}:GOTO {:4020}
+	&"{f6}{yellow}{pound}v5 News:{f6}{white}{rvrs on}{pound}$b{rvrs off}{white}{f6:2}":dr=1:b$=a$:ON-(e1=1)GOTO {:4018}:GOTO {:4020}
 {:4018}
 	GOSUB 2912:a$="n."+LEFT$(ed$(i),14)+",s,r":dr=1:GOSUB 1076:GOTO {:4022}
 {:4020}

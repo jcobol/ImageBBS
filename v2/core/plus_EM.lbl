@@ -17,7 +17,6 @@
 	&"{f6}Deleting...{pound}w1{f6}":return
 {:3016}
 	poke 2038,.:poke 2024,255:&,3,2:fl=st:poke 2024,.:return
-	&"{f6}Enter The HANDLE Or ID# Of The Person{f6}{pound}$b:{f6:2}"
 {:3020}
 	nn$="":poke 53252,20:gosub 1006:gosub {:3010}:if an$=""then return
 {:3022}
@@ -97,7 +96,7 @@
 {:3116}
 	for j=1 to 4:&,2,2:next:gosub {:3002}:gosub 1030:on rc gosub {:3016}:if d%(br)=. then gosub {:3382}:goto {:3122}
 {:3118}
-	&"{f6:2}{lt. blue}[A]gain, [F]oward, [R]eply{pound}q0?: {pound}g1":IF an$="R"THEN a=1:&"Reply{f6}":GOTO {:3120}
+	&"{f6:2}{lt. blue}[A]gain, [F]orward, [R]eply{pound}q0?: {pound}g1":IF an$="R"THEN a=1:&"Reply{f6}":GOTO {:3120}
 	ON-(an$="A")-(an$="F")*2 GOTO {:3496},{:3495}:&"Next{f6}":r%=.:a=.
 {:3120}
 	IF a=1 THEN r%=1:GOTO {:3126}

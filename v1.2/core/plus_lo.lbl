@@ -29,7 +29,7 @@
 	if zz then nl=1:&"{f6:2}":&,52,16,1:goto{:120}
 	q%=qb:&"{f6:2}{$c3}{$cf}{$ce:2}{$c5}{$c3}{$d4}{$c5}{$c4} {$c1}{$d4} {pound}%q {$c2}{$c1}{$d5}{$c4}.{f6}":gosub 1093:gosub 1372
 	&,52,3,3:if qb>300 or a%=.then{:110}
-	&"{f6:2}{$d3}{$cf}{$d2:2}{$d9}, {$ce}{$cf} 300 {$c2}{$c1}{$d5}{$c4} {$c3}{$c1}{$cc:2}{$c5}{$d2}{$d3} {$c1}{$c3:2}{$c5}{$d4}{$d0}{$c5}{$c4}":goto{:202}
+	&"{f6:2}{$d3}{$cf}{$d2:2}{$d9}, {$ce}{$cf} 300 {$c2}{$c1}{$d5}{$c4} {$c3}{$c1}{$cc:2}{$c5}{$d2}{$d3} {$c1}{$c3:2}{$c5}{$d0}{$d4}{$c5}{$c4}":goto{:202}
 {:110}
 	poke 53251,2:&"{f6}{$d0}{$cc}{$c5}{$c1}{$d3}{$c5} {$c8}{$c9}{$d4} {$d9}{$cf}{$d5}{$d2} {$c2}{$c1}{$c3}{$cb}{$d3}{$d0}{$c1}{$c3}{$c5} ({$c4}{$c5}{$cc}{$c5}{$d4}{$c5}){f6}{$cb}{$c5}{$d9} {$c6}{$cf}{$d2} {$c3}/{$c7} {$c4}{$c5}{$d4}{$c5}{$c3}{$d4}: {pound}b1"
 {:112}
@@ -149,7 +149,7 @@
 	poke 2042,.:poke 53248,1:&"{lt. blue}{clear}":poke 53248,.:goto{:274}
 {:500}
 	&,52,18,0:&,52,19,0:&,52,17,1:nl=0
-	&"{$c4}o you {$d7}ant {$c1}{$ce}{$d3}{$c9} {$c3}olor? ":gosub 1902:b=a:if a then:&,52,18,1
+	&"{$c4}o {$d9}ou {$d7}ant {$c1}{$ce}{$d3}{$c9} {$c3}olor? ":gosub 1902:b=a:if a then:&,52,18,1
 	&"{$c4}o {$d9}ou {$d7}ant {$c9}{$c2}{$cd} {$c7}raphics? ":gosub 1902:if a then:&,52,19,1
 	if a=1 and b=1 then nl=1
 	return
@@ -172,9 +172,9 @@
 	input# 2,tc%,co%,ll%,ul,lf,em,dc,uc,bd,bu,cr,ps,rp,d5$,fl$,jn$:close 2
 	&,52,17,lf:&,52,20,em:co$=co$(co%):rn$=ff$+" "+ll$:if na$="{up arrow}"or na$="{$d2}{$c5}{$d3}"then{:154}
 	&"{f6:2}{$c1}dditional {$c9}nformation:":a=int(rnd(1)*5)+1:on a goto{:675},{:676},{:677},{:678}
-	p$="{f6}{$c6}{$c9}{$d2}{$d3}{$d4} name ":t$=ff$:goto{:679}
+	p$="{f6}{$c6}{$c9}{$d2}{$d3}{$d4} {$ce}{$c1}{$cd}{$c5} ":t$=ff$:goto{:679}
 {:675}
-	p$="{f6}{$cc}{$c1}{$d3}{$d4} name ":t$=ll$:goto{:679}
+	p$="{f6}{$cc}{$c1}{$d3}{$d4} {$ce}{$c1}{$cd}{$c5} ":t$=ll$:goto{:679}
 {:676}
 	p$="{f6}{$c1}{$d2}{$c5}{$c1} {$c3}{$cf}{$c4}{$c5} (???){$d8:3}-{$d9:4} ":t$=mid$(ph$,2,3):goto{:679}
 {:677}

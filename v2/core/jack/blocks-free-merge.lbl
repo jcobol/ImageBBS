@@ -20,7 +20,7 @@
 ' TODO: interrogate drive as to total blocks available, display percentage free
 	b$=" System":d$="Directory":gosub {:4438}
 	b$=" E-Mail":d$="Plus-File":gosub {:4438}
-	b$="Ecetera":d$="     User":gosub {:4438}:&"{f6:2}":poke 53248,.:goto 4040
+	b$="Etcetera":d$="     User":gosub {:4438}:&"{f6:2}":poke 53248,.:goto 4040
 {:4438}
 	' get blocks free, set digits to print and leading spaces
 	' b$: 1st column, b: blocks free
