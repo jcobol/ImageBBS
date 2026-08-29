@@ -74,9 +74,9 @@
 {:3098}
 	NEXT:&"{f6:2}{yellow}{rvrs on}Listing Complete{rvrs off}{white}! ":GOTO {:3012}
 {:3100}
-	&"{f6}{lt. green}{pound}%b{pound}{back arrow}04{green}":&tt$:&"{pound}{back arrow}19{gray3}{pound}%a     {yellow}{pound}%c  {lt. blue}{pound}%d":RETURN
+	&"{f6}{lt. green}{pound}%b{pound}{back arrow}04{green}":&tt$:&"{pound}{back arrow}19{gray3}{pound}%a{pound}{back arrow}26{yellow}{pound}%c  {lt. blue}{pound}%d":RETURN
 {:3102}
-	&"{f6}{lt. green}{pound}%b{pound}{back arrow}04{green}":&tt$:&"{pound}{back arrow}19{lt. red}{pound}%a     {cyan}{pound}%c   {gray3}{pound}%d":RETURN
+	&"{f6}{lt. green}{pound}%b{pound}{back arrow}04{green}":&tt$:&"{pound}{back arrow}19{lt. red}{pound}%a{pound}{back arrow}26{cyan}{pound}%c   {gray3}{pound}%d":RETURN
 {:3104}
 	fl=.:&"{clear}      {rvrs on}{yellow}          Help Menu          {rvrs off}"
 	&"{f6}{lt. blue}{pound}{back arrow}16{$b7:4} {$b7:4}{f6:2}  {lt. green}Use Each Option In The Order Listed."
