@@ -6,7 +6,7 @@
 	on lm goto {:4100},{:4090}:return
 {number:4008}
 {:4008}
-	lp=1:&"{f6}Sorry, The System Is Reserved For Network Maintenance.{f6}":goto {:4012}
+	lp=1:&"{f6}Sorry, The System Is Reserved For{f6}Network Maintenance.{f6}":goto {:4012}
 {:4010}
 	&"{f6:2}Sorry, No Calls Less Than 1200 BPS{F6}Are Currently Being Accepted.{f6:2}"
 {:4012}

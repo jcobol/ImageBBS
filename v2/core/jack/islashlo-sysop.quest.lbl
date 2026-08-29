@@ -34,7 +34,7 @@
 	TT$=AN$:&"{f6:2}IS :":&TT$:&" CORRECT? ":GOSUB 96:IF A=. then {:4528}
 	TT$(I)=TT$:FD=1:GOTO{:4528}
 {:4552}
-	&"{f6:2}PLEASE PROVIDE THE FOLLOWING INFORMATION: ":POKE 53252,30
+	&"{f6:2}PLEASE PROVIDE THE FOLLOWING{f6}INFORMATION: ":POKE 53252,30
 	TT$(1)=NA$:TT$(2)=FF$:TT$(3)=LL$:FOR I=4 TO 12
 	IF I=8 THEN:&ED$(I):&"{pound}{back arrow}13: {pound}I1":TT$(I)=AN$:ON TR%+1 GOTO{:4560}:GOTO{:4560}
 	&ED$(I):&"{pound}{back arrow}13: {pound}I0":TT$(I)=AN$:ON TR%+1 GOTO{:4560}
