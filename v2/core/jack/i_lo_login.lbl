@@ -65,9 +65,9 @@
 	if left$(dd$,len(cc$))=cc$ and val(mid$(dd$,len(cc$)+1))>. then {:4180}
 	i=len(dd$):b$=left$(dd$,1):if i<4 or i>20 or b$<"a" or b$>"z" then id=.:goto {:4194}
 	im=1:gosub 441
-	if i then id=i:lp=1:&"{f6}{lt. blue} Your ID# Is {white}{pound}!i.  {lt. blue}Use It For A Faster Logon.{f6}":goto {:4182}
+	if i then id=i:lp=1:&"{f6}{lt. blue} Your ID# Is {white}{pound}!i.{f6}{lt. blue}Use It For A Faster Logon.{f6}":goto {:4182}
 	&"{f6:2} {f5}{pound}v7{f5} Not Found!{f6:2}":&,52,10,3:if a% then {:4052}
-	lp=1:&" Would You Like To Apply For An Account Using That Handle?: "
+	lp=1:&" Would You Like To Apply For An Account{f6}Using That Handle?: "
 	gosub 94:if a then f1=1:g$=dd$:dd$="ne"+"w":goto{:4056}
 {:4170}
 	ac%=16:k=k+1:on -(k>4) goto {:4020}:lp=1:&"{f6:2}Enter {f5}NEW{f5} If You Have No Login"
