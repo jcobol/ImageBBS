@@ -34,13 +34,13 @@
 {:4034}
 	&"Xpress Login{f6}":x%=1:return
 {:4040}
-	&"Mail Check{f6:2}{gray3}  Enter The Handle Of The User You Want To Check For.{f6:2}"
+	&"Mail Check{f6:2}{gray3}  Enter The Handle To Check For.{f6:2}"
 	c=1:&"{white}> {pound}i1":on-(tr%<1 or an$="")goto 999:a$="r":tt$=an$:gosub 32:close 2
 	a$=mid$(" No",3*-(e%=.)+1,3):&"{f6} {cyan}{pound}v7 {lt. blue}Has{pound}$a Mail.{f6}":return
 {:4050}
 	&,52,10,3:if a%=. then {:4056}
 {:4052}
-	&"{f6:2} Sorry, No New Users Are Being Accepted At This Time.{f6:2}":goto{:4102}
+	&"{f6:2} Sorry, No New Users Are Being Accepted{f6}At This Time.{f6:2}":goto{:4102}
 {:4056}
 	a$="lo."+"new":goto 72
 {:4060}

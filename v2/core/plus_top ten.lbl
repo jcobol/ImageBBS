@@ -18,7 +18,7 @@
 	&"{f6}Elapsed Time: {pound}!m Minutes{f6}"
 	&"{f6}{cyan}Creating TT File...":a$="e.top ten":dr=3:GOSUB 1023:RESTORE
 	PRINT# 2,"Top Ten Users"r$"{$04}"d1$r$:FOR i=1 TO 8:READ b$
-	PRINT# 2,"{f6}Hit A Key > {pound}g1{clear}{f6}{lt. blue} Total "b$"{f6}  #{pound}{back arrow}09User{f6} {pound}o{$c0}{pound}o{$c0}"
+	PRINT# 2,"{f6}Hit A Key > {pound}g1{clear}{f6}{lt. blue} Total "b$"{f6}  #{pound}{back arrow}10User{f6} {pound}o{$c0}{pound}o{$c0}"
 	FOR j=50 TO 41 STEP-1:PRINT# 2,a$(j,i):NEXT:NEXT:CLOSE 2:RETURN
 {:3030}
 	a$(p,i)=RIGHT$("       "+MID$(STR$(VAL(a$)),2),7)+"{pound}{back arrow}10"+an$:RETURN
