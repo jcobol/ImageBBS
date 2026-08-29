@@ -397,7 +397,7 @@
 {:3432}
 	&"Connect 1200{f6}":&,41,2:b=2:return
 {:3434}
-	&"No DialTone{f6}":print# 131:&,22,100:b=1:return
+	&"No Dial Tone{f6}":print# 131:&,22,100:b=1:return
 {:3436}
 	&"Busy{f6}":b=1:return
 {:3438}

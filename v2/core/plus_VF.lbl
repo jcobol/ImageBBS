@@ -304,7 +304,7 @@
 {:3434}
 	&"{clear}{f6}Local Maint File{f6:2}":b$="zz log":gosub {:3440}:goto {:3420}
 {:3436}
-	&"{clear}{f6}Email Sent File{f6:2}":b$="em log":gosub {:3440}:goto {:3420}
+	&"{clear}{f6}E-Mail Sent File{f6:2}":b$="em log":gosub {:3440}:goto {:3420}
 {:3438}
 	&"{clear}{f6}BlackList LogOn File{f6:2}":b$="nu log":gosub {:3440}:goto {:3420}
 {:3440}

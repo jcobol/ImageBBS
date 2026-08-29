@@ -93,7 +93,7 @@
 	print#15,"s0:"+f$:gosub {:check.io_status}:if e<>1 then print a$:goto {:1811}
 	
 	rem save routine:
-	print "{up} Re-sav";
+	print "{up} Re-saving";
 
 	ea=ea+1 ' increment ending address -- save routine saves sa...ea+1
 	sys 57812f$,dv,1:hb=int(ad/256):poke 193,ad-hb*256:poke 194,hb
