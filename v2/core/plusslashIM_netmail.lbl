@@ -215,7 +215,7 @@
 	a=0:&"Handle Here :{pound}i1":a1$=an$:if an$=""then return
 	&"Handle There:{pound}i1":a2$=an$:if an$=""then a2$=a1$:a$=a1$:&"({pound}$a Assumed){f6}"
 	gosub{:4056}:a3$=a$:a$=a1$:b$=a2$:c$=a3$
-	&"{f6}Forward {pound}$a'S Mail To{f6}{pound}$b At {pound}$c{f6:2}Correct?" :goto 1902
+	&"{f6}Forward {pound}$a's Mail To{f6}{pound}$b At {pound}$c{f6:2}Correct?" :goto 1902
 {:4292}
 	dr=2:a$="nm.forward,l,.":gosub 1011:&,2,2:l=val(a$):return
 {:4294}

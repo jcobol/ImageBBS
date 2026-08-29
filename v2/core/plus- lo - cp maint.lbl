@@ -33,7 +33,7 @@
 	print# 2,"{pound}$q{white}({gray3}Any Key{white}){lt. green} {pound}g1{pound}hj":print# 2,"{up arrow}":close 2:return
 {:4054}
 	print# 2,"{pound}n3{pound}$q{pound}{back arrow}06{lt. green}{$b0}{$c0:21}{$ae}"
-	print# 2,"{pound}$q{pound}{back arrow}06{$dd} No Winner in Today's {$dd}"
+	print# 2,"{pound}$q{pound}{back arrow}06{$dd} No Winner in Today's{$dd}"
 	print# 2,"{pound}$q{pound}{back arrow}06{$dd}     Credit Pool!    {$dd}"
 	print# 2,"{pound}$q{pound}{back arrow}06{$ad}{$c0:21}{$bd}{pound}n2":goto {:4052}
 	copr. 1994 new image 9/8/94
