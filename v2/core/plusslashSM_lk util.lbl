@@ -46,7 +46,7 @@
 	REM **** main menu ****
 	&"{pound}f1":g=dv%:POKE 53252,16
 {:4064}
-	&"{f6:2}{lt. blue} Lt. Kernal File Utility{f6}{lt. red}      (c)NISSA 1992"
+	&"{f6:2}{lt. blue} Lt. Kernal File Utility{f6}{lt. red}      (c) NISSA 1992"
 	&"{f6:2}{white}1. {lt. blue}Directory{f6}{white}2. {lt. blue}Copy File{f6}{white}3. {lt. blue}Disk Command"
 	&"{f6}{white}4. {lt. blue}Multi-File Copy{f6}{white}5. {lt. blue}Multi-File Scratch"
 	&"{f6}{white}6. {lt. blue}Read Sequential Files{f6}{white}7. {lt. blue}Read Basic Program Files"

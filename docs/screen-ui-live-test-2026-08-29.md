@@ -105,17 +105,19 @@ of individual screen/prompt blocks within those files, not files.
 ## 3. Outcome summary
 
 - **175 issues found.**
-- **~130 of them fixed directly** in this pass (see §4) — all mechanical,
-  high-confidence fixes: unclosed reverse video, real logic bugs, leaked
-  debug/placeholder text, missing spaces/duplicate punctuation, and clear
-  typos.
-- **~45 flagged, not auto-fixed** (see §5) — wording/capitalization style
-  preferences, column-alignment calls that depend on the still-uncertain
-  exact runtime width of `{pound}`-macro substitutions, cosmetic overflow
-  in plain-prose lines that the C64's own hardware line-wrap already
-  handles gracefully, and a few items that need a maintainer's design
-  decision (an incomplete/placeholder condition, whether a legacy
-  duplicate module is still meant to be live).
+- **~165 of them fixed directly** across two passes (see §4) — the first
+  pass (§4.1-4.8) covered mechanical, unambiguous fixes; a second pass
+  (§4.9), done after the user asked for everything not specifically
+  requiring their input to be fixed, resolved nearly everything that
+  first pass had conservatively left for a "style preference" — wording
+  consistency, column alignment (now computed with confidence — see §1's
+  macro-semantics discoveries), and the remaining overflow lines.
+- **~8 still flagged, not auto-fixed** (see §5) — these are genuine
+  domain/design decisions: an incomplete `if` condition whose correct
+  logic isn't recoverable from this file alone, a module whose own FIXME
+  comments suggest it may not be live in production, which of several
+  divergent duplicate modules is actually deployed, and one menu-wording
+  question that's a legitimate style choice either way.
 - The single most common defect, by far, was **an opened `{rvrs on}`
   never matched with `{rvrs off}`**, found identically across dozens of
   unrelated modules (title banners, confirmation prompts, stat displays,
@@ -269,78 +271,115 @@ NAME"/"LAST NAME" variants of the new-account info prompt).
   lowercased to match the field-label table's one-capital-word
   convention.
 
+### 4.9 Round 2 — resolved after re-examination
+
+The first pass of this report (above) deliberately erred conservative and
+left ~45 items as "needs the user's input." On request, everything in
+that list was re-examined and split: items that only needed *a*
+consistent choice (not specifically *the user's* choice) were fixed;
+only genuine domain/design decisions were kept flagged (§5).
+
+- **Wording/terminology consistency** (each file's own majority
+  convention was used as the tiebreaker): `plus_BB.lbl` "dBASE"→"dBase";
+  `plus_JA.lbl` "or"→"Or"; `plusslashIM_ecs.lbl` "ZZ Locked?"→"Locked?"
+  (matching its own Add-flow sibling); `plus_alphaslashind.lbl` menu
+  items repunctuated "1.Clear"→"1. Clear" (all 10, including the "0.
+  Quit" the fixing agent caught after the fact); `plus_scan netsub.lbl`
+  "netsubs"/"Subs"/"Sub"→"NetSub(s)" throughout;
+  `plusslashSM_fixer.lbl` "Responses"→"Resps" (matching this file's own
+  menu item and per-board line); `plus_VF.lbl` "Email"→"E-Mail"; `plus_t.lbl`
+  "DialTone"→"Dial Tone"; `plus_greed.lbl` "Top Five"→"Top 5";
+  `plus_reledit.lbl` "Inserted."/"Moved"→"Inserted!"/"Moved!" (matching
+  the file's own "Added!"/"Deleted!"); `plusslashSM_lk util.lbl`
+  "(c)NISSA"→"(c) NISSA" (the codebase's copyright-line convention,
+  confirmed against 5+ other files' "(c) NAME" spacing).
+- **Column alignment**, now computed with confidence using the
+  `{back arrow}NN`/`{pound}` semantics documented in §1: `plus_greed.lbl`'s
+  leaderboard header retargeted to column 6/23 to match the data-row
+  builder (verified by reconstructing the exact prefix width), and its
+  dice-roll header's tab targets corrected from 07/10/13/16/19/22 to
+  09/12/15/18/21/24; `plus_top ten.lbl`'s "User" header tab moved from
+  column 9 to 10; `plusslashSM_baredit.lbl`'s stat-table header moved
+  from column 13 to 14; `plus_make anagram.lbl`'s Edit Words *and* List
+  Words data rows both given an explicit `{back arrow}26` tab so "1st"/
+  "2nd" line up with the header in both screens.
+- **Overflow lines re-wrapped or shortened** — the ~20 plain-prose
+  overflow lines previously left as "hardware auto-wraps fine" were
+  cleaned up properly: 7 shortened to fit ≤40 columns outright (e.g.
+  `i_GF.lbl:53`, `islashlo!help.lbl:4`, `islashlo.instant.lbl:30`), the
+  rest given an `{f6}` break at a sensible word boundary with wording
+  otherwise unchanged. `plus_NMslashreport.lbl`'s 74-column report line
+  now truncates to 38 columns for the screen echo only (the full line
+  still goes to the report file); `plusslashSM_bu.lbl`'s "Copying: X To
+  Y" line now splits at "To".
+- **`plusslashlo_misc.lbl`'s `{ifdef:jack}` block** — its three prompts'
+  wording synced to exactly match the actively-maintained version above
+  it in the same file (this is wording sync between two paths of the
+  same feature, not a decision about which one survives).
+- **`islashIM.access.lbl`/`plusslashIM_access.lbl`**'s two access-group
+  fields both labeled "Time/Call" — field 19's label changed to
+  "(Unused)" since it's confirmed dead/unreachable (no real editor was
+  built for it, since that would be inventing new functionality).
+- **`plusslashlo-netwall.lbl`**'s dead code — re-verified line-by-line
+  against every label reference in the file (not just direct `GOTO`, but
+  `ON...GOTO` comma-lists too). The reviewing agent's first pass had
+  overreached: `{:4166}`/`{:4168}` turned out to be live, called from a
+  legitimate entry point, and were left alone. Only the genuinely
+  unreferenced subset — an orphaned duplicate POKE block and a
+  self-contained, zero-reference loop (`{:4154}`/`{:4156}`/`{:4160}`/
+  `{:4162}`) — was removed.
+- **v1.2 low-confidence notes**: `serial-test.lbl:96` "Re-sav" spelled
+  out to "Re-saving" (confirmed safe against its `tab(30)"Done."`
+  layout, and confirmed the save genuinely takes long enough to be read
+  mid-word). `"modemconfig 19.2.lbl":71`'s "setup1.2a" was investigated
+  (grepped the whole repo for the real filename) but no reference to it
+  exists anywhere outside this one line, so it was correctly left alone.
+
 ## 5. Flagged for a maintainer's judgment (not auto-fixed)
 
-These were left alone deliberately — each needs either a design/wording
-decision, or depends on a runtime behavior (the exact rendered width of a
-`{pound}`-macro substitution, or of a `{back arrow}` continuation-wrap) that
-can't be confirmed without watching it run on real/emulated hardware.
+Everything below genuinely needs input only the user/sysop has — a
+design decision, knowledge of what's actually deployed, or domain
+knowledge about intended game/feature logic that isn't recoverable from
+the source alone.
 
-- **Plain-prose 40-column overflow that the C64's own hardware line-wrap
-  already handles gracefully** (not garbled, just wraps mid-sentence
-  instead of at a chosen word boundary) — roughly 20 instances, mostly in
-  `jack/` (`i_GF.lbl:53`, `i_UD.lbl:69/145`, `i_UX.lbl:69`,
-  `i_lo_login.lbl:37/43/68/70`, `islashIM.ecs.lbl:32`,
-  `islashIM.logon.lbl:27/42`, `islashlo!help.lbl:4`,
-  `islashlo-sysop.quest.lbl:37`, `islashlo.instant.lbl:30`,
-  `islashlo.firstimage.lbl:4`/`islashlo_firstimage.lbl:9`,
-  `sub_misc.lbl:68`) plus a few in the plus-mods
-  (`plus_NMslashreport.lbl:10-14`'s 74-column report-echo line,
-  `plusslashSM_bu.lbl:14`, `plus- lo-news.lbl:11`). These are readable as
-  shipped; shortening each one is a wording call the current sysop/text
-  owner should make, not an automated edit.
-- **Column-alignment calls hedged on the `{pound}`/`{back arrow}` macro's
-  exact runtime width** — `plus_greed.lbl`'s leaderboard header vs. data
-  columns, `plus_top ten.lbl`'s header/data one-column offset,
-  `plusslashSM_baredit.lbl`'s stat-table header offset, `plus_make
-  anagram.lbl:32`'s Edit Words header vs. data columns. Several
-  independent reviewers hedged these with "unconfirmed without live
-  rendering" — that's the right call without an actual C64/emulator to
-  watch it on.
 - **`plusslashIM_time.lbl:180`** — a literal placeholder `[...]` left
-  inside an `if` condition, matching the file's own `' FIXME` comment.
-  This branch is incomplete; fixing it requires knowing what the intended
-  condition actually was, not something to guess at.
+  inside an `if` condition guarding prime-time auto-disable. Investigated
+  further: the condition needs to compare against `p2%`/`p3%`
+  (prime-time start/end), but the file's own comments show the original
+  author never resolved the wraparound behavior when the end time is
+  earlier than the start time ("if p3%<p2%, does it wrap am/pm?"), and a
+  related variable (`pt`) is set here but read only by some other module
+  not in this file. Guessing at the condition risks silently breaking
+  prime-time enforcement — this needs the person who knows the intended
+  behavior.
 - **`plusslashlo-question.lbl`** — carries explicit developer `' FIXME:
   don't commit yet` / `' FIXME: question text does not display` comments,
   suggesting this module may not be live in production. Worth confirming
   with whoever runs this BBS before touching it further.
 - **Divergent duplicate modules** where two versions of the same feature
-  coexist with different wording/logic and it's unclear which is current:
-  `islashlo-net.grf.lbl` vs `islashlo-net.grf_rel.lbl` (different confirm
-  routines and abort targets for the same "Wall Writer" feature),
-  `islashlo.firstimage.lbl` vs `islashlo_firstimage.lbl` (old PETSCII-caps
-  style vs. a Title Case rewrite, both carrying the same overflow bug),
-  `plus_bio.lbl` ("User Bio v1.3") vs `plus_UB.lbl` ("v2.0") — likely a
-  stale earlier revision left in the tree, `plus_NMslashconfig.lbl` vs
-  `plusslashIM_netmail.lbl` (near-identical NetMail config screens,
-  probably a stale fork of one another), and `plusslashlo_misc.lbl`'s
-  `{ifdef:jack}`-conditional date/time editor, whose wording has drifted
-  from the actively-maintained version above it in the same file. None of
-  these are "broken" exactly — they're duplicated maintenance burden, and
-  removing/merging one is a call for whoever owns this codebase.
-- **Wording/terminology preferences** where multiple spellings are each
-  individually fine and only inconsistent with each other: "dBASE" vs
-  "dBase" (`plus_BB.lbl`), "Or"/"or" (`plus_JA.lbl`), "Resp"/"Responses"
-  (`plusslashSM_fixer.lbl`), "netsubs"/"NetSubs"/"Subs"/"Sub"
-  (`plus_scan netsub.lbl`), "E-Mail"/"Email" (`plus_VF.lbl`), "Top
-  5"/"Top Five" (`plus_greed.lbl`), "DialTone" one-word vs. other
-  two-word modem-status phrases (`plus_t.lbl`), "ZZ Locked?" vs. plain
-  "Locked?" (`plusslashIM_ecs.lbl` — "ZZ" may be a meaningful internal
-  flag name, not obviously a typo), "Added!"/"Deleted."/"Moved" trailing
-  punctuation (`plus_reledit.lbl`), and several similar single-file
-  capitalization nits. Each is a one-line pick, but picking wrong is
-  worse than leaving it, so these are left for whoever maintains the
-  wording style.
-- **`plusslashlo-netwall.lbl`**'s duplicate/orphaned POKE-block code —
-  confirmed dead but not user-visible text, and the reviewing agent
-  didn't have fully confident line boundaries for the block to delete
-  safely, so it was left alone rather than risk cutting live code.
-- **`islashIM.access.lbl`/`plusslashIM_access.lbl`**'s two access-group
-  fields both labeled "Time/Call" — field 19 is provably unreachable
-  dead configuration state (skipped by the display loop), so it's inert
-  rather than visibly broken, but whether to remove it or give it a real
-  label/editor is a sysop call.
+  coexist and it's unclear which is current — this is a "which do we
+  keep" call, not a wording fix: `islashlo-net.grf.lbl` vs
+  `islashlo-net.grf_rel.lbl` (different confirm routines and abort
+  targets for the same "Wall Writer" feature), `islashlo.firstimage.lbl`
+  vs `islashlo_firstimage.lbl` (old PETSCII-caps style vs. a Title Case
+  rewrite — both had their shared overflow bug fixed in §4.9, but the
+  duplication itself remains), `plus_bio.lbl` ("User Bio v1.3") vs
+  `plus_UB.lbl` ("v2.0") — likely a stale earlier revision left in the
+  tree, and `plus_NMslashconfig.lbl` vs `plusslashIM_netmail.lbl`
+  (near-identical NetMail config screens, probably a stale fork of one
+  another — confirmed `plusslashIM_netmail.lbl` doesn't share
+  `plus_NMslashconfig.lbl`'s off-by-one menu bug, so they've already
+  diverged in behavior, not just wording). None of these are "broken"
+  exactly — they're duplicated maintenance burden, and removing/merging
+  one is a call for whoever owns this codebase.
+- **`plusslashSM_lk util.lbl:50-52` vs. `:112/:137/:151/:168`** — main
+  menu says "4. Multi-File Copy" etc., but the screen it leads to is
+  titled "Multi-Copy". Left as-is on reflection: a menu entry being more
+  descriptive than the short screen title it leads to is a normal,
+  harmless UI pattern (not unlike a "New Message" menu item opening a
+  screen titled "Compose") — forcing them to match verbatim isn't
+  obviously an improvement, so this is a genuine style call for whoever
+  maintains this tool's wording, not a bug.
 
 ## 6. Method note on the parallel review
 
