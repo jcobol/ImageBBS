@@ -148,7 +148,7 @@
 	tz=1:&"Ignore Extra? {pound}g1"
 	if an$="Y"then a=a or 4:&"Yes"
 	if an$="N"then a=a and not 4:&"No"
-	&"{f6}ZZ Locked? {pound}g1"
+	&"{f6}Locked? {pound}g1"
 	if an$="Y"then a=a or 1:&"Yes"
 	if an$="N"then a=a and not 1:&"No"
 	&"{f6}":return

@@ -2,7 +2,7 @@
 	rem +.bb
 	a=8:gosub 1004:q=a:a=4:gosub 1004:z=a:goto {:3100}
 {:3002}
-	&"{f6:2}{yellow}dBASE:{white} {pound}i1":z$=left$(an$,2):return
+	&"{f6:2}{yellow}dBase:{white} {pound}i1":z$=left$(an$,2):return
 {:3004}
 	gosub 1001:print# 2,w$r$"-"r$"-"r$"-"r$"-":return
 {:3006}

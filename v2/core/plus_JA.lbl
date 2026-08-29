@@ -67,7 +67,7 @@
 {:3094}
 	&"{f6:2}{pound}$q{lt. green}Sysop!{f6:2}{pound}$qYou May Make Changes If You Wish.{f6}"
 {:3096}
-	&"{f6:2}{pound}$qR)estart, D)elete or Q)uit?{f6}> {pound}g1{lt. green}{pound}v7{f6}"
+	&"{f6:2}{pound}$qR)estart, D)elete Or Q)uit?{f6}> {pound}g1{lt. green}{pound}v7{f6}"
 	ON-(an$="Q"OR an$=""OR tr%<1)-(an$="D")*2-(an$="R")*3 GOTO 1812,{:3114},{:3100}
 {:3100}
 	&"{f6:2}{pound}$qRestart? ":GOSUB 1902:IF a=.THEN{:3096}

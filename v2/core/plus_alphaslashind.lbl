@@ -5,8 +5,8 @@
 	rem +.alpha/ind - 3/24/89
 	pr=-1:a=4:gosub 1736:poke 53252,20
 {:3002}
-	&"{clear}{f6:2}1.Clear{f6}2.Load{f6}3.Search{f6}4.Insert{f6}5.Delete{f6}6.Save{f6}7.List{f6}8.Make{f6}9.Kill{f6}"
-	&"{f6}0.Quit{f6:2} =>{pound}g1{pound}v7{f6}":a=val(an$):if a then on a gosub {:3012},{:3014},{:3018},{:3024},{:3034},{:3016},{:3044},{:3058},{:3068}:goto {:3002}
+	&"{clear}{f6:2}1. Clear{f6}2. Load{f6}3. Search{f6}4. Insert{f6}5. Delete{f6}6. Save{f6}7. List{f6}8. Make{f6}9. Kill{f6}"
+	&"{f6}0. Quit{f6:2} =>{pound}g1{pound}v7{f6}":a=val(an$):if a then on a gosub {:3012},{:3014},{:3018},{:3024},{:3034},{:3016},{:3044},{:3058},{:3068}:goto {:3002}
 	pr$="":pr=-1:close 2:goto 1812
 {:3008}
 	dr=6:a$="u.config":goto 1011
