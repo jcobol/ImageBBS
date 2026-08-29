@@ -87,7 +87,7 @@
 {ifdef:jack}
 {:4004}
 ' a=0:
-	&"{clear}{f6:2}  Enter Current Date/Time:{f6}"
+	&"{clear}{f6:2}  Enter current date/time.{f6}"
 {:4006}
 	&"{pound}{back arrow}12[1=Sun...7=Sat]{f6}{up}"
 	b$="Day":w$=left$(d1$,1):gosub {:4046}:if a<1 or a>7 then {:4006}
@@ -116,9 +116,9 @@
 	if an$="P"then b=b+80
 ' display date/time:
 	a$=dw$+yr$+mo$+dt$+hr$+mn$
-	&"{cyan}{pound}{back arrow}10Setting Date/Time to{f6}{pound}{back arrow}05{$04}"+a$+"{f6}"
+	&"{cyan}{pound}{back arrow}10Setting date/time to{f6}{pound}{back arrow}05{$04}"+a$+"{f6}"
 ' 1907: default to Yes:
-	&"{f6} {lt. blue}Select {lt. green}Yes{lt. blue} To Start Clock, or{f6} Select {lt. green}No{lt. blue} To Change: ":gosub 1907
+	&"{f6} {lt. blue}Select {lt. green}Yes{lt. blue} to set clock, or{f6} select {lt. green}No{lt. blue} to change: ":gosub 1907
 	if a=. then {:4004}
 	&,62,b,c:b=b+80*((b=92)-(b=12))+12*((b=93)or(b=13)):&,58,b,0:poke 1010,1
 ' 1520: a=mn%

@@ -66,7 +66,7 @@
 	dt$(16)="Max Idle Time"
 	dt$(17)="Calls/Day"
 	dt$(18)="Time/Call"
-	dt$(19)="Time/Call"
+	dt$(19)="(Unused)"
 	dt$(20)="Downloads/Call"
 	return
 	copr.1988 new image

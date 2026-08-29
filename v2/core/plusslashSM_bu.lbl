@@ -11,7 +11,7 @@
 	READ b$:IF b$="-1"THEN{:4022}
 	CLOSE 15:OPEN 15,dv%,15,b$:GOSUB 1012:IF e%THEN CLOSE 15:&:GOTO {:4010}
 	d$=dr$+":"+MID$(b$,3)+LEFT$(d1$,1)
-	PRINT# 15,"s"d$:&"{f6}{lt. red}Scratch{white}: "+d$:&"{f6}{lt. green}Copying{white}: "+b$+" {lt. green}To {white}"+d$
+	PRINT# 15,"s"d$:&"{f6}{lt. red}Scratch{white}: "+d$:&"{f6}{lt. green}Copying{white}: "+b$:&"{f6}{lt. green}To {white}"+d$
 	PRINT# 15,"c"+d$+"="+b$
 	GOTO {:4010}
 {:4022}
