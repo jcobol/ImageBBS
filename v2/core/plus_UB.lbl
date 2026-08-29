@@ -1,7 +1,7 @@
 {number:3000}
 {alpha:alt}
 {step:2}
-	&"{f6}{cyan} {$c0:15}{f6} {rvrs on}{purple} User Bio v2.0 {f6}{cyan} {$c0:15}{f6}":a=8:GOSUB 1004:q=a
+	&"{f6}{cyan} {$c0:15}{f6} {rvrs on}{purple} User Bio v2.0 {rvrs off}{f6}{cyan} {$c0:15}{f6}":a=8:GOSUB 1004:q=a
 	GOSUB {:3008}:ON e%+1 GOTO {:3010}:IF q=.THEN:&"{f6}Sorry, No Biographies Available Today.{f6}":GOTO {:3042}
 	&"{f6}Creating {f5}u.biographies{f5} Now...":dr=6:a$="u.biographies,l,"+CHR$(125):GOSUB 1011
 	x=ur:GOSUB 1001:PRINT# 2,"{up arrow}":CLOSE 2:&"!{f6}":GOTO {:3010}

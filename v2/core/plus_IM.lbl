@@ -170,7 +170,7 @@
 
 {:sub.menu_header}
 	&"{clear}{blue}{rvrs on}{pound}{back arrow}39{f6}{rvrs on} {cyan}           Image BBS V2.0{pound}{back arrow}37{blue}  {f6}"
-	&"{rvrs on} {cyan}        Configuration Editor{pound}{back arrow}37{rvrs off} {rvrs on}{blue} {f6}{rvrs on}  {rvrs off}{pound}{back arrow}38{rvrs on} {f6}"
+	&"{rvrs on} {cyan}        Configuration Editor{pound}{back arrow}37{rvrs off} {rvrs on}{blue} {rvrs off}{f6}{rvrs on}  {rvrs off}{pound}{back arrow}38{rvrs on} {rvrs off}{f6}"
 	return
 
 {:3330}

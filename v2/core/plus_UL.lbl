@@ -38,7 +38,7 @@
 	q=1:for x=1 to kk:if dt$(x)<>""then if dt$(x)<>left$(tt$(x),len(dt$(x)))then q=.
 	next:if q=.or tt$(1)="{up arrow}"or tt$(1)="RES"then q=.:goto {:3072}
 	if kk<>1 then:&"{f6}"
-	q=.:a%=c:an$=tt$(1):&,15,1:c$=an$:&"{lt. red}{pound}vn{pound}%a{pound}{back arrow}08: {white}{rvrs on}{pound}$c{f6}":q=q+rc
+	q=.:a%=c:an$=tt$(1):&,15,1:c$=an$:&"{lt. red}{pound}vn{pound}%a{pound}{back arrow}08: {white}{rvrs on}{pound}$c{rvrs off}{f6}":q=q+rc
 	on kk goto {:3072}:lp=1:&"{lt. red}Last On : {lt. green}{$04}"+tt$(8):q=q+rc
 	b$=co$(val(tt$(2))):&"{lt. red}Computer: {green}{pound}$b{f6}":q=q+rc
 	b$=tt$(3):a$="{lt. red}Area Code: {white}({yellow}{pound}$b{white}){lt. red}":if kk=3 then{:3070}

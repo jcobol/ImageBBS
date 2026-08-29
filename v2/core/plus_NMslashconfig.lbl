@@ -85,7 +85,7 @@
 	&"{cyan} E. {lt. blue}Edit Connections{f6}"
 	&"{cyan} F. {lt. blue}Forward List{f6}"
 	&"{cyan} G. {lt. blue}Netwall/Graffiti{f6}"
-	&"{f6}{cyan}-->{white} {pound}g1":IF an$>="A"AND an$<="H"THEN a=ASC(an$)AND 31:GOSUB {:3130}:GOTO {:3108}
+	&"{f6}{cyan}-->{white} {pound}g1":IF an$>="A"AND an$<="G"THEN a=ASC(an$)AND 31:GOSUB {:3130}:GOTO {:3108}
 	RETURN
 {:3130}
 	lp=1:&an$:ON a GOTO {:3132},{:3180},{:3296},{:3458},{:3332},{:3242},{:3512}:RETURN
@@ -189,7 +189,7 @@
 	a=0:&"Handle Here :{pound}i1":a1$=an$:IF an$=""THEN RETURN
 	&"Handle There:{pound}i1":a2$=an$:IF an$=""THEN a2$=a1$:a$=a1$:&"({pound}$a Assumed){f6}"
 	GOSUB {:3056}:a3$=a$:a$=a1$:b$=a2$:c$=a3$
-	&"{f6}Forward {pound}$a'S Mail To{f6}{pound}$b At {pound}$c{f6:2}Correct?" :GOTO 1902
+	&"{f6}Forward {pound}$a's Mail To{f6}{pound}$b At {pound}$c{f6:2}Correct?" :GOTO 1902
 {:3294}
 	dr=2:a$="nm.forward,l,.":GOSUB 1011:&,2,2:l=VAL(a$):RETURN
 {:3296}
@@ -355,7 +355,7 @@
 	IF s=.THEN{:3572}
 	CLOSE 2:CLOSE 3:PRINT# 15,"s"dr$"nm.nodelist":GOTO {:3586}
 {:3582}
-	&"No {f5}nm.create{f5} file found!{f6}Please contact your NetWork{f6}Administrator.{f6}"
+	&"No {f5}nm.create{f5} file found!{f6}Please contact your Network{f6}Administrator.{f6}"
 	e%=1:RETURN
 {:3586}
 	GOSUB {:3070}:IF e%THEN RETURN

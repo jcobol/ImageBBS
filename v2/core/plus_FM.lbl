@@ -3,7 +3,7 @@
 {step:2}
 	p$="":pr$="":cm$="FORCE Mail":GOSUB 1360:a=8:GOSUB 1004:IF a=.THEN{:3064}
 {:3002}
-	&"{f6} (E)rase Or, (S)end Force Mail?: {pound}i1":ON tr%+1 GOTO {:3064}
+	&"{f6} (E)rase, Or (S)end Force Mail?: {pound}i1":ON tr%+1 GOTO {:3064}
 	fl=-(an$="E"):IF fl=.AND an$<>"S"THEN{:3064}
 	POKE 53252,20:b$="Send":IF fl THEN b$="Erase"
 {:3008}

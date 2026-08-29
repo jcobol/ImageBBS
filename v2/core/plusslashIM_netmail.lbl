@@ -392,7 +392,7 @@
 	if s=. then {:4534}
 	close 2:close 3:print# 15,"s"dr$"nm.nodelist":goto{:4548}
 {:4544}
-	&"No {f5}nm.create{f5} file found!{f6}Please contact your NetWork{f6}Administrator.{f6}"
+	&"No {f5}nm.create{f5} file found!{f6}Please contact your Network{f6}Administrator.{f6}"
 	e%=1:return
 {:4548}
 	gosub{:4070}:if e%then return

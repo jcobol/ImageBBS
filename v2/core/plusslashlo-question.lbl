@@ -46,7 +46,7 @@
 {:4050}
 	&"{f6:2}Please Provide The Following Information:{f6}":POKE 53252,30
 	tt$(1)=na$:tt$(2)=ff$:tt$(3)=ll$:FOR i=4 TO 12
-	&ed$(i)+"{pound}{back arrow}13: ":IF I=8 THEN:"{pound}i1":goto {:4058}
+	&ed$(i)+"{pound}{back arrow}13: ":IF I=8 THEN:&"{pound}i1":goto {:4058}
 	&"{pound}i0"
 {:4058}
 	tt$(i)=an$:next:if tr%<1 then return

@@ -96,8 +96,8 @@
 	if(left$(an$,1)>="A"and right$(an$,1)>="A")then return
 	&"{f6}Non-Acceptable Entry.{f6}":goto {:3140}
 {:3150}
-	&"{f6:2}Would you like to:{f6:2} (A) Enter a password{f6}
-	&" (B) Generate a Random Password{f6} (C) Have no password, and have only a{f6}"
+	&"{f6:2}Would you like to:{f6:2} (A) Enter A Password{f6}
+	&" (B) Generate a Random Password{f6} (C) Have No Password, And Have Only A{f6}"
 	&"     TEMPORARY account on this BBS{f6:2}> {pound}g1"
 	if tr%>.then on-(an$="A")-2*(an$="B")-3*(an$="C")goto {:3162},{:3172},{:3158}:goto {:3150}
 {:3158}

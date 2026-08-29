@@ -4,7 +4,7 @@
 	input b$:on-(b$<"0"or b$>"1")goto{:20}:return
 {:100}
 	restore:read n:dim s$(n),m$(n):for i=1 to n:read s$(i),m$(i):next
-	print"{clear}{$08}{white}{$0e}{down} Image 1.2 Modem Configuration{down}"
+	print"{clear}{$08}{white}{$0e}{down} Image BBS 1.2 Modem Configuration{down}"
 	for i=1 to n:print"  "right$(str$(i),2)" -- "m$(i):next
 	input"{down} Modem Type";b:if b<1 or b>n then end
 	if b=n then gosub{:700}
@@ -38,7 +38,7 @@
 {:840}
 	print:print"Value for ATV (1, 2, 3, 4)":input b8$:if b8$<"1"or b8$>"4"then{:840}
 	print:print"DTR: 0=Normal, 1=Reversed":gosub{:20}:b9$="N":if b$="1"then b9$="R"
-	mt$=bd$+b2$+b3$+b4$+b5$+b7$+b6$+b8$+b9$:print mt$:print:print"Correct? "
+	mt$=bd$+b2$+b3$+b4$+b5$+b7$+b6$+b8$+b9$:print mt$:print:print"Correct? (Y/N): "
 {:880}
 	get g$:if g$=""then{:880}
 	on-(g$="n"or g$="N")goto{:700}:s$(n)=mt$:return
@@ -56,8 +56,8 @@
 	data"5DMHH0H1N","Hayes 9600 (ATA/DTR)"
 	data"5DMHH0H1R","Hayes 9600 (ATA/Reverse DTR)"
 	data"5DMHH0H4N","Supra 9600 (ATA/DTR/V4)"
-	data"6DMHH0H1N","Hayes 19.2k(ATA/DTR)"
-	data"6DMHH0H4N","Hayes 19.2k(ATA/DTR/V4)"
+	data"6DMHH0H1N","Hayes 19.2k (ATA/DTR)"
+	data"6DMHH0H4N","Hayes 19.2k (ATA/DTR/V4)"
 	data"XXXXXXXXX","Customized"
 {number:2000}
 {:2000}
@@ -66,7 +66,7 @@
 	print"select the Hayes 19.2k (ATA/DTR), but "
 	print"if you are certain that an ATV4 will  "
 	print"not produce any undesired result codes"
-	print"then Hayes 19.2k(ATA/DTR/V4) is the   "
+	print"then Hayes 19.2k (ATA/DTR/V4) is the  "
 	print"preferred choice.  Be sure to run the "
 	print"modem setup1.2a file to set up your   "
-	print"modem!  Press any Key to go on:":poke 198,0:wait 198,1:get a$:return
+	print"modem!  Press Any Key to go on:":poke 198,0:wait 198,1:get a$:return

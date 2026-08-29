@@ -9,7 +9,7 @@
 {:3008}
 	GOSUB {:3038}:IF e%THEN tt$="":RETURN
 {:3010}
-	&"{f6}":p$="{f6}{yellow}Destination Node ({rvrs on}{cyan}? List{rvrs off}{yellow})":GOSUB 1006:IF an$="{f2}"THEN GOSUB {:3020}:GOTO {:3010}
+	&"{f6}":p$="{f6}{yellow}Destination Node ({rvrs on}{cyan}?=List{rvrs off}{yellow})":GOSUB 1006:IF an$="{f2}"THEN GOSUB {:3020}:GOTO {:3010}
 	a%=VAL(an$):a$=an$:IF a%<1 THEN:&,16,2
 	IF a%<1 THEN:&"{f6}No Node Found.{f6}":tt$="":RETURN
 	GOSUB {:3026}:x=a%+1:GOSUB {:3018}:tt$=a$+"/"+zn$:RETURN

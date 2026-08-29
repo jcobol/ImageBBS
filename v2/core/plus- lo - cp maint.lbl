@@ -17,7 +17,7 @@
 {:4026}
 	z=1:a$="w":tt$=m$:gosub 1062:if e%then a$="a":z=.:gosub 1062
 	print# 2,"CREDIT P{$cf:2}L WI{$ce:2}ER"r$;0;r$;d1$;r$;"[Congratulations]"r$
-	print# 2," You Have WON todays {white}{rvrs on}CREDIT P{$cf:2}L{rvrs off}."r$
+	print# 2," You Have WON Today's {white}{rvrs on}CREDIT P{$cf:2}L{rvrs off}."r$
 	print# 2," {lt. green}You were awarded"+str$(k)+" Credits"r$:print# 2,"{up arrow}":close 2
 	if y=1 then gosub 1060:x=2:i=1:gosub 1025:x=13:gosub 1025:x=24:gosub 1025:x=31:gosub 1025
 	on-(y<>1)gosub 1060:x=3:i=1:gosub 1025:x=14:gosub 1025:x=32:gosub 1025
@@ -33,7 +33,7 @@
 	print# 2,"{pound}$q{white}({gray3}Any Key{white}){lt. green} {pound}g1{pound}hj":print# 2,"{up arrow}":close 2:return
 {:4054}
 	print# 2,"{pound}n3{pound}$q{pound}{back arrow}06{lt. green}{$b0}{$c0:21}{$ae}"
-	print# 2,"{pound}$q{pound}{back arrow}06{$dd} No Winner in Todays {$dd}"
+	print# 2,"{pound}$q{pound}{back arrow}06{$dd} No Winner in Today's {$dd}"
 	print# 2,"{pound}$q{pound}{back arrow}06{$dd}     Credit Pool!    {$dd}"
 	print# 2,"{pound}$q{pound}{back arrow}06{$ad}{$c0:21}{$bd}{pound}n2":goto {:4052}
 	copr. 1994 new image 9/8/94
