@@ -106,7 +106,7 @@
 {:3132}
 	poke 53252,3:fl=1:&"{f6:2}{yellow}Area Code: {pound}i1{lt. green}":if an$=""or len(an$)<3 then{:3108}
 {:3134}
-	g$=an$:&"{clear}{f6} ##   Telephone #   Name                      Bd  Notes{f6}"
+	g$=an$:&"{clear}{f6} ##  Phone#     Name            Bd Notes{f6}"
 	&"----  ------------  -------------------"
 	&"       --  ----------------------------{f6}"
 	gosub {:3074}:goto {:3106}

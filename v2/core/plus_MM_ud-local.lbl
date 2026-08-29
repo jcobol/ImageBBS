@@ -32,8 +32,8 @@
 {:4046}
 	s$="{white}{f5}"+tt$(i)+"{f5}"
 {:4048}
-	&"{f6}{lt. green}Enter A Decription For {pound}$s{f6:2}:{lt. blue} {pound}i0"
-	ON tr%+1 GOTO 3214:IF an$=""THEN an$=" (sysop to lazy to add description)
+	&"{f6}{lt. green}Enter A Description For {pound}$s{f6:2}:{lt. blue} {pound}i0"
+	ON tr%+1 GOTO 3214:IF an$=""THEN an$=" (sysop too lazy to add description)
 	RETURN
 {:4054}
 	&"{yellow}Manual{lt. blue}{f6}":f4=1

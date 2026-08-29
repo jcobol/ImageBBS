@@ -171,7 +171,7 @@
 
 {nice:4}
 {:sub.todo}
-	&"TODO: finish the thing!{f6}":return
+	&"Feature not yet available.{f6}":return
 
 {nice:4}
 {:sub.write_stats}
@@ -193,10 +193,10 @@
 ' TODO: act on main prompt "EDx" param:
 ' EDx param on command line - user # to edit
 ' ECS command must not ignore extra
-	a=int(val(mid$(an$,3,3))):if a then:&"TODO: Edit user {pound}!a":goto {:got_param}
+	a=int(val(mid$(an$,3,3))):if a then:&"Feature not yet available.":goto {:got_param}
 
 {:102}
-	&"{white}{clear}{f6}{pound}{back arrow}05{white}{rvrs on} Image BBS User Account Editor {f6}"
+	&"{white}{clear}{f6}{pound}{back arrow}05{white}{rvrs on} Image BBS User Account Editor {rvrs off}{f6}"
 
 {ifdef:show_build_date}
 	&"{lt. red}Built {$04}21906108530{f6}"
@@ -365,7 +365,7 @@
 
 {:access_group}
 ' 7 - access level change is handled in {:general_edit}
-	lp=1:&"TODO: display access groups, edit NetMail access{f6}"
+	lp=1:&"Feature not yet available.{f6}"
 	goto {:general_edit}
 
 {:computer_type}
@@ -465,8 +465,8 @@
 ' 7
 ' TODO: update access group flags from e.access instead
 '	tt$(23)=fl$(val(tt$(7))):goto {:header}
-	&"TODO: update access group flags from {f5}e.access{f5}{f6}"
-	&"TODO: edit NetMail access group{f6}"
+	&"Feature not yet available.{f6}"
+	&"Feature not yet available.{f6}"
 	goto {:header}
 
 
