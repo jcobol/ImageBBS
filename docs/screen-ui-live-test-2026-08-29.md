@@ -393,15 +393,17 @@ the source alone.
   implement nearly the same "User Bio" feature, not one file superseding
   the other, and neither is referenced anywhere else in this repo to
   suggest one is dead. User confirmed: keep both, no action needed.
-- **Divergent duplicate modules** where two versions of the same feature
-  coexist and it's unclear which is current — this is a "which do we
-  keep" call, not a wording fix: `plus_NMslashconfig.lbl` vs `plusslashIM_netmail.lbl`
-  (near-identical NetMail config screens, probably a stale fork of one
-  another — confirmed `plusslashIM_netmail.lbl` doesn't share
-  `plus_NMslashconfig.lbl`'s off-by-one menu bug, so they've already
-  diverged in behavior, not just wording). None of these are "broken"
-  exactly — they're duplicated maintenance burden, and removing/merging
-  one is a call for whoever owns this codebase.
+- **`plus_NMslashconfig.lbl` vs `plusslashIM_netmail.lbl`** — investigated
+  further per the user's request: unlike bio/UB, this looks like a real
+  supersession rather than two independent mods. `plus_NMslashconfig.lbl`'s
+  REM line names it `"+.NM/config"` dated 03-27-95; `plusslashIM_netmail.lbl`'s
+  names it `"+/IM.netmail"` by a different author ("x-tec") dated 171221
+  (Dec 2017) — a 22-years-later rewrite with a substantially restructured
+  menu (not just a typo-fixed copy), and it doesn't share the older
+  file's off-by-one menu bug. User's call: keep both for now rather than
+  remove/merge either — worth revisiting in a future cleanup pass once
+  it's confirmed which one (if not both) is actually wired into a live
+  BBS.
 - **`plusslashSM_lk util.lbl:50-52` vs. `:112/:137/:151/:168`** — main
   menu says "4. Multi-File Copy" etc., but the screen it leads to is
   titled "Multi-Copy". Left as-is on reflection: a menu entry being more
