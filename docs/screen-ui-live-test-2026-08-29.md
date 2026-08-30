@@ -105,18 +105,21 @@ of individual screen/prompt blocks within those files, not files.
 ## 3. Outcome summary
 
 - **175 issues found.**
-- **~165 of them fixed directly** across two passes (see §4) — the first
-  pass (§4.1-4.8) covered mechanical, unambiguous fixes; a second pass
-  (§4.9), done after the user asked for everything not specifically
+- **~166 of them fixed directly** across three passes (see §4) — the
+  first pass (§4.1-4.8) covered mechanical, unambiguous fixes; a second
+  pass (§4.9), done after the user asked for everything not specifically
   requiring their input to be fixed, resolved nearly everything that
   first pass had conservatively left for a "style preference" — wording
   consistency, column alignment (now computed with confidence — see §1's
-  macro-semantics discoveries), and the remaining overflow lines.
-- **~8 still flagged, not auto-fixed** (see §5) — these are genuine
-  domain/design decisions: an incomplete `if` condition whose correct
-  logic isn't recoverable from this file alone, a module whose own FIXME
-  comments suggest it may not be live in production, which of several
-  divergent duplicate modules is actually deployed, and one menu-wording
+  macro-semantics discoveries), and the remaining overflow lines; a third
+  (one item) asked the user directly which of two reasonable
+  interpretations to take for an incomplete `if` condition, since that
+  one genuinely couldn't be resolved either automatically or by
+  inference from the file alone.
+- **~7 still flagged, not auto-fixed** (see §5) — these are genuine
+  domain/design decisions: a module whose own FIXME comments suggest it
+  may not be live in production, which of several divergent duplicate
+  modules is actually deployed, and one menu-wording
   question that's a legitimate style choice either way.
 - The single most common defect, by far, was **an opened `{rvrs on}`
   never matched with `{rvrs off}`**, found identically across dozens of
@@ -342,15 +345,15 @@ design decision, knowledge of what's actually deployed, or domain
 knowledge about intended game/feature logic that isn't recoverable from
 the source alone.
 
-- **`plusslashIM_time.lbl:180`** — a literal placeholder `[...]` left
-  inside an `if` condition guarding prime-time auto-disable. Investigated
-  further: the condition needs to compare against `p2%`/`p3%`
-  (prime-time start/end), but the file's own comments show the original
-  author never resolved the wraparound behavior when the end time is
-  earlier than the start time ("if p3%<p2%, does it wrap am/pm?"), and a
-  related variable (`pt`) is set here but read only by some other module
-  not in this file. Guessing at the condition risks silently breaking
-  prime-time enforcement — this needs the person who knows the intended
+- ~~`plusslashIM_time.lbl:180`~~ — **resolved.** The literal placeholder
+  `[...]` left inside the prime-time auto-disable `if` condition needed a
+  real intended-behavior decision (the file's own comments show the
+  original author never resolved the am/pm wraparound math for comparing
+  the current time against `p2%`/`p3%`). Asked the user directly: they
+  chose the simple-flag-check option over guessing at the wraparound
+  logic, so this now reads `if pt%=1 then` (disable prime time whenever
+  it's currently flagged on) rather than doing real start/end-time
+  comparison — a deliberate simplification, not a bug.
   behavior.
 - **`plusslashlo-question.lbl`** — carries explicit developer `' FIXME:
   don't commit yet` / `' FIXME: question text does not display` comments,
