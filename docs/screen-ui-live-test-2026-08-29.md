@@ -373,12 +373,20 @@ the source alone.
   identically in mainline, just under jack's less obvious `grf`/`grf_rel`
   naming instead of mainline's clearer `grf`/`grf2`. Nothing to fix or
   choose between.
+- ~~`islashlo.firstimage.lbl` vs `islashlo_firstimage.lbl`~~ —
+  **investigated, left as-is.** Unlike Wall Writer, no mainline file has
+  this "system reserved for network maintenance" message at all — this
+  login-gate module only exists in jack/. But both files' own REM headers
+  claim to be the same module ("i/lo.firstimage (c)1995"), just one in
+  old PETSCII shifted-caps and one rewritten to lowercase/Title Case,
+  matching a pattern seen repeatedly elsewhere in jack/ (e.g. `i_UU.lbl`
+  ALL-CAPS vs `plus_UU.lbl` Title Case) where the same module exists in
+  both an old-style and rewritten-style copy. User confirmed: treat this
+  like those other pairs — keep both, no action needed. (Their shared
+  overflow bug was already fixed in §4.9 regardless.)
 - **Divergent duplicate modules** where two versions of the same feature
   coexist and it's unclear which is current — this is a "which do we
-  keep" call, not a wording fix: `islashlo.firstimage.lbl`
-  vs `islashlo_firstimage.lbl` (old PETSCII-caps style vs. a Title Case
-  rewrite — both had their shared overflow bug fixed in §4.9, but the
-  duplication itself remains), `plus_bio.lbl` ("User Bio v1.3") vs
+  keep" call, not a wording fix: `plus_bio.lbl` ("User Bio v1.3") vs
   `plus_UB.lbl` ("v2.0") — likely a stale earlier revision left in the
   tree, and `plus_NMslashconfig.lbl` vs `plusslashIM_netmail.lbl`
   (near-identical NetMail config screens, probably a stale fork of one
