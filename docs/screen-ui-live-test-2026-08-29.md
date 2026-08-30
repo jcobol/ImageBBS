@@ -359,11 +359,23 @@ the source alone.
   don't commit yet` / `' FIXME: question text does not display` comments,
   suggesting this module may not be live in production. Worth confirming
   with whoever runs this BBS before touching it further.
+- ~~`islashlo-net.grf.lbl` vs `islashlo-net.grf_rel.lbl`~~ — **resolved,
+  not actually a duplicate.** At the user's request, compared both
+  against mainline's `plusslashlo-grf.lbl`/`plusslashlo-grf2.lbl`. All
+  four files end in the identical `copr. 1990 NEW image` (or `NEW IMAGE`)
+  credit line, and `islashlo-net.grf.lbl`'s internal version banner reads
+  "V1.2/2.0" while `islashlo-net.grf_rel.lbl`'s reads "V2.0" — matching
+  `plusslashlo-grf.lbl` (the original, simpler 1990 Wall Writer) and
+  `plusslashlo-grf2.lbl` ("+/lo-grf2 - wallwriter logon module", a
+  separate v2.0 rewrite with node-config awareness) respectively. So this
+  isn't two forks of one current feature at all — it's the same
+  intentional "original + v2.0 rewrite" pairing that already exists
+  identically in mainline, just under jack's less obvious `grf`/`grf_rel`
+  naming instead of mainline's clearer `grf`/`grf2`. Nothing to fix or
+  choose between.
 - **Divergent duplicate modules** where two versions of the same feature
   coexist and it's unclear which is current — this is a "which do we
-  keep" call, not a wording fix: `islashlo-net.grf.lbl` vs
-  `islashlo-net.grf_rel.lbl` (different confirm routines and abort
-  targets for the same "Wall Writer" feature), `islashlo.firstimage.lbl`
+  keep" call, not a wording fix: `islashlo.firstimage.lbl`
   vs `islashlo_firstimage.lbl` (old PETSCII-caps style vs. a Title Case
   rewrite — both had their shared overflow bug fixed in §4.9, but the
   duplication itself remains), `plus_bio.lbl` ("User Bio v1.3") vs
