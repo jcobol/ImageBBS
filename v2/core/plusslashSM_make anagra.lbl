@@ -21,7 +21,7 @@
 	x=VAL(an$):IF x<1 OR x>5 THEN{:4014}
 	ON x GOTO {:4024},{:4064},{:4028},{:4082},{:4117}:GOTO {:4014}
 {:4024}
-	&"{clear}{cyan}{rvrs on}Create Word File!{f6:2}{lt. blue}Continue{white}? ":GOSUB 1902:IF a=.THEN{:4014}
+	&"{clear}{cyan}{rvrs on}Create Word File!{rvrs off}{f6:2}{lt. blue}Continue{white}? ":GOSUB 1902:IF a=.THEN{:4014}
 	GOSUB {:4004}:FOR x=1 TO 20:GOSUB 1001:PRINT# 2,"{up arrow}":NEXT:CLOSE 2:&"{f6:2}{lt. green}Created{yellow}!!":GOTO {:4012}
 {:4028}
 	&"{clear}{purple}{yellow}Edit Words.{f6:2}":GOSUB {:4006}:x=y+1:IF y=.THEN y=1
@@ -61,7 +61,7 @@
 {:4080}
 	z=x-1:x=1:GOSUB 1001:PRINT# 2,z:CLOSE 2:&"{f6:2}{gray3}{rvrs on}Word{rvrs off}{white}({rvrs on}{gray3}s{rvrs off}{white}) {gray3}{rvrs on}Added{rvrs off}{white}!":GOTO {:4012}
 {:4082}
-	&"{clear}{lt. green}{rvrs on}List Words.{f6:2}"
+	&"{clear}{lt. green}{rvrs on}List Words.{rvrs off}{f6:2}"
 	GOSUB {:4006}:IF y=.THEN:&"{f6:2}{yellow}No Words In List.":GOTO {:4012}
 	b%=y:&"{f6:2}{pound}%b Words In List."
 	&"{f6}{green}No. {lt. green}Word           {cyan}Used   {gray3}Right{f6}{pound}{back arrow}26{white}1st {yellow}2nd"

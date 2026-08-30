@@ -30,7 +30,7 @@
 	b$="Time Used ":x=10:gosub {:60062}
 	a$="{f6} {rvrs on}{pound}$b{rvrs off}{pound}#5{pound}# {pound}%a  {pound}%b {rvrs on}%{rvrs off} {pound}#3{pound}#  {pound}%e   {pound}%f  {rvrs on} "
 	b$="Time Idle ":x=11:gosub {:60062}
-	&"{f6} {rvrs on}{pound}o {pound}o {cyan}{f6}":return
+	&"{f6} {rvrs on}{pound}o {pound}o {rvrs off}{cyan}{f6}":return
 {:60052}
 	c%=100:e%=0:a=st(x):b=st(x+1):if a+b=0 then return
 	if a=.then e%=100:c%=0:return

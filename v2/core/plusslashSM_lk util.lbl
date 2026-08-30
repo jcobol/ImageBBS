@@ -46,7 +46,7 @@
 	REM **** main menu ****
 	&"{pound}f1":g=dv%:POKE 53252,16
 {:4064}
-	&"{f6:2}{lt. blue} Lt. Kernal File Utility{f6}{lt. red}      (c)NISSA 1992"
+	&"{f6:2}{lt. blue} Lt. Kernal File Utility{f6}{lt. red}      (c) NISSA 1992"
 	&"{f6:2}{white}1. {lt. blue}Directory{f6}{white}2. {lt. blue}Copy File{f6}{white}3. {lt. blue}Disk Command"
 	&"{f6}{white}4. {lt. blue}Multi-File Copy{f6}{white}5. {lt. blue}Multi-File Scratch"
 	&"{f6}{white}6. {lt. blue}Read Sequential Files{f6}{white}7. {lt. blue}Read Basic Program Files"
@@ -109,7 +109,7 @@
 	GOSUB {:4024}:GOTO {:4064}
 {:4162}
 	REM **** multi-copy ****
-	&"{f6:2}{white} Multi-Copy"
+	&"{f6:2}{white} Multi-File Copy"
 	&"{f6} From (user#): {pound}i0":ON-(tr%<1)GOTO {:4080}:d$=an$:e$=d$:GOSUB {:4004}:GOSUB 1008
 	dr$=MID$(an$,5)+":":fd$=dr$+e$+":"
 	GOSUB {:4020}
@@ -134,7 +134,7 @@
 	GOSUB {:4024}:GOTO {:4064}
 {:4198}
 	REM **** multi-scratch ****
-	&"{f6:2}{white} Multi-Scratch"
+	&"{f6:2}{white} Multi-File Scratch"
 	&"{f6} From (user#): {pound}i0":ON-(tr%<1)GOTO {:4080}:d$=an$:e$=d$:GOSUB {:4004}:GOSUB 1008
 	dr$=MID$(an$,5)+":":fd$=dr$+e$+":"
 	GOSUB {:4020}
@@ -148,7 +148,7 @@
 	GOSUB {:4024}:GOTO {:4064}
 {:4222}
 	REM **** multi-read seq ****
-	&"{f6:2}{white} Multi-Read Sequential"
+	&"{f6:2}{white} Read Sequential Files"
 	&"{f6} From (user#): {pound}i0":ON-(tr%<1)GOTO {:4080}:d$=an$:e$=d$:GOSUB {:4004}:GOSUB 1008
 	GOSUB 1470
 	GOSUB {:4020}
@@ -156,7 +156,7 @@
 	FOR i=1 TO kk:&"{f6}{rvrs on} "+tt$(i)+" {rvrs off}{f6}":a$=tt$(i)+",s,r":GOSUB 1011:IF e%THEN:&:GOTO {:4240}
 {:4236}
 	&,2,2:s=st:lp=-(LEN(a$)<>80):&:ON-(rc+s=.)GOTO {:4236}:GOSUB 1032
-	&"{f6:2} <Key...>{pound}g1
+	&"{f6:2} <Key...>{pound}g1"
 {:4240}
 	NEXT
 {:4242}
@@ -165,7 +165,7 @@
 	REM **** multi-read prg ****
 	a$="++ read":dr=5:GOSUB 1010:pr=-2:POKE 53252,16
 	a$=dr$+a$:&,7,dv%,2:GOSUB 1012:IF e%THEN:&"Error Loading {f5}++ read{f5}:":&:GOTO {:4288}
-	&"{f6:2}{white} Multi-Read Program"
+	&"{f6:2}{white} Read Basic Program Files"
 	&"{f6} From (user#): {pound}i0":ON-(tr%<1)GOTO {:4080}:d$=an$:e$=d$:GOSUB {:4004}:GOSUB 1008
 	GOSUB 1470
 	GOSUB {:4020}

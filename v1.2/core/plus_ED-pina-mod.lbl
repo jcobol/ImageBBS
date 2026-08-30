@@ -137,7 +137,7 @@
 	c$=left$(c$,7)+right$("0"+mid$(str$(val(an$)+t),2),4)
 
 {:934}
-	tt$(op)=c$:&"{f6}Last {pound}$b date:{f6}{$04}"+c$+"M{f6:2}":return
+	tt$(op)=c$:&"{f6}New "+b$+":{f6}{$04}"+c$+"M{f6:2}":return
 
 	rem TIME/DATE EDITOR COPR.1990 NEW IMAGE 01/02/90
 
@@ -147,7 +147,7 @@
 ' update cm$ for +.er "Pfile" area, and update "Area" window if screen mask enabled
 	cm$="{green}Account Editor":gosub 1360:restore:for i=1 to 38:read ed$(i):next
 {:102}
-	&"{white}{clear}{f6}{pound}{back arrow}05{white}{rvrs on} Image BBS User Account Editor {f6}"
+	&"{white}{clear}{f6}{pound}{back arrow}05{white}{rvrs on} Image BBS User Account Editor {rvrs off}{f6}"
 
 {ifdef:debug}
 	{uses:\Documents and Settings\User\My Documents\C64\Image BBS\development\build-date_image-bbs.lbl}
@@ -241,7 +241,7 @@
 	tt$(a)=an$:tz=.:on-(a=1)-(a=7)*2 goto {:148},{:154}:goto {:page0}
 {:132}
 '	on tz goto {:102}:&"{f6}Save changes?: ":gosub 1902:on-(a=.)goto {:102}
-	on tz goto {:102}:&"{f6}Save changes? ":gosub 1902:if a=. then {:102}
+	on tz goto {:102}:&"{f6}Save changes?: ":gosub 1902:if a=. then {:102}
 	&"{clear}{f6}Writing to user data files..."
 	if tt$(1)<>"{up arrow}" and tt$(1)<>"RES" and tt$(1)<>tt$ then gosub {:206} ':gosub {:sub.write_stats}:goto {:102}
 	gosub {:sub.write_stats}:if tt$(1)="RES" and tt$<>"{up arrow}" and tt$<>"RES" then {:166}
@@ -343,7 +343,7 @@
 	data"Access group","Calls today"
 	data"Total calls","Computer"
 	data"Line length","Xfer proto"
-	data"Linefeeds","Expert Mode"
+	data"Linefeeds","Expert mode"
 	data"Downloads","Uploads"
 	data"Blks Dnld","Blks Upld"
 	data"Credit pts","Posts"
@@ -354,7 +354,7 @@
 	data"Post/respond","U/D access","Max. editor lines"
 	data"Unlimited D/Ls","Remote maint","E-mail"
 	data"User list","B.A.R./log view","Sub-maint"
-	data"Files maint","MCI Access","UDs at prime time"
+	data"Files maint","MCI access","UDs at prime time"
 {number:998}
 	rem "+.ed" ENHANCED - MAY 12, 2015 - PINACOLADA
 	rem COPR. 1988 NEW IMAGE

@@ -10,7 +10,7 @@
 	PRINT# 2,tt$(1):PRINT# 2,t:PRINT# 2,s:CLOSE 2:RETURN
 {:3010}
 	DIM m(4,4),b(4,4):z=.
-	&"{clear}{rvrs on}{green}The Number Squares{f6}{lt. green}By: {rvrs on}{gray3}Port Commodore{f6}{yellow}    {rvrs on}(801-423-2734){yellow}"
+	&"{clear}{rvrs on}{green}The Number Squares{rvrs off}{f6}{lt. green}By: {rvrs on}{gray3}Port Commodore{rvrs off}{f6}{yellow}    {rvrs on}(801-423-2734){rvrs off}{yellow}"
 	&"{f6:2}Welcome To The Numbered Squares."
 	&"{f6}The Object Of The Game Is To Get All"
 	&"{f6}Of The Numbers In Sequence.  The Only"

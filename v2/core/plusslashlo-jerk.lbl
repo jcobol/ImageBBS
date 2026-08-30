@@ -59,7 +59,7 @@
 	GOSUB 1001:PRINT# 2,"000"nn$
 {:4084}
 	CLOSE 2:&"{f6:2}{orange}Your Nominee Has Been Added!{f6}"
-	&"Nominee now being notifed via Email"
+	&"Nominee now being notified via Email"
 	w=1:a$="w":tt$=nn$:GOSUB 1062:IF e%THEN a$="a":w=.:GOSUB 1062
 	PRINT# 2,"JERK{$a0}AWARD{f6}NOMINATION{$a0}COMMITTEE"r$"(UID#0)"r$;d1$
 	PRINT# 2,"[CONGRATULATIONS]":PRINT# 2,na$+" Has Nominated YOU"

@@ -24,5 +24,5 @@
 {:4036}
 	dr=3:a$="fback":b$="a":gosub 1027:if e%then a$="fback":b$="w":gosub 1027
 	print# 2,"IMAGE"r$"0"d1$r$"0"r$"None"r$"IMAGE {$c2:2}S"r$"Commodore 64"
-	print# 2,"Paycheck To Non-Existant User:"r$tt$r$"{up arrow}":close 2:return
+	print# 2,"Paycheck To Non-Existent User:"r$tt$r$"{up arrow}":close 2:return
 	copr. 1990 new image 12-26-90

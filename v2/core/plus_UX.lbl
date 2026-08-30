@@ -168,7 +168,7 @@
 	IF x<>bz THEN:&MID$(" {f6}",2+((x AND 1)=r%),1)
 	NEXT:&"{f6}{orange}{pound}vj":RETURN
 {:3234}
-	GOSUB {:3222}:&"{cyan}  {rvrs on} To Change, Enter New {pound}$h Number. {f6}":RETURN
+	GOSUB {:3222}:&"{cyan}  {rvrs on} To Change, Enter New {pound}$h Number. {rvrs off}{f6}":RETURN
 {:3236}
 	fl=.:GOSUB {:3108}:ON d%GOTO {:3154}
 	IF e%THEN GOSUB {:3024}:GOTO {:3154}

@@ -2,7 +2,7 @@
 	rem +.bb
 	a=8:gosub 1004:q=a:a=4:gosub 1004:z=a:goto {:3100}
 {:3002}
-	&"{f6:2}{yellow}dBASE:{white} {pound}i1":z$=left$(an$,2):return
+	&"{f6:2}{yellow}dBase:{white} {pound}i1":z$=left$(an$,2):return
 {:3004}
 	gosub 1001:print# 2,w$r$"-"r$"-"r$"-"r$"-":return
 {:3006}
@@ -106,7 +106,7 @@
 {:3132}
 	poke 53252,3:fl=1:&"{f6:2}{yellow}Area Code: {pound}i1{lt. green}":if an$=""or len(an$)<3 then{:3108}
 {:3134}
-	g$=an$:&"{clear}{f6} ##   Telephone #   Name                      Bd  Notes{f6}"
+	g$=an$:&"{clear}{f6} ##  Phone#     Name            Bd Notes{f6}"
 	&"----  ------------  -------------------"
 	&"       --  ----------------------------{f6}"
 	gosub {:3074}:goto {:3106}

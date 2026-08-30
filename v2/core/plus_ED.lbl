@@ -5,7 +5,7 @@
 	gosub 1061:for i=0 to 9:x=i+1:gosub 1001:&,2,2:&,2,2:bb$(i)=a$:next:close 2
 	if r then an$="":x=r:goto {:3114}
 {:3108}
-	&"{clear}{f6}{pound}{back arrow}09{white}{rvrs on} IMAGE User Account Editor {f6}{cyan}":p$="User Edit"
+	&"{clear}{f6}{pound}{back arrow}09{white}{rvrs on} IMAGE User Account Editor {rvrs off}{f6}{cyan}":p$="User Edit"
 	a%=ur:&"{f6} Users: {pound}%a{f6:2}Enter Handle Or ID# Of User To Edit.{f6:2}":gosub 1006
 	on-(an$="")goto 1811:x=abs(int(val(left$(an$,4))))
 {:3114}
@@ -131,11 +131,11 @@
 ' 1, 2, 3
 	data "Non-Weed Status","Credit Ratio","Local Maint"
 ' 4, 5, 6
-	data "Post/Respond","U/D Access","Max.Editor Lines"
+	data "Post/Respond","U/D Access","Max Editor Lines"
 ' 7, 8, 9
 	data "Unlimited D/Ls","Remote Maint","EMail"
 ' 10, 11, 12
-	data "User List","B.A.R./Log View","Submaint"
+	data "User List","B.A.R./Log View","Sub Maint"
 ' 13, 14, 15
 	data "Files Maint","MCI Access","UDs At Primetime"
 ' 16, 17, 18 (1st byte)

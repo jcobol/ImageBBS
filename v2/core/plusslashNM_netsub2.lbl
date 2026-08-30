@@ -47,9 +47,9 @@
 {:4054}
 	dr=2:GOSUB 1009:a$=dr$+"nm.P.track"+STR$(b)+STR$(r):&,16,2,dv%:RETURN
 {:4056}
-	&"{f6:2} {lt. blue}{rvrs on} Sorting NetSub Messages From "+MID$(tt$(tt),10,3)+"... ":fs=0:RETURN
+	&"{f6:2} {lt. blue}{rvrs on} Sorting NetSub Messages From "+MID$(tt$(tt),10,3)+"{rvrs off}... ":fs=0:RETURN
 {:4058}
-	&"{f6:2}{orange} {rvrs on} No Valid Messages Received from "+MID$(tt$(tt),10,3)+" "
+	&"{f6:2}{orange} {rvrs on} No Valid Messages Received from "+MID$(tt$(tt),10,3)+"{rvrs off} "
 	tt=tt-1:ON-(tt>0)GOTO {:4002}:GOTO {:4076}
 {:4062}
 	FOR i=0 TO LEN(tt$)/2-1:IF LEFT$(a$,3)=MID$(tt$,i*2+1,2)+":"THEN{:4066}

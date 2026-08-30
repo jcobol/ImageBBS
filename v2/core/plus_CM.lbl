@@ -108,7 +108,7 @@
 {:3168}
 	&"{clear}{purple}{rvrs on}Give Credit To Another User{pound}{back arrow}39{f6}"
 	GOSUB {:3002}:IF a THEN GOSUB {:3010}:GOTO {:3050}
-	IF cr<1 THEN:&"{f6:2}{lt. green}{rvrs on}You Have No Credits To Give! {rvrs on}{yellow}BEGONE!":GOTO {:3048}
+	IF cr<1 THEN:&"{f6:2}{lt. green}{rvrs on}You Have No Credits To Give! {rvrs off}{yellow}BEGONE!":GOTO {:3048}
 	&"{f6}{lt. red}  You May Give Another User Up To{f6}{white} ":&STR$(cd):&"{lt. red} Credits."
 	fl=1:GOSUB {:3016}:fl=.
 	&"{f6:2}  Who Would You Like To Give Credit To?{f6}: {cyan}{pound}i1":ON-(an$="")GOTO {:3050}

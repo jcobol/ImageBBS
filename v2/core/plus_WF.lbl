@@ -10,7 +10,7 @@
 	&"{pound}$b {pound}g1":fl=.:if an$<>r$then:&"{pound}h"+chr$(65+len(b$)):fl=1:return
 	&"{f6}":return
 {:3010}
-	a%=peek(1022)-1:c%=a%-b%:&"{pound}q0{f6:2}{white}{rvrs on}Total Lines:{f6}{gray3}Available  : {yellow}{pound}%a"
+	a%=peek(1022)-1:c%=a%-b%:&"{pound}q0{f6:2}{white}{rvrs on}Total Lines:{rvrs off}{f6}{gray3}Available  : {yellow}{pound}%a"
 	&"{pound}{back arrow}20{gray3}In Memory  : {yellow}{pound}%b{f6}{gray3}Remaining  : {yellow}{pound}%c":if zz then:&"{pound}{back arrow}20{gray3}Free Memory: {yellow}{pound}%z"
 	&"{lt. green}{f6:2}":return
 {:3016}

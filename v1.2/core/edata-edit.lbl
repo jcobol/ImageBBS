@@ -31,7 +31,7 @@
 {:103}
 	rn=rn+1:if rn>32 then rn=32
 {:104}
-	print"{down:2}Record # To Edit, {rvrs on}L{rvrs off} To List All,":print"Or {rvrs on}Q{rvrs off}{$a0}to Quit   ";
+	print"{down:2}Record # To Edit, {rvrs on}L{rvrs off} To List All,":print"Or {rvrs on}Q{rvrs off}{$a0}To Quit   ";
 	print mid$(str$(rn),2)"{left:4}";:if rn<10 then print"{right}";
 	input a$:if a$="q" OR a$="Q" then close 2:close 15:end
 	if a$="l" or a$="L" then {:350}

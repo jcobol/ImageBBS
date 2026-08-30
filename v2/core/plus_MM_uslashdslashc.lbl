@@ -38,7 +38,7 @@
 {:4048}
 	GOSUB {:4080}
 	an$=lx$
-	&"{f6:2}{pound}c3Would You Like To Start A{f6}Comment File For {pound}c7{pound}r1 {pound}v7 {pound}r0{pound}c3 ?{f6:2}"
+	&"{f6:2}{pound}c3Would You Like To Start A{f6}Comment File For {pound}c7{pound}r1 {pound}v7 {pound}r0{pound}c3?{f6:2}"
 	&"{pound}c2 >>{pound}c1[{pound}cn{pound}r1 Y/N {pound}r0{pound}c1]{pound}c2> {pound}g1":IF tr%<1 THEN{:4088}
 	IF an$="N"THEN 3291
 	GOTO {:4042}
@@ -71,7 +71,7 @@
 	g$="Comment":c%=0:FOR i=1 TO kk-1:c%=c%+LEN(tt$(i)):NEXT:IF c%<40 THEN RETURN
 	a=2:GOSUB 1004:c%=(INT(c%/10))*(a+m%):IF c%>50 THEN c%=50
 	cr=cr+c%:b$=STR$(cr)
-	&"{f6:2}{yellow}Your {white}{pound}$g{yellow} Earned {white}{pound}%c{yellow} Credits,{f6}You Now Have{white}{pound}$b{yellow} Total!{f6}{pound}w4":RETURN
+	&"{f6:2}{yellow}Your {white}{pound}$g{yellow} Earned {white}{pound}%c{yellow} Credits,{f6}You Now Have {white}{pound}$b{yellow} Total!{f6}{pound}w4":RETURN
 	REM modded by darkstar april 2018           atlantis    atl.ddns.net 6401
 	REM "+.MM.u/d/c":version 3 combining    by: iron axe of future systems '93
 	rem "U/D comments"

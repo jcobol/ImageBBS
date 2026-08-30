@@ -221,11 +221,11 @@
 	kk=.:PRINT# 131,"{$02:10}";:GOSUB {:3018}:ON a GOTO {:3324}
 	GOSUB {:3670}:GOSUB {:3660}:b$="":&,16,3
 	ON PEEK(512)GOTO {:3324}:IF MID$(b$,11)<>"nm.password"THEN{:3324}
-	&"{f6:2}B$={f5}{pound}$b{f5}{f6}":dt$=MID$(b$,5,3):IF LEFT$(b$,3)<>nn$THEN{:3324}
+	dt$=MID$(b$,5,3):IF LEFT$(b$,3)<>nn$THEN{:3324}
 	cm$="Connected:"+dt$:GOSUB {:3640}
 	dr=2:GOSUB 1010:PRINT# 15,"s"dr$"nm.password":a$="nm.password,s,w":GOSUB 1011
 	GOSUB {:3660}:&,16,1:CLOSE 2:ON PEEK(512)GOTO {:3324}
-	&"{clear}nm.password Transfer Complete{f6}"
+	&"{clear}Password Transfer Complete.{f6}"
 	dr=2:a$="nm.password,s,r":GOSUB 1011:&,2,2:c$=a$:&,2,2:d$=a$:CLOSE 2
 	IF c$<>nn$(0)THEN h$="Incorrect Password":&"{pound}$h{f6}":GOSUB {:3032}:dc$=d1$:GOTO {:3324}
 	GOSUB {:3326}:&"{clear}Transfers Complete.{f6}":dc$=d1$:cn=cn+1:ca=ca+1

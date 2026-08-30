@@ -8,7 +8,7 @@
 {:3008}
 	GOSUB {:3036}:GOSUB {:3010}:GOTO {:3018}
 {:3010}
-	&"{home}{yellow}{pound}{back arrow}09{rvrs on} Full House BINGO {rvrs off}{f6:2}{pound}{back arrow}09{lt. blue}[{white}I{lt. blue}]{lt. green}nstrucions"
+	&"{home}{yellow}{pound}{back arrow}09{rvrs on} Full House BINGO {rvrs off}{f6:2}{pound}{back arrow}09{lt. blue}[{white}I{lt. blue}]{lt. green}nstructions"
 	IF c%<=3 THEN b%=c%+1:&"{f6}{pound}{back arrow}09{lt. blue}[{white}P{lt. blue}]{lt. green}lay Card #{white}{pound}%b":b%=b%-1
 	&"{f6}{pound}{back arrow}09{lt. blue}[{white}Q{lt. blue}]{lt. green}uit{f6}"
 	&"{f6}{pound}{back arrow}09{lt. blue}[{white} {lt. blue}]{lt. green}Choice{pound}{back arrow}39{left:29}{white}":RETURN

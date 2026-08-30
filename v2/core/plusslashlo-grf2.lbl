@@ -24,7 +24,7 @@
 	x=a1:q=.:GOSUB {:4056}:IF q=.THEN:&"{pound}q0{f6:2}{yellow}No New Writings!{f6}"
 {:4038}
 	&"{f6}{lt. green}Wanna Add your words of wisdom? ":GOSUB 1902:IF a=.THEN{:4046}
-	n=76:GOSUB {:4132}:pl=.:&"{f6}{purple}Go ahead and write:{f6}:{yellow} ":&,1,5:IF an$=""THEN{:4046}
+	n=76:GOSUB {:4132}:pl=.:&"{f6}{purple}Go ahead and write:{yellow} ":&,1,5:IF an$=""THEN{:4046}
 	a$=d1$:b$=RIGHT$(STR$(10000+id),4)+na$:c$="{up arrow}":d$=an$:GOSUB {:4048}
 	x=1:GOSUB 1001:PRINT# 2,a1;r$a2;r$a3:GOSUB 1001:CLOSE 2:ON gf GOSUB {:4078}
 {:4046}

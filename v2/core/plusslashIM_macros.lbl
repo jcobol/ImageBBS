@@ -12,8 +12,8 @@
 	x=1:&,2,2:mc=val(a$):return
 {:4012}
 	&"{f6:2}{rvrs on}   <>-     IMAGE V2.0     -<>   {rvrs off}{f6}{rvrs on}   <>-Macro Editor/Creator-<>   {rvrs off}{f6:2}"
-	lp=1:&"Keyboard Colors are active.{f6}Use the {f5}{back arrow}{f5} when you want a >RETURN< in"
-	lp=1:&" your macro."
+	lp=1:&"Keyboard Colors are active.{f6}Use the {f5}{back arrow}{f5} when you want a >RETURN< in{f6}"
+	lp=1:&"your macro."
 	poke 53252,78:goto {:4078}
 {:4020}
 	&"{f6:2}You Must [C]reate The File First"

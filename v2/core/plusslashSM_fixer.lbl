@@ -26,7 +26,7 @@
 	p=p+b%:r=r+c%:&"{pound}%b Posts, {pound}%c Resps{f6}"
 {:4036}
 	CLOSE 2:NEXT
-	a%=p:b%=r:&"{f6}Totals:{pound}%a Posts{f6}       {pound}%b Responses{f6}"
+	a%=p:b%=r:&"{f6}Totals:{pound}%a Posts{f6}       {pound}%b Resps{f6}"
 	GOSUB 1060:x=26:st(x)=p:GOSUB 1026:x=27:st(x)=r:GOSUB 1026:CLOSE 2:RETURN
 {:4042}
 	u=0:dr=3:a$="e.U/D":GOSUB 1011:IF e%THEN:&:RETURN

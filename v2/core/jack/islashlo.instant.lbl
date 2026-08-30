@@ -27,6 +27,6 @@
 {:4050}
 	&"{f6}{lt. red}LOGIN IS NOT VALID.{f6}":GOTO{:4022}
 {:4052}
-	LP=1:&"{f6}{lt. red}THAT ACCOUNT HAS BEEN DELETED OR IS NOT ACTIVE.{f6}":GOTO{:4022}
+	LP=1:&"{f6}{lt. red}THAT ACCOUNT IS DELETED OR NOT ACTIVE.{f6}":GOTO{:4022}
 {:4060}
 	&"{f6}4060: Z$={pound}$Z, AN$={pound}V7, I%={pound}%I, ZZ="+STR$(ZZ)+"{f6}":RETURN

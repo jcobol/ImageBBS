@@ -77,7 +77,7 @@
 	print# 2,r$"{orange} Log Totals:"r$
 	print# 2,r$"{yellow} Posts :"str$(st(15))r$" Resps :"str$(st(16))r$
 	print# 2," {lt. red}Uplds :"str$(st(17))r$" Dwnld :"str$(st(18))r$
-	print# 2," {green}New Ur:"str$(st(19))r$" Calls :"str$(st(20))
+	print# 2," {green}New Usr:"str$(st(19))r$" Calls :"str$(st(20))
 ' avoid ?divsion by zero  error
 	a=st(21):b=st(22):c=a+b:if c=.then a$=" 0":b$=" 0":goto {:4092}
 	a=int(a/c*100):b$=str$(100-a):a$=str$(a)

@@ -159,8 +159,8 @@
 	on a goto{:4248},{:4030},{:4350}:goto{:4030}
 {:4248}
 	&"{f6} {yellow}NOTE: {white}This option will setup the basic{f6}files needed to configure a"
-	&" modem setup{f6}from scratch.  It is recommended that{f6}you IMPORT from an "
-	&"nimodem.dat file since importing will add the base result codes needed."
+	&" modem setup{f6}from scratch.  It is recommended that{f6}you IMPORT from an nimodem.dat file{f6}"
+	&"since importing will add the base{f6}result codes needed."
 	&"{f6:2}Continue? :":gosub 94:if a=. then {:4240}
 	gosub{:4232}:if a=. then {:4240}
 	poke 53252,25:&"{f6:2}{cyan}Enter Modem Brand/Name{white}:{f6}:{pound}i1":if an$="" then {:4240}

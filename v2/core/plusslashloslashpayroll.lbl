@@ -26,5 +26,5 @@
 {:4036}
 	dr=3:a$="fback":b$="a":GOSUB 1027:IF e%THEN a$="fback":b$="w":GOSUB 1027
 	PRINT# 2,"IMAGE"r$"0"d1$r$"0"r$"None"r$"IMAGE BBS"r$"Commodore 64"
-	PRINT# 2,"Paycheck To Non-Existant User:"r$tt$r$"{up arrow}":CLOSE 2:RETURN
+	PRINT# 2,"Paycheck To Non-Existent User:"r$tt$r$"{up arrow}":CLOSE 2:RETURN
 	copr. 1990 NEW image 12-26-90

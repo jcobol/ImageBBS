@@ -11,7 +11,7 @@
 	z$=a$:&,2,2:b$=a$:&,2,2:c$=a$:&,2,2:d$=a$:&,2,2:d$=d$+","+a$:a$=z$:s=st
 	a=45-LEN(d$):IF LEN(c$)>a THEN c$=LEFT$(c$,a-1)
 	z$=LEFT$(a$+" "+b$+s$,29)+c$+LEFT$(s$,a-LEN(c$))+d$
-	PRINT# 3,z$:&"{pound}$z{f6}":ON-(s=0 AND rc=0)GOTO {:3010}
+	PRINT# 3,z$:z$=LEFT$(z$,38):&"{pound}$z{f6}":ON-(s=0 AND rc=0)GOTO {:3010}
 {:3020}
 	CLOSE 2:CLOSE 3:GOTO 1812
 	rem "+.NM/report"

@@ -22,7 +22,7 @@
 	PRINT# 2,"{white}"RIGHT$(s$+STR$(b),4);" {cyan}";LEFT$(f$+s$,20);" {white}"d$:REM print#2,b$
 	&".":NEXT:&"{f6}"
 {:4034}
-	PRINT# 2,r$;"{white}"k-1"Files"r$:CLOSE 3
+	PRINT# 2,r$;"{white}"k-1" Files"r$:CLOSE 3
 {:4036}
 	NEXT:CLOSE 2
 {:4038}

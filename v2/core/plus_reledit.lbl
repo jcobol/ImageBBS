@@ -353,7 +353,7 @@
 {:3522}
 	&"{f6}Out of Range!":a=q+1
 {:3524}
-	a=a+1:ON-(q>=a AND bn<z%)GOTO {:3508}:&"{f6:2}Press a Key {pound}g1":s=bn-9:q=0:GOTO {:3492}
+	a=a+1:ON-(q>=a AND bn<z%)GOTO {:3508}:&"{f6:2}Press A Key {pound}g1":s=bn-9:q=0:GOTO {:3492}
 {:3526}
 	a=2:GOSUB {:3062}:s=a:GOTO {:3492}
 {:3528}
@@ -394,7 +394,7 @@
 	c%(se)=ii:IF z$="NetSub"THEN f$="N"
 	ed$(se)=l$+" "+f$+" "+a$:&"{f6}{f5}{pound}$a{f5} Inserted!":ON-(z$="NetSub")GOSUB {:3356}:se=se+1:a%=a%+1:NEXT
 {:3582}
-	a$=sy$:&"{f6}{pound}#0{pound}%a {pound}$as Inserted.{f6:2}Press A Key {pound}g1":s=bn-9:q=.:GOTO {:3492}
+	a$=sy$:&"{f6}{pound}#0{pound}%a {pound}$as Inserted!{f6:2}Press A Key {pound}g1":s=bn-9:q=.:GOTO {:3492}
 {:3584}
 	a%=.:ON bn+1 GOTO {:3610}:IF a>.THEN{:3592}
 	a$=sy$:&"{f6}Move Which{f6}(S = Scan List of {pound}$as): {pound}i1"
@@ -414,7 +414,7 @@
 	a$=ed$(se):r=c%(se):FOR x=se TO a:c%(x)=c%(x+1):ed$(x)=ed$(x+1):NEXT
 	ed$(a)=a$:c%(a)=r:a%=a%+1:&".":IF a%<ii THEN{:3606}
 {:3610}
-	a$=sy$:&"{f6:2}{pound}#0{pound}%a {pound}$as Moved{f6:2}Press A Key {pound}g1":s=bn-9:q=.:GOTO {:3492}
+	a$=sy$:&"{f6:2}{pound}#0{pound}%a {pound}$as Moved!{f6:2}Press A Key {pound}g1":s=bn-9:q=.:GOTO {:3492}
 {:3612}
 	ON-(z$="NetSub")GOTO {:3368}:a$=sy$:&"{f6:2}Saving {pound}$a List...":z$=""
 	tz=.:a$="t"+gg$:dr=3:GOSUB 1023:CLOSE 3:OPEN 3,dv%,3,dr$+"e"+gg$+",s,r"

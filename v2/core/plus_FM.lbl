@@ -3,7 +3,7 @@
 {step:2}
 	p$="":pr$="":cm$="FORCE Mail":GOSUB 1360:a=8:GOSUB 1004:IF a=.THEN{:3064}
 {:3002}
-	&"{f6} (E)rase Or, (S)end Force Mail?: {pound}i1":ON tr%+1 GOTO {:3064}
+	&"{f6} (E)rase, Or (S)end Force Mail?: {pound}i1":ON tr%+1 GOTO {:3064}
 	fl=-(an$="E"):IF fl=.AND an$<>"S"THEN{:3064}
 	POKE 53252,20:b$="Send":IF fl THEN b$="Erase"
 {:3008}
@@ -19,7 +19,7 @@
 	&"{f6}Handle: ":&nn$:&"{f6}Is That Correct?: ":GOSUB 1902:ON a+1 GOTO {:3008}:CLOSE 2
 {:3022}
 	ON fl GOTO {:3062}:GOSUB 1604
-	bl=.:&"{f6}Auto-Delete Message after Read?: ":GOSUB 1902:ON a+1 GOTO {:3028}
+	bl=.:&"{f6}Auto-Delete Message After Read?: ":GOSUB 1902:ON a+1 GOTO {:3028}
 	kk=kk+1:tt$(kk)="ERASE":bl=bl+1
 {:3028}
 	&"{f6}Auto Logoff After Read?: ":GOSUB 1902:ON a+1 GOTO {:3032}:kk=kk+1:tt$(kk)="OFF":bl=bl+1

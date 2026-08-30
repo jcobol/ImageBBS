@@ -19,7 +19,7 @@
 {:4026}
 	z=1:a$="w":tt$=m$:GOSUB 1062:IF e%THEN a$="a":z=.:GOSUB 1062
 	PRINT# 2,"CREDIT{$a0}POOL WINNER"r$;0;r$;d1$;r$;"[Congratulations]"r$
-	PRINT# 2," You Have WON todays {white}{rvrs on}CREDIT POOL{rvrs off}."r$
+	PRINT# 2," You Have WON today's {white}{rvrs on}CREDIT POOL{rvrs off}."r$
 	PRINT# 2," {lt. green}You were awarded"+STR$(k)+" Credits"r$:PRINT# 2,"{up arrow}":CLOSE 2
 	IF y=1 THEN GOSUB 1060:x=2:i=1:GOSUB 1025:x=13:GOSUB 1025:x=24:GOSUB 1025:x=31:GOSUB 1025
 	ON-(y<>1)GOSUB 1060:x=3:i=1:GOSUB 1025:x=14:GOSUB 1025:x=32:GOSUB 1025

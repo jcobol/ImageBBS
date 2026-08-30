@@ -58,6 +58,6 @@
 {:3300}
 	&"{f6}{lt. green}Start over?: ":GOSUB 1902:ON-(a=.)GOTO {:3304}:GOTO {:3002}
 {:3304}
-	&"{f6}Closing file..":CLOSE 2:RETURN
+	&"{f6}Closing file...":CLOSE 2:RETURN
 	rem +.rfe
 

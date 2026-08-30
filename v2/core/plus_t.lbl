@@ -40,7 +40,7 @@
 {:3010}
 	a=val(left$(mt$,1)):a=a+(a=1):&,41,a:qb=2^a*300:return
 {:3012}
-	a%=mn%-bl%:b=bl:&"{f6}{pound}!f Files Transfered{f1} {pound}!b Bytes.{f6} Transfer Time: {pound}%a.{f6}":return
+	a%=mn%-bl%:b=bl:&"{f6}{pound}!f Files Transferred{f1} {pound}!b Bytes.{f6} Transfer Time: {pound}%a.{f6}":return
 {:term_mode}
 ' PASCII Terminal Mode. (C= + CTRL Exits)
 	gosub {:sub.show_gfx_mode}:&,18,0:&"{clear}{pound}q0{pound}$bTerminal Mode. (C= + CTRL Exits){f6:2}":&,10:goto {:main_menu}
@@ -397,7 +397,7 @@
 {:3432}
 	&"Connect 1200{f6}":&,41,2:b=2:return
 {:3434}
-	&"No DialTone{f6}":print# 131:&,22,100:b=1:return
+	&"No Dial Tone{f6}":print# 131:&,22,100:b=1:return
 {:3436}
 	&"Busy{f6}":b=1:return
 {:3438}

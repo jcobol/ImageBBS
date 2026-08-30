@@ -5,7 +5,7 @@
 	a=ll%/2-19:l$="":IF a>0 THEN l$=LEFT$("                        ",a)
 	h$="{$a2:30}"
 	i$="                              ":j$="{$bb}"
-	&"{f6:2}{pound}$l       {white}{rvrs on} Today's Board Activity {f6:2}":sh=.:rc=.
+	&"{f6:2}{pound}$l       {white}{rvrs on} Today's Board Activity {rvrs off}{f6:2}":sh=.:rc=.
 	&"{pound}$l                 1 1 1 1 1 2 2 2 2 2 3{f6}"
 	&"{pound}$l         2 4 6 8 0 2 4 6 8 0 2 4 6 8 0{f6}"
 	&"{pound}$l       0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0{f6}"

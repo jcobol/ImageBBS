@@ -203,17 +203,17 @@
 {:3242}
 	ON k goto {:3244},{:3246},{:3248},{:3250},{:3252},{:3254}
 {:3244}
-	a$="07":RETURN
+	a$="09":RETURN
 {:3246}
-	a$="10":RETURN
+	a$="12":RETURN
 {:3248}
-	a$="13":RETURN
+	a$="15":RETURN
 {:3250}
-	a$="16":RETURN
+	a$="18":RETURN
 {:3252}
-	a$="19":RETURN
+	a$="21":RETURN
 {:3254}
-	a$="22":RETURN
+	a$="24":RETURN
 {:3256}
 	& "{f6}{white}Want to play GREED again? ":GOSUB 1902:ON tr%+1 GOTO 1811:ON a+1 GOTO 1811
 	c%=.:b%=.:gt=.:goto {:3002}
@@ -222,8 +222,8 @@
 {:3262}
 	FOR x=1 TO 5:FOR y=1 TO 2:INPUT# 2,zp$(x,y):NEXT:NEXT:CLOSE 2
 {:3264}
-	&"{f6:2}{lt. green}Current Top Five {orange}Greed {lt. green}Champions Are:{f6:2}{orange}{pound}{back arrow}10NAME "
-	&"{orange}          TOTAL SCORE!{f6}{lt. blue}         {$a3:4}           {$a3:12}{f6}"
+	&"{f6:2}{lt. green}Current Top Five {orange}Greed {lt. green}Champions Are:{f6:2}{orange}{pound}{back arrow}06NAME "
+	&"{orange}            TOTAL SCORE!{f6}{lt. blue}         {$a3:4}           {$a3:12}{f6}"
 	FOR x=1 TO 5:&"{f6}{gray3}<":&RIGHT$(STR$(x),1):b$="{orange}":IF x>1 THEN b$="{gray3}"
 	&">  {pound}$b":&LEFT$(zp$(x,1)+sj$,17)
 	&b$:&RIGHT$(sj$+zp$(x,2),11):NEXT:&"{f6:2}{yellow}{pound}{back arrow}13Press Return: {pound}g1{f6}":RETURN
@@ -238,7 +238,7 @@
 	zp$(x,1)=na$:zp$(x,2)=MID$(STR$(gp),2)
 	&"{f6:2}{lt. red}Congratulations! You Are One Of The{f6}Top 5 Players!":goto {:3302}
 {:3288}
-	&"{f6:2}{lt. red}Sorry, You Did Not Make It In The{f6}Top Five. Try Again Next Time.{f6}"
+	&"{f6:2}{lt. red}Sorry, You Did Not Make It In The{f6}Top 5. Try Again Next Time.{f6}"
 	RETURN
 {:3292}
 	GOSUB{:3264}:GOSUB{:3296}:dr=3:GOSUB 1023

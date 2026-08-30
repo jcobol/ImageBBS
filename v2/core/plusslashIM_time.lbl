@@ -141,7 +141,7 @@
 {:pt_menu}
 '	&,52,7,3:if a% then pt%=1-pt%:if p1%<1 then p1%=30
 	&,52,7,3:pt%=a%:if a% then if p1%<1 then p1%=30
-	&"P)rime Time:{pound}{left arrow}17"+mid$("YesNo",pt%*3+1,3))
+	&"P)rime Time:{pound}{left arrow}17"+mid$("YesNo",pt%*3+1,3)
 	b$="A":if p2%>80 then a%=p2%-80:b$="P"
 	a%=p2%:&"{pound}#2S)tart time:{pound}{left arrow}17{pound}%a:00 {pound}$bM{f6}"
 	b$="A":if p3%>80 then a%=p3%-80:b$="P"
@@ -176,8 +176,7 @@
 ' do some checks for prime time:
 ' 1) if not prime time hours, disable prime time
 	b$="Prime Time"
-' FIXME
-	if [...] then:&,52,7,1:pt=.:&"* Not {pound}$b, disabling {pound}$b{f6}   settings{f6}"
+	if pt%=1 then:&,52,7,1:pt=.:&"* Not {pound}$b, disabling {pound}$b{f6}   settings{f6}"
 ' 2) check whether prime time hour is upon us - if so, ask to enable prime time
 	if val(mid$(d1$,8,2)) >= p2% then:&"Enable {pound}$b?: ":gosub 1907:if a then:&,52,7,.
 ' 3) write prime time settings to e.data:

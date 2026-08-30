@@ -89,7 +89,7 @@
 {:3130}
 	&"{white}":&ed$(i):&"{pound}{back arrow}13: {pound}i1":on-(an$="")goto {:3012}:tt$(i)=an$:next
 	poke 53252,30:for i=4 to 13
-	if i<>8 or i<>13 then:&ed$(i):&"{pound}{back arrow}13: {pound}i0":goto {:3138}
+	if i<>8 and i<>13 then:&ed$(i):&"{pound}{back arrow}13: {pound}i0":goto {:3138}
 	if i=8 or i=13 then:&ed$(i):&"{pound}{back arrow}13: {pound}i1"
 {:3138}
 	on-(an$="")goto {:3140}:tt$(i)=an$

@@ -40,7 +40,7 @@
 	o$="Feedback to "+MID$(i1$,2):GOSUB {:4508}:GOTO 1684
 {:4300}
 	IF q<1 THEN RETURN
-	p$="":&"{f6:2}Enter Handle Or ID#. Of User{f6:2}":GOSUB 1006:x=ABS(VAL(an$)):IF x THEN{:4308}
+	p$="":&"{f6:2}Enter Handle Or ID# Of User{f6:2}":GOSUB 1006:x=ABS(VAL(an$)):IF x THEN{:4308}
 	GOSUB 1046:x=i:IF x THEN nn$=an$:GOTO {:4314}
 	&"{f6:2}{f5}{pound}v7{f5} Not Found.{f6}":RETURN
 {:4308}
@@ -70,7 +70,7 @@
 	&"{f6}Last Call: {$04}"+c$
 	a=8:GOSUB 1004:ON-(a=1 OR so%=id)GOTO {:4424}:IF q<1 OR LEFT$(sy$,1)<>"U"THEN:&"{f6}":GOTO {:4428}
 {:4424}
-	a$="{f6}Credits  :{pound}$b":IF MID$(d$,7)="1"THEN a$="{f6}Credits  : Unlimited ({pound}$b)"
+	a$="{f6}Credits  : {pound}$b":IF MID$(d$,7)="1"THEN a$="{f6}Credits  : Unlimited ({pound}$b)"
 	&:&"{f6:2} {pound}%b Uploads{f1} {pound}%a Downloads{f6} {pound}%d Blks UL'ed{f1} {pound}%c Blks DL'ed"
 {:4428}
 	a=8:GOSUB 1004:ON-(a=1 OR so%=id)GOTO {:4430}:IF q<1 OR sy$<>"Sub"THEN{:4432}

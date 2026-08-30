@@ -116,7 +116,7 @@
 {:4158}
 	CLOSE 3:IF tr%<1 THEN RETURN
 	dr=2:GOSUB 1010:PRINT# 15,"s"dr$o$
-	&"{clear}{yellow}Sending receipt...."
+	&"{clear}{yellow}Sending receipt..."
 	gh$=RIGHT$(o$,3):GOSUB {:4178}:zy$=gh$+"/"+zn$:f$="nm.M."+zy$:GOSUB {:4248}
 	l$="[{rvrs on}NM/file{rvrs off}]":n$=STR$(nh-1):GOSUB {:4252}
 	PRINT# 2,"The following files were dissolved:"r$r$

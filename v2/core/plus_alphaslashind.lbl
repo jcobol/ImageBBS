@@ -5,8 +5,8 @@
 	rem +.alpha/ind - 3/24/89
 	pr=-1:a=4:gosub 1736:poke 53252,20
 {:3002}
-	&"{clear}{f6:2}1.Clear{f6}2.Load{f6}3.Search{f6}4.Insert{f6}5.Delete{f6}6.Save{f6}7.List{f6}8.Make{f6}9.Kill{f6}"
-	&"{f6}0.Quit{f6:2} =>{pound}g1{pound}v7{f6}":a=val(an$):if a then on a gosub {:3012},{:3014},{:3018},{:3024},{:3034},{:3016},{:3044},{:3058},{:3068}:goto {:3002}
+	&"{clear}{f6:2}1. Clear{f6}2. Load{f6}3. Search{f6}4. Insert{f6}5. Delete{f6}6. Save{f6}7. List{f6}8. Make{f6}9. Kill{f6}"
+	&"{f6}0. Quit{f6:2} =>{pound}g1{pound}v7{f6}":a=val(an$):if a then on a gosub {:3012},{:3014},{:3018},{:3024},{:3034},{:3016},{:3044},{:3058},{:3068}:goto {:3002}
 	pr$="":pr=-1:close 2:goto 1812
 {:3008}
 	dr=6:a$="u.config":goto 1011
@@ -20,20 +20,20 @@
 	gosub {:3008}
 {:3020}
 	&"HANDLE:{pound}i1":if an$=""then close 2:return
-	&,16:&"{f6}a%={pound}%a,b%={pound}%b{f6}":goto {:3020}
+	&,16:&"{f6}Result: {pound}%a / {pound}%b{f6}":goto {:3020}
 {:3024}
 	gosub {:3008}
 {:3026}
 	&"Insert:ID={pound}i1":a=val(an$):if a=.then close 2:return
 	x=a:gosub 1001:&,2,2:an$=a$:lp=1:&
-	&,16:&"{f6}a%={pound}%a,b%={pound}%b{f6}":if a%then:&"Already There!{f6}":goto {:3026}
+	&,16:&"{f6}Result: {pound}%a / {pound}%b{f6}":if a%then:&"Already There!{f6}":goto {:3026}
 	&"Adding at {pound}%b.{f6}":a%=a:&,16,4:goto {:3026}
 {:3034}
 	gosub {:3008}
 {:3036}
 	&"Delete:ID={pound}i1":a=val(an$):if a=.then close 2:return
 	x=a:gosub 1001:&,2,2:an$=a$:lp=1:&
-	&,16:&"{f6}a%={pound}%a,b%={pound}%b{f6}":if a%=.then:&"Not There!{f6}":goto {:3036}
+	&,16:&"{f6}Result: {pound}%a / {pound}%b{f6}":if a%=.then:&"Not There!{f6}":goto {:3036}
 	&"Deleting #{pound}%b.{f6}":a%=a:&,16,5:goto {:3036}
 {:3044}
 	gosub {:3008}

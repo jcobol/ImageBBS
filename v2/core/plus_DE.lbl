@@ -100,7 +100,7 @@
 	ON-(an$="N")GOTO {:3140}:pd$=an$
 {:3164}
 	&"{f6} {green}File Name: ":&fd$:&"{f6} {lt. green}Change to: {pound}i0":IF an$=""THEN{:3168}
-	ON-(an$="N"OR an$="n"GOTO {:3140}:fd$=an$
+	ON-(an$="N"OR an$="n")GOTO {:3140}:fd$=an$
 {:3168}
 	&"{f6} {green}File Type: ":&ft$:&"{f6} {lt. green}Change to: {pound}i1":IF an$=""THEN{:3172}
 	ON-(an$="N")GOTO {:3172}:ft$=an$

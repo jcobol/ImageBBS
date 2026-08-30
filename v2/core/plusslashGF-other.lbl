@@ -47,7 +47,7 @@
 {:4316}
 	&"{f6}{yellow}Invalid Account Number.{f6}":x=.:goto {:4346}
 {:4318}
-	&"{f6}{lt. green}Handle: {rvrs on}"+nn$+"{f6}{yellow}Is That Correct?: ":gosub 1902:if a=. then {:4302}
+	&"{f6}{lt. green}Handle: {rvrs on}"+nn$+"{rvrs off}{f6}{yellow}Is That Correct?: ":gosub 1902:if a=. then {:4302}
 {:4320}
 	y=i:dr=2:gosub 1079:on-(a<20)goto {:4342}:gosub 1085:if a then gosub 1980:goto {:4346}
 	on fl goto {:4330}

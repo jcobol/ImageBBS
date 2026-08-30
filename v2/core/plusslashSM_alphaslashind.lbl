@@ -19,20 +19,20 @@
 	GOSUB {:4008}
 {:4020}
 	&"HANDLE:{pound}i1":IF an$=""THEN CLOSE 2:RETURN
-	&,16:&"{f6}a%={pound}%a,b%={pound}%b{f6}":GOTO {:4020}
+	&,16:&"{f6}Found={pound}%a  At #{pound}%b{f6}":GOTO {:4020}
 {:4024}
 	GOSUB {:4008}
 {:4026}
 	&"Insert:ID={pound}i1":a=VAL(an$):IF a=.THEN CLOSE 2:RETURN
 	x=a:GOSUB 1001:&,2,2:an$=a$:lp=1:&
-	&,16:&"{f6}a%={pound}%a,b%={pound}%b{f6}":IF a%THEN:&"Already There!{f6}":GOTO {:4026}
+	&,16:&"{f6}Found={pound}%a  At #{pound}%b{f6}":IF a%THEN:&"Already There!{f6}":GOTO {:4026}
 	&"Adding at {pound}%b.{f6}":a%=a:&,16,4:GOTO {:4026}
 {:4034}
 	GOSUB {:4008}
 {:4036}
 	&"Delete:ID={pound}i1":a=VAL(an$):IF a=.THEN CLOSE 2:RETURN
 	x=a:GOSUB 1001:&,2,2:an$=a$:lp=1:&
-	&,16:&"{f6}a%={pound}%a,b%={pound}%b{f6}":IF a%=.THEN:&"Not There!{f6}":GOTO {:4036}
+	&,16:&"{f6}Found={pound}%a  At #{pound}%b{f6}":IF a%=.THEN:&"Not There!{f6}":GOTO {:4036}
 	&"Deleting #{pound}%b.{f6}":a%=a:&,16,5:GOTO {:4036}
 {:4044}
 	GOSUB {:4008}
@@ -51,7 +51,7 @@
 {:4066}
 	NEXT:CLOSE 2:RETURN
 {:4068}
-	&"Kill  :Pos={pound}i1":a=VAL(an$):IF a=.THEN CLOSE 2:RETURN
+	&"Kill:Pos={pound}i1":a=VAL(an$):IF a=.THEN CLOSE 2:RETURN
 	b%=a:&"Deleting #{pound}%b.{f6}":a%=a:&,16,5:GOTO {:4068}
 	REM copr.1989 new image
 	REM "+/SM.alpha/ind" sysop menu 180209 x-tec

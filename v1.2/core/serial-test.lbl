@@ -93,7 +93,7 @@
 	print#15,"s0:"+f$:gosub {:check.io_status}:if e<>1 then print a$:goto {:1811}
 	
 	rem save routine:
-	print "{up} Re-sav";
+	print "{up} Re-saving";
 
 	ea=ea+1 ' increment ending address -- save routine saves sa...ea+1
 	sys 57812f$,dv,1:hb=int(ad/256):poke 193,ad-hb*256:poke 194,hb
@@ -123,7 +123,7 @@
 
 ' 26/Oct/2014 21:03
 ' check for negative values so patch process doesn't crash midway through
-	if i<. or sa<. or sb<. or sc<. or sd<. or se<. or sf<. or z<. then print "The patching algorithm encountered an   error. Please try again with a differentserial number.":goto {:serial_prompt}
+	if i<. or sa<. or sb<. or sc<. or sd<. or se<. or sf<. or z<. then print "The patching algorithm encountered an":print "error. Please try again with a different":print "serial number.":goto {:serial_prompt}
 
 	print"{clear}":t=5:gosub {:print_patches}	
 '									offset
