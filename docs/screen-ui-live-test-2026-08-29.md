@@ -105,22 +105,26 @@ of individual screen/prompt blocks within those files, not files.
 ## 3. Outcome summary
 
 - **175 issues found.**
-- **~166 of them fixed directly** across three passes (see §4) — the
-  first pass (§4.1-4.8) covered mechanical, unambiguous fixes; a second
-  pass (§4.9), done after the user asked for everything not specifically
-  requiring their input to be fixed, resolved nearly everything that
-  first pass had conservatively left for a "style preference" — wording
+- **~167 of them fixed** across three passes (see §4). The first pass
+  (§4.1-4.8) covered mechanical, unambiguous fixes; a second pass (§4.9),
+  done after the user asked for everything not specifically requiring
+  their input to be fixed, resolved nearly everything that first pass
+  had conservatively left for a "style preference" — wording
   consistency, column alignment (now computed with confidence — see §1's
-  macro-semantics discoveries), and the remaining overflow lines; a third
-  (one item) asked the user directly which of two reasonable
-  interpretations to take for an incomplete `if` condition, since that
-  one genuinely couldn't be resolved either automatically or by
-  inference from the file alone.
-- **~7 still flagged, not auto-fixed** (see §5) — these are genuine
-  domain/design decisions: a module whose own FIXME comments suggest it
-  may not be live in production, which of several divergent duplicate
-  modules is actually deployed, and one menu-wording
-  question that's a legitimate style choice either way.
+  macro-semantics discoveries), and the remaining overflow lines; a
+  third pass (§5) went back through every remaining "flagged" item
+  one-by-one with the user directly — investigating further where that
+  changed the picture (three of the five "divergent duplicate module"
+  concerns turned out not to be stale duplicates at all once compared
+  against their mainline/dated origins) and asking the user's actual
+  preference where it didn't (the prime-time placeholder condition, one
+  menu-wording call).
+- **1 item genuinely still open** (see §5): whether
+  `plusslashlo-question.lbl` is live on the user's actual running BBS —
+  its own dispatch is data-driven at runtime (a "maintmods" record in the
+  live `e.data` file, not anything in this source tree), so this is the
+  one question that could not be answered from the code no matter how
+  far it was investigated.
 - The single most common defect, by far, was **an opened `{rvrs on}`
   never matched with `{rvrs off}`**, found identically across dozens of
   unrelated modules (title banners, confirmation prompts, stat displays,
@@ -354,7 +358,6 @@ the source alone.
   logic, so this now reads `if pt%=1 then` (disable prime time whenever
   it's currently flagged on) rather than doing real start/end-time
   comparison — a deliberate simplification, not a bug.
-  behavior.
 - **`plusslashlo-question.lbl`** — carries explicit developer `' FIXME:
   don't commit yet` / `' FIXME: question text does not display` comments,
   suggesting this module may not be live in production. Worth confirming
@@ -404,14 +407,22 @@ the source alone.
   remove/merge either — worth revisiting in a future cleanup pass once
   it's confirmed which one (if not both) is actually wired into a live
   BBS.
-- **`plusslashSM_lk util.lbl:50-52` vs. `:112/:137/:151/:168`** — main
-  menu says "4. Multi-File Copy" etc., but the screen it leads to is
-  titled "Multi-Copy". Left as-is on reflection: a menu entry being more
-  descriptive than the short screen title it leads to is a normal,
-  harmless UI pattern (not unlike a "New Message" menu item opening a
-  screen titled "Compose") — forcing them to match verbatim isn't
-  obviously an improvement, so this is a genuine style call for whoever
-  maintains this tool's wording, not a bug.
+- ~~`plusslashSM_lk util.lbl:50-52` vs. `:112/:137/:151/:168`~~ —
+  **resolved.** Menu said "4. Multi-File Copy"/"5. Multi-File
+  Scratch"/"6. Read Sequential Files"/"7. Read Basic Program Files", but
+  the four screens they led to were titled "Multi-Copy"/"Multi-Scratch"/
+  "Multi-Read Sequential"/"Multi-Read Program" — a bigger mismatch than
+  first appeared, since items 6/7's screens had also added an
+  inconsistent "Multi-" prefix the menu doesn't use. Left the decision to
+  the user; they deferred to a recommendation. Since all four titles had
+  ample column room to expand safely, changed all four screen titles to
+  match their menu entries exactly.
+
+Every item in this section has now been either fixed, confirmed as
+intentional/non-issue after investigation, or explicitly decided by the
+user (keep both, revisit later) — except `plusslashlo-question.lbl`'s
+liveness, which genuinely can only be answered by checking the running
+BBS itself.
 
 ## 6. Method note on the parallel review
 
