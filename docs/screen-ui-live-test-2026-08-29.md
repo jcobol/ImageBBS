@@ -384,11 +384,18 @@ the source alone.
   both an old-style and rewritten-style copy. User confirmed: treat this
   like those other pairs — keep both, no action needed. (Their shared
   overflow bug was already fixed in §4.9 regardless.)
+- ~~`plus_bio.lbl` vs `plus_UB.lbl`~~ — **investigated, not actually a
+  stale duplicate.** These aren't version 1.3 vs. 2.0 of one module:
+  `plus_bio.lbl`'s own REM line names it `"+.bio"` (copr. 1990) and
+  `plus_UB.lbl`'s names it `"+.UB"` (copr. 1994) — different command
+  names entirely. BBS plus-mods are invoked by their short command code,
+  so these are two separately-installable community mods that happen to
+  implement nearly the same "User Bio" feature, not one file superseding
+  the other, and neither is referenced anywhere else in this repo to
+  suggest one is dead. User confirmed: keep both, no action needed.
 - **Divergent duplicate modules** where two versions of the same feature
   coexist and it's unclear which is current — this is a "which do we
-  keep" call, not a wording fix: `plus_bio.lbl` ("User Bio v1.3") vs
-  `plus_UB.lbl` ("v2.0") — likely a stale earlier revision left in the
-  tree, and `plus_NMslashconfig.lbl` vs `plusslashIM_netmail.lbl`
+  keep" call, not a wording fix: `plus_NMslashconfig.lbl` vs `plusslashIM_netmail.lbl`
   (near-identical NetMail config screens, probably a stale fork of one
   another — confirmed `plusslashIM_netmail.lbl` doesn't share
   `plus_NMslashconfig.lbl`'s off-by-one menu bug, so they've already
